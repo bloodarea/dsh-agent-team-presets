@@ -261,30 +261,36 @@ const renameRoots = SYNCED.filter(relative => relative === 'src' || relative ===
 const { readdirSync } = await import('node:fs')
 
 /**
- * Drop a trailing `sourceMappingURL` comment.
+ * Turn one copied build artifact into this repository's published artifact.
  *
- * The maps are not published, so the reference would only 404 in a browser.
- * @param path - absolute path of one copied JavaScript file.
+ * Two transforms. The trailing `sourceMappingURL` comment goes, because the maps
+ * are not published and the reference would only 404 in a browser. The
+ * workspace's absolute path prefix goes too: the client bundle records it in the
+ * `#region` comments it emits for CSS modules, and a published artifact should
+ * not name the machine that built it.
+ * @param path - absolute path of one copied artifact file.
  */
-function stripSourceMapReference(path) {
+function publishArtifact(path) {
   if (!path.endsWith('.js')) return
   const original = readFileSync(path, 'utf8')
-  const stripped = original.replace(/\n?\/\/# sourceMappingURL=.*\n?$/u, '\n')
-  if (stripped !== original) emit(path, stripped)
+  const published = original
+    .replaceAll(`${sourceRoot}/`, '')
+    .replace(/\n?\/\/# sourceMappingURL=.*\n?$/u, '\n')
+  if (published !== original) emit(path, published)
 }
 
 /**
  * Walk one directory, applying {@link renamePackageReferences} to every file.
  * @param directory - absolute directory to walk.
- * @param stripSourceMaps - whether JavaScript files also lose their map reference.
+ * @param publishBuild - whether JavaScript files also lose their map reference and build paths.
  */
-function walk(directory, stripSourceMaps = false) {
+function walk(directory, publishBuild = false) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
-    if (entry.isDirectory()) walk(path, stripSourceMaps)
+    if (entry.isDirectory()) walk(path, publishBuild)
     else {
       renamePackageReferences(path)
-      if (stripSourceMaps) stripSourceMapReference(path)
+      if (publishBuild) publishArtifact(path)
     }
   }
 }
