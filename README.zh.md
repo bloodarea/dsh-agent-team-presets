@@ -1,8 +1,3 @@
----
-description: "在设置中配置可复用的 agent Team（智能体团队）并按会话选用其中一个，由 captain 以你已经选好的模型主持该会话，并按各自的提示词、模型、推理强度与工具召唤成员。"
-kind: "package-bundle"
----
-
 # dsh-agent-team-presets
 
 [English](README.md) | 中文

@@ -1,8 +1,3 @@
----
-description: "Configure reusable Agent Teams in Settings and select one per Session, so a captain leads the Session on the model you already selected and summons members with their own prompt, model, reasoning effort, and tools."
-kind: "package-bundle"
----
-
 # dsh-agent-team-presets
 
 English | [中文](README.zh.md)
