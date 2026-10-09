@@ -13,8 +13,32 @@ English | [中文](README.zh.md)
 
 `dsh-agent-team-presets` adds a Settings page that configures named Agent Teams and a composer control that applies one Team to a Session. A Team has a captain and any number of members: the captain carries its own prompt and tool policy, while each member also carries its own provider/model route and reasoning effort. Applying a Team installs the captain's prompt, restricts its tools, and registers `spawn_team_member`, which summons a member with that member's own persona, route, effort, and tools. A captain leads on the model the Session already selected.
 
+<a id="project-introduction"></a>
+## Project introduction
+
+> Turn DeepSeek Harness Agent Teams from ad-hoc lineups into configurable, reusable professional AI teams.
+
+**dsh-agent-team-presets** is a visual Agent Team preset manager for DeepSeek Harness. It configures roles, per-member models, reasoning effort, system prompts, and tool permissions, so a professional AI team is configured once and reused on demand.
+
+<a id="why-this-plugin"></a>
+## Why this plugin?
+
+DeepSeek Harness already ships Agent Teams with multi-agent collaboration, but it leaves room in per-team configuration and reuse.
+
+This plugin addresses five gaps:
+
+- **Teams are hard to reuse.** Native teams focus on runtime creation and collaboration and offer no visual preset management; this plugin saves, duplicates, and reuses team configurations.
+- **Role setup is repetitive.** Member responsibilities no longer have to be re-described every time: each role's name, description, and system prompt are configured in advance.
+- **Splitting work across models is awkward.** Every member picks its own model and reasoning effort, so one team combines models by task; the captain keeps leading on the model the session already selected.
+- **Tool permissions have no fine-grained entry point.** The captain and each member carry their own global tool allow-list, so roles differ in what they may use.
+- **Switching teams is inconvenient.** Pick a preset team from the composer, with no repeated manual role setup.
+
+**Design principle:** native Agent Teams owns collaboration at runtime; dsh-agent-team-presets owns configuring, managing, and reusing teams.
+
 ## Table of Contents
 
+- [Project introduction](#project-introduction)
+- [Why this plugin?](#why-this-plugin)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)

@@ -10,8 +10,32 @@
 
 `dsh-agent-team-presets` 增加一个 Settings 页面来配置具名 Agent Team，并增加一个 composer 控件把某个 Team 应用到会话。一个 Team 有一个 captain 和任意数量的成员：captain 携带自己的提示词与工具策略，而每个成员在此之外还携带自己的 provider/model 路由与推理强度。应用一个 Team 会安装 captain 的提示词、限制其工具，并注册 `spawn_team_member`，它用该成员自己的 persona、路由、强度与工具召唤成员。captain 以会话已经选好的模型工作。
 
+<a id="project-introduction"></a>
+## 项目介绍
+
+> 让 DeepSeek Harness 的 Agent Teams 从临时组队，升级为可配置、可复用的专业 AI 团队。
+
+**dsh-agent-team-presets** 是一款面向 DeepSeek Harness 的可视化智能体团队预设管理插件，支持自定义角色、独立模型、推理等级、系统提示词与工具权限，让专业 AI 团队一次配置、随时复用。
+
+<a id="why-this-plugin"></a>
+## 为什么需要这个插件？
+
+DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力，但在团队的个性化配置与重复使用方面仍有提升空间。
+
+本插件主要解决以下痛点：
+
+- **团队难以复用**：原生团队侧重运行时创建与协作，缺少便捷的可视化团队预设管理；本插件支持保存、复制和复用团队配置。
+- **角色配置繁琐**：无需每次重新描述成员职责，可提前设置每个角色的名称、描述和系统提示词。
+- **多模型分工不便**：不同成员可独立指定模型与推理等级，按任务需求组合不同 AI 模型；队长继续使用当前会话选择的模型。
+- **工具权限缺乏细粒度配置入口**：为队长和成员分别设置全局工具白名单，让不同角色拥有不同的工具使用范围。
+- **团队切换不够便捷**：通过会话输入区快速选择预设团队，无需反复手动配置角色。
+
+**核心理念：** 原生 Agent Teams 负责协作运行，dsh-agent-team-presets 负责团队的配置、管理与复用。
+
 ## 目录
 
+- [项目介绍](#project-introduction)
+- [为什么需要这个插件？](#why-this-plugin)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
