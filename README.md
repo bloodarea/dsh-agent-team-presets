@@ -1,5 +1,7 @@
 # dsh-agent-team-presets
 
+<img src="banner.png" alt="Reusable Agent Team presets for DeepSeek Harness" width="100%">
+
 English | [中文](README.zh.md)
 
 > **Status: source release.** The plugin is developed as a package inside a

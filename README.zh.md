@@ -1,5 +1,7 @@
 # dsh-agent-team-presets
 
+<img src="banner_zh.png" alt="为 DeepSeek Harness 配置可复用的智能体团队预设" width="100%">
+
 [English](README.md) | 中文
 
 > **状态：源码发布。** 本插件目前作为 DeepSeek Harness 源码仓库内的一个包开发，尚不能在本仓库独立构建或安装。具体阻塞点与当前开发流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。

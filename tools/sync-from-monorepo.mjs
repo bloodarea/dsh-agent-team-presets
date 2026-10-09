@@ -63,16 +63,18 @@ const SYNCED = [
 ]
 
 /**
- * Publication status added to each README here, keyed by file name.
+ * Publication surface added to each README here, keyed by file name.
  *
  * The workspace READMEs are written for the monorepo: they open with doc-gate
- * front matter and carry no publication status. This repository replaces that
- * front matter with the status readers need, and leaves the rest of the prose
- * to the workspace copy.
+ * front matter, carry no publication status, and name no repository banner.
+ * This repository adds those three things and leaves the rest of the prose to
+ * the workspace copy.
  */
-const README_STATUS = {
+const README_PUBLICATION = {
   'README.md': {
     anchor: 'English | [中文](README.zh.md)',
+    banner: 'banner.png',
+    bannerAlt: 'Reusable Agent Team presets for DeepSeek Harness',
     status: [
       '> **Status: source release.** The plugin is developed as a package inside a',
       '> DeepSeek Harness source checkout and is not yet independently buildable or',
@@ -82,6 +84,8 @@ const README_STATUS = {
   },
   'README.zh.md': {
     anchor: '[English](README.md) | 中文',
+    banner: 'banner_zh.png',
+    bannerAlt: '为 DeepSeek Harness 配置可复用的智能体团队预设',
     status: '> **状态：源码发布。** 本插件目前作为 DeepSeek Harness 源码仓库内的一个包开发，尚不能在本仓库独立构建或安装。具体阻塞点与当前开发流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。',
   },
 }
@@ -268,15 +272,16 @@ emit(manifestPath, `${JSON.stringify(publishedManifest(workspaceManifest, curren
 /**
  * Turn one copied workspace README into this repository's published README.
  *
- * Three transforms, all mechanical: the workspace package name becomes the
- * published name, the doc-gate YAML front matter is dropped, and the
- * publication status is inserted under the language switcher. Every other
- * paragraph stays exactly as the workspace wrote it.
- * @param relative - README file name, also its {@link README_STATUS} key.
+ * Four transforms, all mechanical: the workspace package name becomes the
+ * published name, the doc-gate YAML front matter is dropped, the repository
+ * banner is inserted under the title, and the publication status is inserted
+ * under the language switcher. Every other paragraph stays exactly as the
+ * workspace wrote it.
+ * @param relative - README file name, also its {@link README_PUBLICATION} key.
  */
 function publishReadme(relative) {
   const path = join(REPO_ROOT, relative)
-  const { anchor, status } = README_STATUS[relative]
+  const { anchor, banner, bannerAlt, status } = README_PUBLICATION[relative]
   let text = readFileSync(path, 'utf8')
     .replaceAll(WORKSPACE_NAME, PACKAGE_NAME)
     .replaceAll(WORKSPACE_NAME.replace('@deepseek-ai/', '').replaceAll('/', '-'), PACKAGE_NAME)
@@ -286,6 +291,12 @@ function publishReadme(relative) {
     if (end === -1) fail(`${relative} opens with front matter that is never closed`)
     text = text.slice(end + '\n---\n'.length).replace(/^\n+/, '')
   }
+  // GitHub scales a raw <img> to the container, which keeps a 3:1 banner from
+  // overflowing a narrow file view the way a bare Markdown image can.
+  const title = /^# .+$/mu.exec(text)
+  if (title === null) fail(`${relative} has no level-one title to place the banner under`)
+  const afterTitle = title.index + title[0].length
+  text = `${text.slice(0, afterTitle)}\n\n<img src="${banner}" alt="${bannerAlt}" width="100%">${text.slice(afterTitle).replace(/^\n+/, '\n\n')}`
   const at = text.indexOf(anchor)
   if (at === -1) fail(`${relative} has no language switcher line (${anchor})`)
   const after = at + anchor.length
@@ -295,7 +306,7 @@ function publishReadme(relative) {
   emit(path, text)
 }
 
-for (const readme of Object.keys(README_STATUS)) {
+for (const readme of Object.keys(README_PUBLICATION)) {
   if (!existsSync(join(REPO_ROOT, readme))) fail(`this repository is missing ${readme}`)
   publishReadme(readme)
 }
