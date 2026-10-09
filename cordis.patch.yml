@@ -1,0 +1,12 @@
+# Agent Team presets: a Team settings page and a composer Team picker.
+#
+# The package is both the bundle (this patch) and the plugin it composes: one
+# Host row serves the `agent-team-presets` settings namespace and applies a
+# selected Team to its Session, and the same row's `./client` half renders the
+# Settings page and the composer control.
+- insert:
+    - id: agent-team-presets
+      name: 'dsh-agent-team-presets'
+      config:
+        teams: []
+        selections: []

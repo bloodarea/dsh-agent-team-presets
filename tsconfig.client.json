@@ -1,0 +1,61 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../client-ui-agent-team/tsconfig.json"
+    },
+    {
+      "path": "../../client/locale/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/store"
+    },
+    {
+      "path": "../../client/ui-conversation/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-primitives"
+    },
+    {
+      "path": "../../client/ui-renderer"
+    },
+    {
+      "path": "../../client/ui-settings/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-slots"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../util/values"
+    }
+  ],
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/presets.ts",
+    "src/client/index.ts",
+    "src/client/appearance.ts",
+    "src/client/locales.ts",
+    "src/client/team-presets-controller.ts",
+    "src/client/FieldPicker.tsx",
+    "src/client/TeamListView.tsx",
+    "src/client/TeamEditorView.tsx",
+    "src/client/TeamAgentView.tsx",
+    "src/client/TeamPresetsSection.tsx",
+    "src/client/ComposerTeamSelect.tsx"
+  ]
+}

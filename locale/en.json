@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent team presets",
+    "description": "Reusable Agent Team presets for DeepSeek Harness: a captain plus members with their own prompt, model, reasoning effort, and tools."
+  }
+}

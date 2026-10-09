@@ -1,0 +1,63 @@
+# Captain and member tool policies over the shipped headless profile.
+#
+# The captain runs with custom-empty permissions (every configurable global tool
+# denied), while its member is allow-listed to exactly one global tool. The
+# fixture owns only the mock model route, the isolated session root, the two
+# global tools, and the Team selection.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: agent-loop
+  config:
+    agents:
+      - id: main
+        sessionId: main
+        provider: team-permission-mock
+        model: team-permission-mock
+        cwd: !!js process.cwd()
+
+- id: session-persistence-jsonl
+  config:
+    root: './.sessions'
+    compression: none
+
+- insert:
+    - id: team-permission-mock
+      name: './mock-llm.ts'
+
+    - id: team-permission-echo
+      name: './echo-tool.ts'
+
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+
+    - id: agent-team-presets
+      name: 'dsh-agent-team-presets'
+      config:
+        teams:
+          - id: restricted-team
+            name: Restricted
+            description: Ships one feature with a restricted tool set
+            captain:
+              name: captain
+              color: ''
+              description: Leads the restricted team
+              toolMode: custom
+              tools: []
+              systemPrompt: ''
+            members:
+              - name: member
+                color: ''
+                description: member allowed to run the echo tool
+                provider: ''
+                model: ''
+                reasoningEffort: ''
+                toolMode: custom
+                tools: [team_permission_echo]
+                systemPrompt: You run the echo tool when asked.
+        selections:
+          - sessionId: main
+            teamId: restricted-team

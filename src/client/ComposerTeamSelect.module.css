@@ -1,0 +1,61 @@
+/* The composer tool row's Team chip, matching the sibling permission and
+ * model triggers. Colors resolve through `--dsw-alias-*` tokens only. */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 160px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.trigger:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.trigger:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.triggerIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.triggerIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.triggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The applied Team's configured captain color; the value is per-Team data, so it
+ * arrives as an inline custom property. */
+.accentDot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* The color is per-Team data, applied inline. */
+}
