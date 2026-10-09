@@ -35,6 +35,16 @@ Two independent blockers, both outside this repository.
    baked into the artifact, so a build produced from the monorepo under the old
    package name would not load under this package name.
 
+   The workspace copy also cannot take this package name. That checkout pairs
+   `packages/experimental/` with an `@deepseek-ai/dsh-experimental-` name:
+   `packages/client/tsdown.client.ts` derives "may this client bundle inline
+   experimental inputs" from the bundle id, and the id has to equal the package
+   name because it becomes the `/plugins/<id>/client.js` resource. Renaming the
+   workspace copy makes its own `lib/` artifact an experimental input to its own
+   bundle, and the build fails with `client bundle isolation (<name>):
+   experimental input`. `tools/sync-from-monorepo.mjs` performs the rename
+   instead.
+
 ## Current development workflow
 
 Develop and test inside a DeepSeek Harness source checkout at the `0.2.0-rc`

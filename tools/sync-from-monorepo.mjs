@@ -8,6 +8,14 @@
  * preset. This repository is the community package: it carries a standalone
  * name, version, repository metadata, and published version ranges.
  *
+ * The workspace copy cannot carry the community name itself. That checkout pairs
+ * a package under `packages/experimental/` with an `@deepseek-ai/dsh-experimental-`
+ * name at build time: `packages/client/tsdown.client.ts` decides whether a client
+ * bundle may inline experimental inputs from the bundle id alone, and the id has
+ * to equal the package name because it becomes the `/plugins/<id>/client.js`
+ * resource. A community-named package in that directory is rejected as an
+ * experimental input to its own bundle. The rename therefore lives here.
+ *
  * Everything except that identity is copied verbatim, so the two copies cannot
  * drift in behavior. Files that exist only here (LICENSE, locale/, .gitignore,
  * DEVELOPMENT.md, tools/) are never touched.
@@ -206,6 +214,9 @@ function publishRanges(sections) {
 function publishedManifest(workspace, current) {
   const manifest = structuredClone(workspace)
   manifest.name = PACKAGE_NAME
+  // The workspace copy is a private local development package; this repository
+  // is the publishable one.
+  delete manifest.private
   for (const field of REPO_OWNED_FIELDS) {
     if (current?.[field] !== undefined) manifest[field] = current[field]
   }
