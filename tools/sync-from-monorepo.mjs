@@ -53,6 +53,8 @@ const PACKAGE_NAME = 'dsh-agent-team-presets'
 const SYNCED = [
   'src',
   'tests',
+  'lib',
+  'locale',
   'cordis.patch.yml',
   'tsconfig.json',
   'tsconfig.host.json',
@@ -61,6 +63,17 @@ const SYNCED = [
   'README.md',
   'README.zh.md',
 ]
+
+/**
+ * Build outputs dropped from the published `lib/`.
+ *
+ * Source maps would be stale: this tool rewrites the package name in the
+ * generated JavaScript, which shifts columns on the affected lines, and a map
+ * still describing the workspace name is worse than none. `tsbuildinfo` is
+ * incremental-build state with no publication meaning. The community plugins
+ * that ship a built `lib/` ship no maps either.
+ */
+const LIB_EXCLUDED = /\.(?:map|tsbuildinfo)$/
 
 /**
  * Publication surface added to each README here, keyed by file name.
@@ -165,13 +178,16 @@ function copyFromSource(relative) {
   if (!check) {
     rmSync(to, { recursive: true, force: true })
     mkdirSync(dirname(to), { recursive: true })
-    cpSync(from, to, { recursive: true })
+    cpSync(from, to, {
+      recursive: true,
+      ...relative === 'lib' ? { filter: (source) => !LIB_EXCLUDED.test(source) } : {},
+    })
   }
   written.push(relative)
 }
 
 /** Every text extension whose contents name the workspace package. */
-const TEXT_EXTENSIONS = ['.ts', '.tsx', '.json', '.yml', '.yaml', '.md']
+const TEXT_EXTENSIONS = ['.ts', '.tsx', '.js', '.json', '.yml', '.yaml', '.md']
 
 /**
  * Rewrite the workspace package name to the published name in one copied file.
@@ -238,24 +254,41 @@ function publishedManifest(workspace, current) {
 for (const relative of SYNCED) copyFromSource(relative)
 
 /** Directories that need a recursive pass for package-name references. */
-const renameRoots = SYNCED.filter(relative => relative === 'src' || relative === 'tests')
+const renameRoots = SYNCED.filter(relative => relative === 'src' || relative === 'tests' || relative === 'lib')
   .map(relative => join(REPO_ROOT, relative))
 
 const { readdirSync } = await import('node:fs')
 
 /**
+ * Drop a trailing `sourceMappingURL` comment.
+ *
+ * The maps are not published, so the reference would only 404 in a browser.
+ * @param path - absolute path of one copied JavaScript file.
+ */
+function stripSourceMapReference(path) {
+  if (!path.endsWith('.js')) return
+  const original = readFileSync(path, 'utf8')
+  const stripped = original.replace(/\n?\/\/# sourceMappingURL=.*\n?$/u, '\n')
+  if (stripped !== original) emit(path, stripped)
+}
+
+/**
  * Walk one directory, applying {@link renamePackageReferences} to every file.
  * @param directory - absolute directory to walk.
+ * @param stripSourceMaps - whether JavaScript files also lose their map reference.
  */
-function walk(directory) {
+function walk(directory, stripSourceMaps = false) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
-    if (entry.isDirectory()) walk(path)
-    else renamePackageReferences(path)
+    if (entry.isDirectory()) walk(path, stripSourceMaps)
+    else {
+      renamePackageReferences(path)
+      if (stripSourceMaps) stripSourceMapReference(path)
+    }
   }
 }
 
-for (const root of renameRoots) walk(root)
+for (const root of renameRoots) walk(root, root === join(REPO_ROOT, 'lib'))
 for (const relative of ['cordis.patch.yml', 'tsdown.config.ts']) {
   renamePackageReferences(join(REPO_ROOT, relative))
 }
