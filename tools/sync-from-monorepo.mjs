@@ -55,6 +55,7 @@ const SYNCED = [
   'tests',
   'lib',
   'locale',
+  'docs',
   'cordis.patch.yml',
   'tsconfig.json',
   'tsconfig.host.json',

@@ -35,10 +35,34 @@ This plugin addresses five gaps:
 
 **Design principle:** native Agent Teams owns collaboration at runtime; dsh-agent-team-presets owns configuring, managing, and reusing teams.
 
+<a id="screenshots"></a>
+## Screenshots
+
+**The Team control in the composer** — apply one preset Team to this Session, or clear it.
+
+![The Team control in the composer](docs/images/01-composer-team-control.png)
+
+**Settings → Agent team presets** — every configured Team, with create, duplicate, and delete.
+
+![The Team list in Settings](docs/images/02-team-list.png)
+
+**One Team** — its name and description, the captain, and the member roster.
+
+![One Team's editor](docs/images/03-team-editor.png)
+
+**One member** — its own provider, model, and reasoning effort. The captain leads on the Session model, so only a member carries a route.
+
+![One member's route pickers](docs/images/04-member-route.png)
+
+**The model picker** — every provider and model the deployment currently advertises.
+
+![The model picker](docs/images/05-model-picker.png)
+
 ## Table of Contents
 
 - [Project introduction](#project-introduction)
 - [Why this plugin?](#why-this-plugin)
+- [Screenshots](#screenshots)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)

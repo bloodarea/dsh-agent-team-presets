@@ -57,8 +57,9 @@ npx tsc -b packages/experimental/agent-team-presets/tsconfig.client.json
 pnpm --filter @deepseek-ai/dsh-experimental-agent-team-presets run bundle
 ```
 
-Then sync the source here. `lib/` is intentionally not committed while the
-bundle identity is unsettled.
+Then sync the source here. `lib/` is committed: `dsh plugin add github:...`
+installs this package as-is, so the build output has to be in the repository.
+The sync tool copies it and rewrites the package name inside it.
 
 ## What unblocks the standalone path
 
@@ -68,9 +69,22 @@ bundle identity is unsettled.
 2. This repository gets a self-contained build: local `tsconfig` files that
    resolve dependencies from `node_modules` instead of workspace project
    references, and a local client-bundle preset that produces the module-loader
-   artifact without reading the checkout.
-3. `lib/` is then built here and committed, so the package installs straight
-   from this repository.
+   artifact without reading the checkout. Until then `lib/` is produced in the
+   workspace checkout and copied by `tools/sync-from-monorepo.mjs`.
+
+## Screenshots
+
+`docs/images/` holds the README screenshots. They come from a clean profile that
+loads only the shipped DSH bundles, the Agent Teams bundle, and this package
+installed from GitHub, so they show what this plugin adds rather than the
+capturing machine's other plugins:
+
+    dsh plugin --profile readme-demo add github:bloodarea/dsh-agent-team-presets
+    dsh readme-demo --port 3081
+
+Each capture is the settings dialog element or a clip around the composer, never
+the full window: a profile shares the machine's Session store, so a full-window
+shot would publish unrelated Session titles.
 
 ## Repository layout
 
@@ -78,6 +92,9 @@ bundle identity is unsettled.
 | --- | --- |
 | `src/` | Host half (`index.ts`, `application.ts`, `config.ts`, `presets.ts`, `tool-catalog.ts`), client half (`src/client/`), and the Typert remote contract. |
 | `tests/` | Unit, composition, and locale suites. |
-| `cordis.patch.yml` | The bundle patch that inserts this plugin's row. |
+| `lib/` | Built output, committed so `dsh plugin add github:...` installs a runnable package. |
 | `locale/` | Localized display metadata for the plugin list. |
-| `tsconfig.*.json`, `tsdown.config.ts` | Build configuration, currently coupled to the checkout. |
+| `docs/images/` | README screenshots. |
+| `tools/` | `sync-from-monorepo.mjs`, which copies and renames from the workspace checkout. |
+| `cordis.patch.yml` | The bundle patch that inserts this plugin's row. |
+| `tsconfig.*.json`, `tsdown.config.ts` | Build configuration, coupled to the checkout. |

@@ -32,10 +32,34 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力，但�
 
 **核心理念：** 原生 Agent Teams 负责协作运行，dsh-agent-team-presets 负责团队的配置、管理与复用。
 
+<a id="screenshots"></a>
+## 界面预览
+
+**对话框里的团队控件** —— 为本会话启用一个预设团队，或清除选择。
+
+![对话框里的团队控件](docs/images/01-composer-team-control.png)
+
+**设置 → 智能体团队预设** —— 列出全部已配置团队，可新建、复制、删除。
+
+![设置里的团队列表](docs/images/02-team-list.png)
+
+**单个团队** —— 团队名称与用途、队长，以及队员名单。
+
+![单个团队的编辑页](docs/images/03-team-editor.png)
+
+**单个队员** —— 自带提供商、模型与思考强度。队长使用会话当前模型，因此只有队员携带路由。
+
+![队员的路由选择器](docs/images/04-member-route.png)
+
+**模型选择器** —— 列出当前部署实际提供的全部提供商与模型。
+
+![模型选择器](docs/images/05-model-picker.png)
+
 ## 目录
 
 - [项目介绍](#project-introduction)
 - [为什么需要这个插件？](#why-this-plugin)
+- [界面预览](#screenshots)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
