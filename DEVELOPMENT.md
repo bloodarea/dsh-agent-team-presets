@@ -7,6 +7,24 @@ installs the committed `lib/` without building. Developing and rebuilding the
 plugin still requires a DeepSeek Harness source checkout. This file distinguishes
 that source-build limitation from the supported installation path.
 
+## Package identity and displayed version
+
+The published community package is `dsh-agent-team-presets@0.1.3`. The workspace
+copy is `@deepseek-ai/dsh-experimental-agent-team-presets` and follows the
+Harness's workspace version (for example, `0.2.0-rc.2`). Plugin details report
+the loaded package's own manifest version; linking the workspace copy does not
+make the GUI report the community release version. The sync tool preserves this
+repository's independent version while renaming the copied artifacts.
+
+To switch a running profile from development to release, back up its configuration,
+remove the workspace dependency and bundle selection, install the community
+release into that same profile, and change the existing `agent-team-presets`
+entry's module name to `dsh-agent-team-presets` without dropping its Team config
+or Session selections. Never enable both packages at once. Restart the running
+Harness after changing package identities, then refresh the GUI and verify the
+package name, `v0.1.3`, and component status. A page refresh alone can retain a
+stale development client entry in the Host's module table.
+
 ## What works today
 
 The plugin installs from GitHub into a compatible Harness using its prebuilt

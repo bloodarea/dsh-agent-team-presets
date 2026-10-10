@@ -4,9 +4,13 @@
 
 [English](README.md) | 中文
 
-> **状态：社区插件。** 安装：`dsh plugin add github:bloodarea/dsh-agent-team-presets`；
-> 需要 DeepSeek Harness 运行在 `0.2.0-rc` 线或更高版本，插件管理器会按声明的 peer 强制校验。
-> `lib/` 已预构建，安装时无需构建；但**修改源码**需要 DSH 源码检出目录 —— 见
+> **状态：社区插件 v0.1.3。** 固定版本安装：
+> `dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.3`。
+> 支持的 Harness peer 范围为 `>=0.2.0-rc.1 <0.3.0`，由插件管理器校验；Harness 版本不是本插件版本。
+> 包名为 `dsh-agent-team-presets` 的插件详情应显示 `v0.1.3`。
+> 若卡片显示 `@deepseek-ai/dsh-experimental-agent-team-presets`，加载的是 monorepo 开发包，
+> 其版本跟随 Harness（例如 `0.2.0-rc.2`），不是本社区发布版。
+> `lib/` 已预构建，安装无需构建；重建源码需要 Harness 检出目录 —— 见
 > [DEVELOPMENT.md](DEVELOPMENT.md) 与 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 概述
@@ -77,6 +81,23 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力，但�
 
 把该 bundle 安装到已组合 `@deepseek-ai/dsh-experimental-agent-team-profile`（Team 服务、Team 工具与 Web roster）的 profile 中，然后打开 Settings → Agent team presets。
 
+### 安装、升级与版本确认
+
+```sh
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.3
+```
+
+把 `<profile>` 替换为 GUI 实际运行的 profile（例如 `web`）。发布新版不会自动更新已安装插件：
+先备份 profile 与团队配置，再移除已安装包，并在同一 profile 安装固定版本。
+若旧包是开发链接，应移除 `@deepseek-ai/dsh-experimental-agent-team-presets`，
+而不是 `dsh-agent-team-presets`。不要同时启用两个包：它们共享 `agent-team-presets`
+设置入口与客户端注册。迁移开发 profile 时，保留该入口 id 下的团队配置和会话选择记录，
+将模块名与启用的 bundle 改为 `dsh-agent-team-presets`。
+
+切换包身份后，重启正在运行的 Harness 并刷新 GUI；仅刷新页面可能仍保留 Host 模块表中的旧
+客户端入口，造成重复插件启动失败。确认插件详情同时显示 `dsh-agent-team-presets` 和
+`v0.1.3`，且组件处于运行中。Harness 自身的 `0.2.0-rc.*` 是另一套兼容版本要求。
+
 ### 配置一个 Team
 
 Settings → Agent team presets 是三个层叠页面，因此狭窄的 Settings 面板不会拥挤：
@@ -85,7 +106,7 @@ Settings → Agent team presets 是三个层叠页面，因此狭窄的 Settings
 2. **One Team** —— 它的名称与描述、captain 行以及成员 roster。添加成员会打开该成员的页面。
 3. **One agent**（captain 或成员）—— 身份、工具与系统提示词各占一张卡片；成员页面额外有模型卡片，并可删除该成员。
 
-每次编辑都先在共享页脚中暂存，再由 **Save** 控件写入；存储值保存在 profile 的用户设置文档中。Settings 在团队任务进行中仍接受保存，不会中断任务。只要会话的 captain 为 `running`，或任一 teammate 为 `running` / `provisioning`，该会话就处于执行中；队长 persona、briefing、成员工具描述与名单、工具权限均保持已应用的定义，任务期间新召唤的成员也使用该定义。成员的**模型路由**与每个槽位的**颜色**被有意排除在这份冻结定义之外，因为二者在需要时才从存储的 Team 读取：修正后的 provider、模型或推理强度会被进行中的任务在下次召唤成员时直接采用，无需重启任务；颜色改动也会立即重绘。会话整体空闲后，在下一次团队任务开始前采用最新保存的定义；连续保存以最新值为准。共享同一预设的会话分别采用。
+每次编辑都先在共享页脚中暂存，再由 **Save** 控件写入；存储值保存在 profile 的用户设置文档中。Settings 在团队任务进行中仍接受保存，不会中断任务。只要会话的 captain 为 `running`，或任一 teammate 为 `running` / `provisioning`，该会话就处于执行中；队长 persona、briefing、成员预设提示词与角色描述、成员工具描述与名单、工具权限均保持已应用的定义，任务期间新召唤的成员也使用该定义。成员的**模型路由**与每个槽位的**颜色**被有意排除在这份冻结定义之外，因为二者在需要时才从存储的 Team 读取：修正后的 provider、模型或推理强度会被进行中的任务在下次召唤成员时直接采用，无需重启任务；颜色改动也会立即重绘。会话整体空闲后，在下一次团队任务开始前采用最新保存的定义；连续保存以最新值为准。共享同一预设的会话分别采用。
 
 页脚汇总在线会话，报告所选 Team 的执行状态：
 

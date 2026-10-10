@@ -6,8 +6,20 @@ the plugin manager before an install or enable.
 
 ## 0.1.3
 
+- **Publication clarification (same-version tag replacement).** The community
+  package is `dsh-agent-team-presets@0.1.3`; the monorepo development package is
+  `@deepseek-ai/dsh-experimental-agent-team-presets` and follows the Harness's
+  version, such as `0.2.0-rc.2`. README and development notes now distinguish
+  those identities, document same-profile migration and a Harness restart after
+  switching package identities, and explicitly include member prompts in the
+  frozen definition. Runtime code is unchanged by this publication correction.
+  The `v0.1.3` tag was moved to include these documentation corrections; an
+  already installed copy does not automatically receive them. Use the resolved
+  commit id when an immutable pin is required.
+- 中文：发布说明修正（同版本替换标签）：社区包为 `dsh-agent-team-presets@0.1.3`，monorepo 开发包 `@deepseek-ai/dsh-experimental-agent-team-presets` 的版本跟随 Harness，例如 `0.2.0-rc.2`。文档现明确区分两种来源，说明同 profile 迁移与切换包身份后的 Harness 重启，并明确成员提示词也属于冻结定义。本次修正不改变运行时代码；`v0.1.3` 标签移到包含文档修正的新提交，已有安装不会自动更新。需要不可变固定时请使用解析后的提交 id。
 - **Team definitions stay consistent throughout a task.** The captain's persona,
-  briefing, member roster, and tool policies are adopted together between tasks,
+  briefing, member preset prompts and role descriptions, member roster, and
+  tool policies are adopted together between tasks,
   not replaced while the captain or a teammate is running or provisioning.
   Selection changes and removing a Team follow the same adoption boundary;
   members still running under a previously selected Team also block model-issued
@@ -19,7 +31,7 @@ the plugin manager before an install or enable.
   added, or removed Teams from the Host, preserves edits to unaffected Teams,
   and reports when a stored update replaces a local edit. Saving coordinates
   against the latest stored document rather than silently restoring stale Teams.
-- 中文：团队定义在任务期间保持一致，队长提示词、briefing、成员名单与工具权限在任务间一起采用；切换或移除 Team 遵循同一边界，仍执行旧 Team 的队员也会阻止模型发起的预设写入。Settings 通过事件驱动的 Remote 流显示执行状态与待采用计数，流缺失、失败或结束不会被误判为空闲。打开的草稿会同步 Host 修改、新增或删除的 Team，保留未受影响 Team 的编辑，并提示被外部更新替换的本地编辑；保存前再次协调最新文档，避免恢复过时记录。
+- 中文：团队定义在任务期间保持一致，队长提示词、briefing、成员预设提示词与角色描述、成员名单与工具权限在任务间一起采用；切换或移除 Team 遵循同一边界，仍执行旧 Team 的队员也会阻止模型发起的预设写入。Settings 通过事件驱动的 Remote 流显示执行状态与待采用计数，流缺失、失败或结束不会被误判为空闲。打开的草稿会同步 Host 修改、新增或删除的 Team，保留未受影响 Team 的编辑，并提示被外部更新替换的本地编辑；保存前再次协调最新文档，避免恢复过时记录。
 - **A running Team task keeps its definition, not its routing.** A member's
   `provider`, `model`, and `reasoningEffort` are read from the stored Team each
   time that member is summoned, and each slot's accent color is read when the
@@ -73,10 +85,13 @@ the plugin manager before an install or enable.
 - Pin a version: `dsh plugin add github:bloodarea/dsh-agent-team-presets#v0.1.3`
 - Update: this Harness does not update an installed plugin automatically, so
   remove it and install the new version. A GitHub spec resolves to the default
-  branch head, so pinning a tag is what makes "which version am I on" exact. The
-  installed version is the `version` field of the plugin's own `package.json`,
-  and the plugin list shows it as `v{version}`.
-- Host requirement: a DeepSeek Harness on the `0.2.0-rc` line or later. The
+  branch head. A release tag selects that release, but this `v0.1.3` tag was
+  explicitly replaced to correct its documentation; a commit id is immutable.
+  The installed version comes from the loaded package's own `package.json` and
+  appears in plugin details as `v{version}`. Check the package name too: a
+  monorepo development link reports its Harness-aligned version instead of the
+  community package's version. See the README for migration and restart steps.
+- Host requirement: a DeepSeek Harness satisfying `>=0.2.0-rc.1 <0.3.0`. The
   plugin manager evaluates the declared peers against the running harness and
   refuses `incompatible-version` when they do not match.
 - `lib/` ships prebuilt, so installing needs no build step; changing the source

@@ -44,6 +44,9 @@ const WORKSPACE_NAME = '@deepseek-ai/dsh-experimental-agent-team-presets'
 /** The published name this repository ships under. */
 const PACKAGE_NAME = 'dsh-agent-team-presets'
 
+/** Release identity belongs to this repository, not the Harness workspace. */
+const RELEASE_VERSION = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).version
+
 /**
  * Files and directories copied from the monorepo on every sync.
  *
@@ -90,12 +93,16 @@ const README_PUBLICATION = {
     banner: 'banner.png',
     bannerAlt: 'Reusable Agent Team presets for DeepSeek Harness',
     status: [
-      '> **Status: community plugin.** Install it with',
-      '> `dsh plugin add github:bloodarea/dsh-agent-team-presets`; it needs a DeepSeek',
-      '> Harness on the `0.2.0-rc` line or later, which the plugin manager enforces from',
-      '> the declared peers. `lib/` ships prebuilt, so installing builds nothing, but',
-      '> *changing* the source needs a DeepSeek Harness checkout — see',
-      '> [DEVELOPMENT.md](DEVELOPMENT.md) and [CHANGELOG.md](CHANGELOG.md).',
+      `> **Status: community plugin v${RELEASE_VERSION}.** Install the pinned release with`,
+      `> \`dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v${RELEASE_VERSION}\`.`,
+      '> The supported Harness peer range is `>=0.2.0-rc.1 <0.3.0`, checked by the plugin',
+      '> manager; the Harness version is not this plugin\'s version. Plugin details for',
+      `> \`dsh-agent-team-presets\` should show \`v${RELEASE_VERSION}\`. A card naming`,
+      '> `@deepseek-ai/dsh-experimental-agent-team-presets` instead is the monorepo',
+      '> development package, whose version follows the Harness (for example,',
+      '> `0.2.0-rc.2`), not this community release. `lib/` ships prebuilt; rebuilding',
+      '> source needs a Harness checkout — see [DEVELOPMENT.md](DEVELOPMENT.md) and',
+      '> [CHANGELOG.md](CHANGELOG.md).',
     ].join('\n'),
   },
   'README.zh.md': {
@@ -103,9 +110,13 @@ const README_PUBLICATION = {
     banner: 'banner_zh.png',
     bannerAlt: '为 DeepSeek Harness 配置可复用的智能体团队预设',
     status: [
-      '> **状态：社区插件。** 安装：`dsh plugin add github:bloodarea/dsh-agent-team-presets`；',
-      '> 需要 DeepSeek Harness 运行在 `0.2.0-rc` 线或更高版本，插件管理器会按声明的 peer 强制校验。',
-      '> `lib/` 已预构建，安装时无需构建；但**修改源码**需要 DSH 源码检出目录 —— 见',
+      `> **状态：社区插件 v${RELEASE_VERSION}。** 固定版本安装：`,
+      `> \`dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v${RELEASE_VERSION}\`。`,
+      '> 支持的 Harness peer 范围为 `>=0.2.0-rc.1 <0.3.0`，由插件管理器校验；Harness 版本不是本插件版本。',
+      `> 包名为 \`dsh-agent-team-presets\` 的插件详情应显示 \`v${RELEASE_VERSION}\`。`,
+      '> 若卡片显示 `@deepseek-ai/dsh-experimental-agent-team-presets`，加载的是 monorepo 开发包，',
+      '> 其版本跟随 Harness（例如 `0.2.0-rc.2`），不是本社区发布版。',
+      '> `lib/` 已预构建，安装无需构建；重建源码需要 Harness 检出目录 —— 见',
       '> [DEVELOPMENT.md](DEVELOPMENT.md) 与 [CHANGELOG.md](CHANGELOG.md)。',
     ].join('\n'),
   },
@@ -135,6 +146,23 @@ const REPO_EXTRA_DEV_DEPENDENCIES = {
   tsdown: '^0.22.2',
   typescript: '^5.6.0',
   vitest: '^4.1.8',
+}
+
+/** Preserve repository-owned installation guidance across a workspace sync. */
+const README_INSTALL_HEADINGS = {
+  'README.md': '### Install, upgrade, and verify the version',
+  'README.zh.md': '### 安装、升级与版本确认',
+}
+const readmeInstallGuidance = new Map()
+for (const [relative, heading] of Object.entries(README_INSTALL_HEADINGS)) {
+  const path = join(REPO_ROOT, relative)
+  if (!existsSync(path)) continue
+  const text = readFileSync(path, 'utf8')
+  const start = text.indexOf(`${heading}\n`)
+  if (start === -1) continue
+  const end = text.indexOf('\n### ', start + heading.length)
+  if (end === -1) throw new Error(`sync: ${relative} installation section has no following heading`)
+  readmeInstallGuidance.set(relative, text.slice(start, end))
 }
 
 const check = process.argv.includes('--check')
@@ -350,6 +378,21 @@ function publishReadme(relative) {
   // Exactly one blank line on each side of the status block, whatever the
   // workspace README had there.
   text = `${text.slice(0, after)}\n\n${status}${text.slice(after).replace(/^\n+/, '\n\n')}`
+  const guidance = readmeInstallGuidance.get(relative)
+  const heading = README_INSTALL_HEADINGS[relative]
+  if (guidance !== undefined && !text.includes(`${heading}\n`)) {
+    const useHeading = text.indexOf('## ', text.indexOf('<a id="use-this-package">'))
+    const nextSection = text.indexOf('\n### ', useHeading)
+    if (useHeading === -1 || nextSection === -1) fail(`${relative} has no installation insertion point`)
+    text = `${text.slice(0, nextSection)}\n${guidance}\n${text.slice(nextSection)}`
+  }
+  // Make the frozen member persona explicit even when the workspace prose
+  // lists only its tool description and roster.
+  text = text
+    .replace('its captain persona, briefing, member tool description and roster, and tool permissions keep the applied definition',
+      'its captain persona, briefing, member preset prompts and role descriptions, member tool description and roster, and tool permissions keep the applied definition')
+    .replace('队长 persona、briefing、成员工具描述与名单、工具权限均保持已应用的定义',
+      '队长 persona、briefing、成员预设提示词与角色描述、成员工具描述与名单、工具权限均保持已应用的定义')
   emit(path, text)
 }
 

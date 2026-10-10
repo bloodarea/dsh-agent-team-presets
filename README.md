@@ -4,12 +4,16 @@
 
 English | [中文](README.zh.md)
 
-> **Status: community plugin.** Install it with
-> `dsh plugin add github:bloodarea/dsh-agent-team-presets`; it needs a DeepSeek
-> Harness on the `0.2.0-rc` line or later, which the plugin manager enforces from
-> the declared peers. `lib/` ships prebuilt, so installing builds nothing, but
-> *changing* the source needs a DeepSeek Harness checkout — see
-> [DEVELOPMENT.md](DEVELOPMENT.md) and [CHANGELOG.md](CHANGELOG.md).
+> **Status: community plugin v0.1.3.** Install the pinned release with
+> `dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.3`.
+> The supported Harness peer range is `>=0.2.0-rc.1 <0.3.0`, checked by the plugin
+> manager; the Harness version is not this plugin's version. Plugin details for
+> `dsh-agent-team-presets` should show `v0.1.3`. A card naming
+> `@deepseek-ai/dsh-experimental-agent-team-presets` instead is the monorepo
+> development package, whose version follows the Harness (for example,
+> `0.2.0-rc.2`), not this community release. `lib/` ships prebuilt; rebuilding
+> source needs a Harness checkout — see [DEVELOPMENT.md](DEVELOPMENT.md) and
+> [CHANGELOG.md](CHANGELOG.md).
 
 ## Summary
 
@@ -79,6 +83,28 @@ This plugin addresses five gaps:
 
 Install the bundle into a profile that already composes `@deepseek-ai/dsh-experimental-agent-team-profile` (the Team service, the Team tools, and the Web roster), then open Settings → Agent team presets.
 
+### Install, upgrade, and verify the version
+
+```sh
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.3
+```
+
+Replace `<profile>` with the profile the GUI actually runs (for example, `web`).
+Releases do not update installed plugins automatically: back up the profile and
+its Team configuration, remove the installed package, then install the pinned
+release into the same profile. If the old package is the development link, remove
+`@deepseek-ai/dsh-experimental-agent-team-presets`, not `dsh-agent-team-presets`.
+Do not enable both packages: they own the same `agent-team-presets` settings and
+client registrations. When migrating a development profile, keep the Team
+configuration and selections under that entry id, but replace its module name
+and the selected bundle with `dsh-agent-team-presets`.
+
+After switching package identities, restart the running Harness and refresh the
+GUI; a page refresh alone can leave the old client entry in the Host's module
+table and produce duplicate-plugin boot failures. Verify the plugin details show
+both `dsh-agent-team-presets` and `v0.1.3`, with its component running. The
+Harness's own `0.2.0-rc.*` version is a separate compatibility requirement.
+
 ### Configure a Team
 
 Settings → Agent team presets is three stacked pages, so a narrow Settings panel never crowds:
@@ -87,7 +113,7 @@ Settings → Agent team presets is three stacked pages, so a narrow Settings pan
 2. **One Team** — its name and description, the captain row, and the member roster. Adding a member opens that member's page.
 3. **One agent** (captain or member) — identity, tools, and system prompt, each in its own card; a member page adds the model card and deletes that member.
 
-Every edit is staged and written by the **Save** control in the shared footer; the stored value lives in the profile's user settings document. Settings accepts saves during a Team task without interrupting it. A Session is busy while its captain is `running` or any teammate is `running` or `provisioning`; its captain persona, briefing, member tool description and roster, and tool permissions keep the applied definition, and members summoned during that task use that definition. A member's **model route** and each slot's **color** are deliberately outside the frozen definition, because both are read from the stored Team when they are needed: saving a corrected provider, model, or reasoning effort reaches the next member the running task summons without restarting it, and a color change redraws right away. Once the Session is fully idle, it adopts the latest saved definition before its next Team task; successive saves converge to the latest value. Sessions sharing a preset adopt it independently.
+Every edit is staged and written by the **Save** control in the shared footer; the stored value lives in the profile's user settings document. Settings accepts saves during a Team task without interrupting it. A Session is busy while its captain is `running` or any teammate is `running` or `provisioning`; its captain persona, briefing, member preset prompts and role descriptions, member tool description and roster, and tool permissions keep the applied definition, and members summoned during that task use that definition. A member's **model route** and each slot's **color** are deliberately outside the frozen definition, because both are read from the stored Team when they are needed: saving a corrected provider, model, or reasoning effort reaches the next member the running task summons without restarting it, and a color change redraws right away. Once the Session is fully idle, it adopts the latest saved definition before its next Team task; successive saves converge to the latest value. Sessions sharing a preset adopt it independently.
 
 The footer reports the selected Team's execution state across online Sessions:
 
