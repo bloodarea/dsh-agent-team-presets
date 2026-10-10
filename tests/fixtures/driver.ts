@@ -58,13 +58,53 @@ try {
     agent: main,
     signal,
   })
+  const preset = await ctx.tools.execute({
+    callId: ToolCallId('captain-get-preset'),
+    name: 'get_team_preset',
+    arguments: {},
+    agent: main,
+    signal,
+  })
+  const presetRevision = (JSON.parse(preset.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')) as { revision: number }).revision
+  // Attempt a real preset write while the Team is executing. The busy gate must
+  // refuse it, and the stored Team must still report its original description at
+  // its original revision after the run.
+  const busyMembers = ctx.agentTeams.listMembers(main)
+    .filter(member => member.role === 'teammate' && (member.status === 'running' || member.status === 'provisioning')).length
+  const presetWhileBusy = await ctx.tools.execute({
+    callId: ToolCallId('captain-write-while-busy'),
+    name: 'update_team_preset',
+    arguments: { team_id: 'restricted-team', revision: presetRevision, team_description: 'rewritten while the Team runs' },
+    agent: main,
+    signal,
+  })
 
   for (const member of members) await member.whenIdle()
+  // With the Team idle the same call reaches the next gate: no user turn.
+  const presetEdit = await ctx.tools.execute({
+    callId: ToolCallId('captain-edit-preset'),
+    name: 'update_team_preset',
+    arguments: { team_id: 'restricted-team', revision: presetRevision, team_description: 'rewritten outside a turn' },
+    agent: main,
+    signal,
+  })
+  const presetAfter = await ctx.tools.execute({
+    callId: ToolCallId('captain-get-preset-after'),
+    name: 'get_team_preset',
+    arguments: { team_id: 'restricted-team' },
+    agent: main,
+    signal,
+  })
   await writeFile('tool-permissions.json', JSON.stringify({
     captainTools,
     captainSystem,
     captainDenied: { isError: denied.isError, content: denied.content },
     spawn: { isError: spawned.isError, content: spawned.content },
+    preset: { isError: preset.isError, content: preset.content },
+    presetEdit: { isError: presetEdit.isError, content: presetEdit.content },
+    busyMembers,
+    presetWhileBusy: { isError: presetWhileBusy.isError, content: presetWhileBusy.content },
+    presetAfter: { isError: presetAfter.isError, content: presetAfter.content },
     memberTools: members.map(member => ({
       id: member.id,
       tools: ctx.tools.schemas(member).map(tool => tool.name).sort(),

@@ -4,10 +4,12 @@
 
 English | [中文](README.zh.md)
 
-> **Status: source release.** The plugin is developed as a package inside a
-> DeepSeek Harness source checkout and is not yet independently buildable or
-> installable from this repository. See [DEVELOPMENT.md](DEVELOPMENT.md) for the
-> exact blockers and the current development workflow.
+> **Status: community plugin.** Install it with
+> `dsh plugin add github:bloodarea/dsh-agent-team-presets`; it needs a DeepSeek
+> Harness on the `0.2.0-rc` line or later, which the plugin manager enforces from
+> the declared peers. `lib/` ships prebuilt, so installing builds nothing, but
+> *changing* the source needs a DeepSeek Harness checkout — see
+> [DEVELOPMENT.md](DEVELOPMENT.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Summary
 
@@ -104,6 +106,27 @@ Every edit is staged and written by the **Save** control in the shared footer; t
 
 The composer's team control sits in the tool row after the permission control. Picking a Team writes this Session's selection, and the captain part applies immediately to the live Session: its prompt section and its tool scope. The model stays the one the composer already shows, because no Team writes a model selection. Picking "No team" removes the application: the Session keeps its current model, prompt, and tools until something else changes them.
 
+### Share one Team
+
+**Export** on a Team row writes that Team as one fixed JSON document, and **Import preset** reads such a document. A shared document carries only what keeps working across deployments: the Team's name and purpose, and the name, description, system prompt, and color of its captain and each member. Model routes and tool permissions stay local, because they name this deployment's providers and tools; a document that carries them is refused instead of being silently trimmed.
+
+An import matches by name. When the document's Team name is already configured, the dialog asks whether to **replace that team** or **add it under a new name**. When the captain name or a member name is already used by the Team being replaced, the same dialog asks, per name, whether to **replace that agent** or **add the imported one renamed**. A replacement writes only the fields the document carries, so the target Team keeps its model routes and tool permissions and keeps every member the document does not mention.
+
+An import lands in the draft first, so it reaches the settings document only when you press **Save**; an export writes what the page currently shows, including an unsaved draft.
+
+### Let the captain adjust a Team preset
+
+The captain of a Session also holds two tools for the case this plugin exists for: a Team ran once, and the descriptions or prompts it ran with do not yet match the work.
+
+- **`get_team_preset`** reads every editable field of this Session's Team (or of the Team a `team_id` names) with the current settings revision. When the Session selected no Team it reports `no-selection` and lists the configured Teams, so the captain asks the user which one to change instead of guessing.
+- **`update_team_preset`** replaces `team_description`, `captain_description`, `captain_system_prompt`, and per-member `description` / `system_prompt`, fenced by the revision `get_team_preset` returned.
+
+The write uses the same settings document the Settings page edits, so it triggers the same `loader/volatile-update` reconciliation: in every Session that selected that Team the captain reads the updated preset from its next model step on, and a member summoned afterwards uses the new persona. **A teammate that was already provisioned keeps the prompt it was spawned with**, because an Agent Teams member's description and persona are creation-time inputs; change its role by editing the preset and summoning again, or by sending it a new requirement.
+
+Both tools register in the Session-root Agent scope only, so a teammate never sees them, and the write additionally requires a turn the user started: an automatic continuation or a teammate's report cannot rewrite the shared preset. Names, member routes, and tool permissions are outside their reach — renaming changes a teammate target and collides with Agent Teams' permanent-name rule, so the Settings page owns it.
+
+A preset write never interrupts a running Team, and it never applies mid-run. While any Session that selected the Team has a member running or provisioning, `update_team_preset` returns `team-busy` and writes nothing: the executing teammates would keep the definition they were spawned with while the captain reads the new one. Wait for the run to end, or interrupt those members with `interrupt_agent`, then write; `get_team_preset` reports the executing count so the captain can say so up front. Beyond that the write refuses two things: a revision another writer already advanced (re-read, retry), and a standing prompt whose `{{variable}}` group could not resolve — a Team prompt is an interpolated template, so an unknown name would fail the captain's very next request instead of degrading it. Only the prompts a call supplies are checked, so an unrelated edit still succeeds on top of text the Settings page wrote.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -116,6 +139,8 @@ The Host half owns the live configuration and the per-Session applications:
 | [`src/index.ts`](src/index.ts) | Plugin entry: live Config, per-Session reconciliation on `agent/created`, `agent/disposed`, and `loader/volatile-update`. |
 | [`src/config.ts`](src/config.ts) | Volatile `teams` and `selections` fields, the continuable-provider names, and the captain-route cleanup of stored Teams. |
 | [`src/application.ts`](src/application.ts) | Applies one Team to one live Agent: prompt sections, tool scope, and the `spawn_team_member` tool. |
+| [`src/preset-editor.ts`](src/preset-editor.ts) | Pure preset edits behind the preset tools: the editable-field whitelist, member resolution, and the roster's description limit. |
+| [`src/preset-tools.ts`](src/preset-tools.ts) | The captain's `get_team_preset` and `update_team_preset`, their authority checks, and the settings write. |
 | [`src/presets.ts`](src/presets.ts) | Pure helpers shared with the browser half: teammate targets, member lookup, selection rewriting, roster text. |
 | [`src/tool-catalog.ts`](src/tool-catalog.ts) | Host Remote service `teamPresetsToolCatalog`: the global tools a member allow-list may name. |
 | [`src/client/*`](src/client) | Browser half: the Settings page, the composer control, and the shared form controller. |
@@ -208,6 +233,8 @@ The section texts and the tool schema are stable while the Team preset, its memb
 - **The allow-list masks global tools only.** A scoped registration such as the Team coordination tools (`send_message`, `team_task_*`) stays visible to a restricted agent, because `ctx.tools.restrict()` intersects global names and leaves scoped registrations in place. A member therefore keeps the tools it needs to answer its Lead.
 - **The Session model is no part of a Team.** The captain leads on whatever model the composer selected, and only members carry a route, so editing a Team never changes your model.
 - **Captains stored before this version lose their route once.** The plugin rewrites such a Team on load through the ordinary settings write, so the profile patch stops naming `provider`, `model`, and `reasoningEffort` on a captain.
+- **A preset edit reaches the captain and new members, not live teammates.** Agent Teams treats a member's description and persona as creation-time inputs with a strict provisioning lifecycle, so `update_team_preset` cannot rewrite a teammate that already exists; changing its role means editing the preset and summoning it again, or sending it a new requirement that keeps its history.
+- **A preset is shared.** Editing one changes it for every Session that selected that Team, which is why the write needs a turn the user started and reports exactly what it replaced.
 
 -----
 

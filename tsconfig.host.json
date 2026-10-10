@@ -9,6 +9,8 @@
     "src/types.ts",
     "src/config.ts",
     "src/presets.ts",
+    "src/preset-editor.ts",
+    "src/preset-tools.ts",
     "src/application.ts",
     "src/index.ts",
     "src/tool-catalog.ts"
@@ -37,6 +39,9 @@
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../session/session-projection"
     },
     {
       "path": "../../settings/settings"

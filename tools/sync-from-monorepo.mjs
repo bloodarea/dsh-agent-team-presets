@@ -90,17 +90,24 @@ const README_PUBLICATION = {
     banner: 'banner.png',
     bannerAlt: 'Reusable Agent Team presets for DeepSeek Harness',
     status: [
-      '> **Status: source release.** The plugin is developed as a package inside a',
-      '> DeepSeek Harness source checkout and is not yet independently buildable or',
-      '> installable from this repository. See [DEVELOPMENT.md](DEVELOPMENT.md) for the',
-      '> exact blockers and the current development workflow.',
+      '> **Status: community plugin.** Install it with',
+      '> `dsh plugin add github:bloodarea/dsh-agent-team-presets`; it needs a DeepSeek',
+      '> Harness on the `0.2.0-rc` line or later, which the plugin manager enforces from',
+      '> the declared peers. `lib/` ships prebuilt, so installing builds nothing, but',
+      '> *changing* the source needs a DeepSeek Harness checkout — see',
+      '> [DEVELOPMENT.md](DEVELOPMENT.md) and [CHANGELOG.md](CHANGELOG.md).',
     ].join('\n'),
   },
   'README.zh.md': {
     anchor: '[English](README.md) | 中文',
     banner: 'banner_zh.png',
     bannerAlt: '为 DeepSeek Harness 配置可复用的智能体团队预设',
-    status: '> **状态：源码发布。** 本插件目前作为 DeepSeek Harness 源码仓库内的一个包开发，尚不能在本仓库独立构建或安装。具体阻塞点与当前开发流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。',
+    status: [
+      '> **状态：社区插件。** 安装：`dsh plugin add github:bloodarea/dsh-agent-team-presets`；',
+      '> 需要 DeepSeek Harness 运行在 `0.2.0-rc` 线或更高版本，插件管理器会按声明的 peer 强制校验。',
+      '> `lib/` 已预构建，安装时无需构建；但**修改源码**需要 DSH 源码检出目录 —— 见',
+      '> [DEVELOPMENT.md](DEVELOPMENT.md) 与 [CHANGELOG.md](CHANGELOG.md)。',
+    ].join('\n'),
   },
 }
 

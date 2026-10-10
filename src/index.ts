@@ -21,6 +21,7 @@ import { applyTeamToAgent } from './application.ts'
 import type { TeamApplication } from './application.ts'
 import type { Config } from './config.ts'
 import { LEGACY_CAPTAIN_ROUTE_KEYS, withoutCaptainRoutes } from './config.ts'
+import { registerPresetTools } from './preset-tools.ts'
 import { selectedTeam } from './presets.ts'
 import TeamPresetsToolCatalog from './tool-catalog.ts'
 
@@ -36,10 +37,11 @@ const NAMESPACE = 'agent-team-presets'
 
 /**
  * Services this plugin reads: the Session agents it composes, the Team service
- * it summons members through, the tool registry its member tool joins, the
- * prompt sections its captain adds, and the settings document it owns.
+ * it summons members through, the tool registry its member and preset tools
+ * join, the prompt sections its captain adds, the session projections that
+ * authenticate a preset write, and the settings document it owns.
  */
-export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'settings']
+export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'sessionProjections', 'settings']
 
 /** Diagnostics prefix for the failures this plugin only reports. */
 const LOG = 'agent-team-presets'
@@ -75,6 +77,9 @@ async function dropStoredCaptainRoutes(ctx: Context, config: Config): Promise<vo
 export function apply(ctx: Context, config: Config): void {
   const providers = { fresh: config.freshProvider, fork: config.forkProvider }
   const applications = new Map<Agent, TeamApplication>()
+  // The preset tools belong to the Session rather than to one selected Team, so
+  // a captain can read and adjust a stored preset before any Team is selected.
+  const presetTools = new Map<Agent, () => void>()
 
   // The settings page lists the tools an allow-list may name; the catalog is a
   // Remote service so the browser never guesses a tool name.
@@ -85,6 +90,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => ctx.settings.configure({ auto: false }, ctx.fiber), 'agent-team-presets: page policy')
 
   const reconcile = (agent: Agent): void => {
+    if (!presetTools.has(agent)) presetTools.set(agent, registerPresetTools(ctx, agent, config, NAMESPACE))
     const team = selectedTeam(config.teams.get(), config.selections.get(), agent.session.id)
     const current = applications.get(agent)
     if (team === undefined) {
@@ -112,6 +118,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/disposed', ({ agent }) => {
     applications.get(agent)?.dispose()
     applications.delete(agent)
+    presetTools.get(agent)?.()
+    presetTools.delete(agent)
   })
   ctx.on('loader/volatile-update', () => {
     for (const agent of ctx.agents.list()) {
@@ -121,5 +129,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => () => {
     for (const application of applications.values()) application.dispose()
     applications.clear()
+    for (const dispose of presetTools.values()) dispose()
+    presetTools.clear()
   }, 'agent-team-presets: session applications')
 }

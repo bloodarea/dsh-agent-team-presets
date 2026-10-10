@@ -3,11 +3,29 @@ import { resolve } from 'node:path'
 import { expect, test } from 'vitest'
 import { runLoaderSmoke, LOADER_SMOKE_TEST_TIMEOUT_MS } from '@deepseek-ai/dsh-loader-smoke'
 
+/**
+ * Concatenated text of one captured tool result, so an assertion reads the
+ * model-facing wording instead of the content-block envelope.
+ * @param content - captured content blocks of one tool execution.
+ * @returns every text block joined in order.
+ */
+function resultText(content: unknown): string {
+  return (content as ReadonlyArray<{ type?: string; text?: string }>)
+    .flatMap(block => block.type === 'text' && block.text !== undefined ? [block.text] : [])
+    .join('')
+}
+
 interface Captured {
   readonly captainTools: string[]
   readonly captainSystem: string
   readonly captainDenied: { readonly isError: boolean; readonly content: unknown }
   readonly spawn: { readonly isError: boolean; readonly content: unknown }
+  readonly preset: { readonly isError: boolean; readonly content: unknown }
+  readonly presetEdit: { readonly isError: boolean; readonly content: unknown }
+  /** Teammates running or provisioning when the mid-run write was attempted. */
+  readonly busyMembers: number
+  readonly presetWhileBusy: { readonly isError: boolean; readonly content: unknown }
+  readonly presetAfter: { readonly isError: boolean; readonly content: unknown }
   readonly memberTools: ReadonlyArray<{ readonly id: string; readonly tools: string[] }>
   readonly toolResults: ReadonlyArray<{ readonly sessionId: string; readonly content: readonly string[] }>
   readonly requests: ReadonlyArray<{ readonly sessionId?: string; readonly tools: string[]; readonly system: string }>
@@ -35,11 +53,35 @@ test('applies independent captain and member tool policies through the productio
   expect(captured.captainDenied.isError).toBe(true)
   expect(captured.spawn.isError).toBe(false)
 
+  // The captain also holds the preset tools, and they work against the real
+  // settings document: a read reports the selected Team with the document's
+  // revision, while the write is refused outside a turn the user started.
+  expect(captured.captainTools).toContain('get_team_preset')
+  expect(captured.captainTools).toContain('update_team_preset')
+  expect(captured.preset.isError).toBe(false)
+  expect(resultText(captured.preset.content)).toContain('"status":"ready"')
+  expect(resultText(captured.preset.content)).toContain('"selectedTeamId":"restricted-team"')
+  expect(captured.presetEdit.isError).toBe(true)
+  expect(resultText(captured.presetEdit.content)).toContain('open model turn')
+
+  // The Team is executing when the mid-run write is attempted, so the busy gate
+  // refuses it outright: the structured `team-busy` result names the running
+  // members and the way out, and nothing reaches the document — the Team still
+  // reports its original purpose at its original revision afterwards.
+  expect(captured.busyMembers).toBeGreaterThan(0)
+  expect(captured.presetWhileBusy.isError).toBe(false)
+  expect(resultText(captured.presetWhileBusy.content)).toContain('"status":"team-busy"')
+  expect(resultText(captured.presetWhileBusy.content)).toContain('interrupt_agent')
+  expect(resultText(captured.presetAfter.content)).toContain('"status":"ready"')
+  expect(resultText(captured.presetAfter.content)).toContain('Ships one feature with a restricted tool set')
+  expect(resultText(captured.presetAfter.content)).toContain('"revision":0')
+
   // The member keeps its own allow-list, independently of the captain: it sees
   // the one allowed global tool and not the unlisted one.
   expect(captured.memberTools).toHaveLength(1)
   expect(captured.memberTools[0]?.tools).toContain('team_permission_echo')
   expect(captured.memberTools[0]?.tools).not.toContain('team_permission_blocked')
+  expect(captured.memberTools[0]?.tools).not.toContain('update_team_preset')
   expect(JSON.stringify(captured.toolResults)).toContain('member execution reached')
 
   // Every configured description reaches the model that acts on it: the captain
