@@ -40,9 +40,11 @@ the plugin manager before an install or enable.
 
 - Install: `dsh plugin add github:bloodarea/dsh-agent-team-presets`
 - Pin a version: `dsh plugin add github:bloodarea/dsh-agent-team-presets#v0.1.2`
-- Update: re-run the install command. A GitHub spec resolves to the default
-  branch head, so pinning a tag is what makes "which version am I on" exact; the
-  installed version is the `version` field of the plugin's own `package.json`.
+- Update: this Harness does not update an installed plugin automatically, so
+  remove it and install the new version. A GitHub spec resolves to the default
+  branch head, so pinning a tag is what makes "which version am I on" exact. The
+  installed version is the `version` field of the plugin's own `package.json`,
+  and the plugin list shows it as `v{version}`.
 - Host requirement: a DeepSeek Harness on the `0.2.0-rc` line or later. The
   plugin manager evaluates the declared peers against the running harness and
   refuses `incompatible-version` when they do not match.
