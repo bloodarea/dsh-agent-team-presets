@@ -11,10 +11,13 @@ import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-
 import {
   TeamPresetsController,
   createTeamPreset,
+  defaultImportResolution,
   emptyAgentPreset,
   emptyCaptainPreset,
   sameTeam,
 } from '../src/client/team-presets-controller.ts'
+import type { TeamPresetImportPlan } from '../src/client/team-presets-controller.ts'
+import { serializeTeamPreset } from '../src/preset-transfer.ts'
 import { teamAppearance } from '../src/client/appearance.ts'
 import type { TeamSelectionRecordView } from '../src/client/team-presets-controller.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset, TeamPresetsSection, ToolChoice } from '../src/types.ts'
@@ -666,6 +669,164 @@ describe('the injected business face', () => {
     // A captain leads on the Session's own model, so its stored record carries
     // only the slot fields and never restates a route.
     expect(written).toContain('"captain":{"name":"captain","color":"","description":"","toolMode":"all","tools":[],"systemPrompt":""}')
+    controller.dispose()
+  })
+})
+
+describe('sharing one Team as a document', () => {
+  /** One Team whose shared fields the tests below assert. */
+  function shareable(): TeamPreset {
+    return {
+      id: 'team-1',
+      name: 'Review team',
+      description: 'Reviews changes',
+      captain: {
+        ...EMPTY_CAPTAIN, name: 'team-lead', color: '#4c8dff', description: 'leads',
+        toolMode: 'custom', tools: ['read'], systemPrompt: 'You lead.',
+      },
+      members: [{
+        ...EMPTY_AGENT, name: 'reviewer', color: '#2fbf71', description: 'checks diffs',
+        systemPrompt: 'You review.', provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high',
+      }],
+    }
+  }
+
+  /** One controller over the supplied Teams. */
+  function controllerFor(teams: TeamPreset[]) {
+    const form = scriptedForm({ value: { teams, selections: [] } })
+    return { form, controller: new TeamPresetsController(scriptedContext(form.form)) }
+  }
+
+  /**
+   * Inspect one document, failing the test when it was refused.
+   * @param controller - the controller reading the document.
+   * @param text - the document text.
+   * @returns the plan the import would apply.
+   */
+  function planOf(controller: TeamPresetsController, text: string): TeamPresetImportPlan {
+    const inspection = controller.inspectImport(text)
+    if (!inspection.ok) throw new Error(`document refused: ${inspection.reason}`)
+    return inspection.plan
+  }
+
+  /** One incoming document: a new purpose, a new member, and the same two names. */
+  function incoming(): TeamPreset {
+    const base = shareable()
+    return {
+      ...base,
+      description: 'New purpose',
+      captain: { ...base.captain, description: 'new lead', systemPrompt: 'Lead anew.' },
+      members: [
+        { ...base.members[0]!, description: 'new checks', systemPrompt: 'Check anew.', color: '#e05c6b' },
+        { ...EMPTY_AGENT, name: 'builder', description: 'builds' },
+      ],
+    }
+  }
+
+  it('serializes the Team the page shows, routes and tool policies excluded', () => {
+    const { controller } = controllerFor([shareable()])
+    const text = controller.exportTeam(0)
+    expect(text).toBeDefined()
+    const parsed = JSON.parse(text!) as { team: { name: string; captain: { name: string }; members: { name: string }[] } }
+    expect(parsed.team.name).toBe('Review team')
+    expect(parsed.team.captain.name).toBe('team-lead')
+    expect(parsed.team.members[0]?.name).toBe('reviewer')
+    expect(text).not.toContain('deepseek')
+    expect(text).not.toContain('toolMode')
+    expect(controller.exportTeam(9)).toBeUndefined()
+    controller.dispose()
+  })
+
+  it('stages a free document as a new Team without writing the stored ones', () => {
+    const { form, controller } = controllerFor([shareable()])
+    const free = serializeTeamPreset({ ...shareable(), id: 'team-9', name: 'Build team' })
+    const plan = planOf(controller, free)
+    expect(plan.targetIndex).toBeUndefined()
+    expect(controller.applyImport(plan, defaultImportResolution(plan))).toBe('team-2')
+    expect(controller.store.getSnapshot().teams.map(team => team.name)).toEqual(['Review team', 'Build team'])
+    expect(controller.store.getSnapshot().dirty).toBe(true)
+    expect(form.mutations).toHaveLength(0)
+    controller.dispose()
+  })
+
+  it('reports the Team and the agent names a document collides with', () => {
+    const { controller } = controllerFor([shareable()])
+    const plan = planOf(controller, serializeTeamPreset(incoming()))
+    expect(plan).toMatchObject({
+      targetIndex: 0,
+      targetName: 'Review team',
+      captainConflict: 'team-lead',
+      memberConflicts: ['reviewer'],
+      suggestedTeamName: 'Review team 2',
+      suggestedCaptainName: 'team-lead 2',
+    })
+    controller.dispose()
+  })
+
+  it('overwrites the named Team, keeping its local route and tool policy', () => {
+    const { controller } = controllerFor([shareable()])
+    const plan = planOf(controller, serializeTeamPreset(incoming()))
+    const id = controller.applyImport(plan, {
+      team: 'replace', teamName: plan.suggestedTeamName, captain: 'replace', members: {},
+    })
+    expect(id).toBe('team-1')
+    const teams = controller.store.getSnapshot().teams
+    expect(teams).toHaveLength(1)
+    expect(teams[0]).toMatchObject({ description: 'New purpose' })
+    expect(teams[0]?.captain).toMatchObject({
+      name: 'team-lead', description: 'new lead', systemPrompt: 'Lead anew.',
+      toolMode: 'custom', tools: ['read'],
+    })
+    // The document's member wins the shared fields; the route it never carried stays.
+    expect(teams[0]?.members[0]).toMatchObject({
+      name: 'reviewer', description: 'new checks', systemPrompt: 'Check anew.', color: '#e05c6b',
+      provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high',
+    })
+    expect(teams[0]?.members[1]).toMatchObject({ name: 'builder', provider: '', toolMode: 'all' })
+    controller.dispose()
+  })
+
+  it('renames the imported captain and member when the user asks for new names', () => {
+    const { controller } = controllerFor([shareable()])
+    const plan = planOf(controller, serializeTeamPreset(incoming()))
+    controller.applyImport(plan, {
+      team: 'replace', teamName: plan.suggestedTeamName, captain: 'rename', members: { reviewer: 'rename' },
+    })
+    const team = controller.store.getSnapshot().teams[0]
+    expect(team?.captain.name).toBe('team-lead 2')
+    // The configured member is kept, and the imported one joins under a free name.
+    expect(team?.members.map(member => member.name)).toEqual(['reviewer', 'reviewer 2', 'builder'])
+    controller.dispose()
+  })
+
+  it('adds the document as a new Team under the resolved name', () => {
+    const { controller } = controllerFor([shareable()])
+    const plan = planOf(controller, serializeTeamPreset(incoming()))
+    const id = controller.applyImport(plan, {
+      team: 'rename', teamName: plan.suggestedTeamName, captain: 'replace', members: {},
+    })
+    expect(id).toBe('team-2')
+    const teams = controller.store.getSnapshot().teams
+    expect(teams.map(team => team.name)).toEqual(['Review team', 'Review team 2'])
+    expect(teams[1]?.members.map(member => member.name)).toEqual(['reviewer', 'builder'])
+    expect(teams[1]?.members[0]).toMatchObject({ provider: '', model: '' })
+    controller.dispose()
+  })
+
+  it('refuses a document that is not a Team preset without staging anything', () => {
+    const { controller } = controllerFor([shareable()])
+    expect(controller.inspectImport('{')).toEqual({ ok: false, reason: 'invalid-json' })
+    expect(controller.store.getSnapshot().dirty).toBe(false)
+    expect(controller.store.getSnapshot().teams).toHaveLength(1)
+    controller.dispose()
+  })
+
+  it('exposes both operations through the injected face', () => {
+    const { controller } = controllerFor([shareable()])
+    const injected = controller.inject()
+    expect(injected.exportTeam(0)).toContain('"format": "dsh-agent-team-preset"')
+    const plan = planOf(controller, serializeTeamPreset({ ...shareable(), id: 'team-9', name: 'Build team' }))
+    expect(injected.applyImport(plan, defaultImportResolution(plan))).toBe('team-2')
     controller.dispose()
   })
 })

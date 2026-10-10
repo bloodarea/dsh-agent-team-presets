@@ -47,14 +47,17 @@
     "src/css-modules.d.ts",
     "src/types.ts",
     "src/presets.ts",
+    "src/preset-transfer.ts",
     "src/client/index.ts",
     "src/client/appearance.ts",
     "src/client/locales.ts",
+    "src/client/preset-file.ts",
     "src/client/team-presets-controller.ts",
     "src/client/FieldPicker.tsx",
     "src/client/TeamListView.tsx",
     "src/client/TeamEditorView.tsx",
     "src/client/TeamAgentView.tsx",
+    "src/client/TeamImportDialog.tsx",
     "src/client/TeamPresetsSection.tsx",
     "src/client/ComposerTeamSelect.tsx"
   ]

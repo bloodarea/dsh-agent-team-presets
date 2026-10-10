@@ -11,8 +11,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { TeamAgentView } from './TeamAgentView.tsx'
 import { TeamEditorView } from './TeamEditorView.tsx'
 import type { AgentSlot } from './TeamEditorView.tsx'
+import { TeamImportDialog } from './TeamImportDialog.tsx'
 import { TeamListView } from './TeamListView.tsx'
-import type { TeamPresetsInjected } from './team-presets-controller.ts'
+import { defaultImportResolution } from './team-presets-controller.ts'
+import type { TeamPresetImportPlan, TeamPresetsInjected } from './team-presets-controller.ts'
+import { downloadPresetText, presetFileName, readPresetFile } from './preset-file.ts'
+import { IMPORT_FAILURE_KEYS } from './locales.ts'
+import type { TeamPresetsLocaleKey } from './locales.ts'
 import type { TeamAgentPreset, TeamCaptainPreset } from '../types.ts'
 import css from './TeamPresetsSection.module.css'
 
@@ -57,6 +62,10 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
   const { t } = props
   const state = props.useTeamPresets(snapshot => snapshot)
   const [view, setView] = useState<View>({ kind: 'list' })
+  const [importError, setImportError] = useState<TeamPresetsLocaleKey | undefined>(undefined)
+  const [importPlan, setImportPlan] = useState<TeamPresetImportPlan | undefined>(undefined)
+  // Each inspection replaces the pending dialog, whose choices must not survive it.
+  const [importGeneration, setImportGeneration] = useState(0)
   const { refreshCatalogue } = props
   // The settings shell mounts only the active section, so this runs on every
   // open: a route the deployment gained while the client was running must be
@@ -79,6 +88,38 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
   const openTeam = (teamId: string): void => { setView({ kind: 'team', teamId }) }
   const openAgent = (teamId: string, slot: AgentSlot): void => { setView({ kind: 'agent', teamId, slot }) }
 
+  /**
+   * Read one chosen document, then stage it or ask about the names it collides with.
+   * @param file - the document the user chose.
+   */
+  async function importDocument(file: File): Promise<void> {
+    const inspection = props.inspectImport(await readPresetFile(file))
+    if (!inspection.ok) {
+      setImportPlan(undefined)
+      setImportError(IMPORT_FAILURE_KEYS[inspection.reason])
+      return
+    }
+    setImportError(undefined)
+    if (inspection.plan.targetIndex === undefined) {
+      openTeam(props.applyImport(inspection.plan, defaultImportResolution(inspection.plan)))
+      return
+    }
+    setImportGeneration(generation => generation + 1)
+    setImportPlan(inspection.plan)
+  }
+
+  /**
+   * Write one Team out as a shareable document.
+   * @param teamId - the Team the user chose to export.
+   */
+  function exportDocument(teamId: string): void {
+    const index = teamList.findIndex(entry => entry.id === teamId)
+    const team = index < 0 ? undefined : teamList[index]
+    const text = index < 0 ? undefined : props.exportTeam(index)
+    if (team === undefined || text === undefined) return
+    downloadPresetText(presetFileName(team), text)
+  }
+
   const memberSlot = active.kind === 'agent' && active.slot !== 'captain' ? active.slot : undefined
   const agent = team === undefined || active.kind !== 'agent'
     ? undefined
@@ -92,8 +133,11 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
             teams={teamList}
             t={t}
             disabled={disabled}
+            importError={importError}
             onOpen={openTeam}
             onCreate={() => { openTeam(props.createTeam()) }}
+            onImport={(file) => { void importDocument(file) }}
+            onExport={exportDocument}
             onDuplicate={(teamId) => {
               const index = teamList.findIndex(entry => entry.id === teamId)
               if (index < 0) return
@@ -150,6 +194,20 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
           />
         )}
       </div>
+
+      {importPlan === undefined ? null : (
+        <TeamImportDialog
+          key={importGeneration}
+          plan={importPlan}
+          t={t}
+          onCancel={() => { setImportPlan(undefined) }}
+          onConfirm={(resolution) => {
+            const created = props.applyImport(importPlan, resolution)
+            setImportPlan(undefined)
+            openTeam(created)
+          }}
+        />
+      )}
 
       <footer className={css.footer}>
         {state.failed ? <span className={css.warn} role="status">{t('saveFailed')}</span> : null}

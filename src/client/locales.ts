@@ -1,5 +1,7 @@
 /** Locale bundles for the Agent Team presets page and composer control. */
 
+import type { TeamPresetImportFailure } from '../preset-transfer.ts'
+
 /** Locale keys this plugin renders. */
 export type TeamPresetsLocaleKey =
   | 'nav' | 'title' | 'description'
@@ -20,6 +22,12 @@ export type TeamPresetsLocaleKey =
   | 'modelSection' | 'promptSection' | 'toolsSection' | 'identitySection'
   | 'emptyMembers' | 'inheritSession' | 'deleteAgent' | 'roleCaptain' | 'roleMember'
   | 'composerTitle' | 'composerNone' | 'composerHint'
+  | 'importPreset' | 'exportPreset' | 'importNote' | 'importConfirm' | 'cancel' | 'close'
+  | 'importConflictTitle' | 'importTeamConflict' | 'importTeamReplace' | 'importTeamRename' | 'importNewTeamName'
+  | 'importCaptainConflict' | 'importCaptainReplace' | 'importCaptainRename'
+  | 'importMemberConflict' | 'importMemberReplace' | 'importMemberRename'
+  | 'importInvalidJson' | 'importInvalidFormat' | 'importUnsupportedVersion' | 'importUnsupportedFields'
+  | 'importDuplicateMembers' | 'importTooManyMembers' | 'importTooLarge'
 
 /** Locale namespace owned by this plugin. */
 export const NS = 'settings.agentTeamPresets'
@@ -102,6 +110,30 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   composerTitle: 'Team',
   composerNone: 'No team',
   composerHint: 'Apply one Team preset to this session.',
+  importPreset: 'Import preset',
+  exportPreset: 'Export',
+  importNote: 'A shared document carries names, descriptions, system prompts, and colors. Model routes and tool permissions stay local.',
+  importConfirm: 'Import',
+  cancel: 'Cancel',
+  close: 'Close',
+  importConflictTitle: 'Resolve import conflicts',
+  importTeamConflict: 'A team already uses this name',
+  importTeamReplace: 'Replace that team',
+  importTeamRename: 'Add as a new team',
+  importNewTeamName: 'New team name',
+  importCaptainConflict: 'Its captain already uses this name',
+  importCaptainReplace: 'Replace that captain',
+  importCaptainRename: 'Rename the imported captain',
+  importMemberConflict: 'These members already exist in that team',
+  importMemberReplace: 'Replace that member',
+  importMemberRename: 'Add it renamed',
+  importInvalidJson: 'That file is not valid JSON.',
+  importInvalidFormat: 'That file is not a Team preset document.',
+  importUnsupportedVersion: 'That document was written by a newer version of this plugin.',
+  importUnsupportedFields: 'That document carries fields a shared preset cannot hold, such as a model route or a tool permission.',
+  importDuplicateMembers: 'That document names the same member twice.',
+  importTooManyMembers: 'That document declares too many members.',
+  importTooLarge: 'That file is too large to be a Team preset.',
 }
 
 /** Simplified Chinese copy. */
@@ -182,4 +214,39 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   composerTitle: '团队',
   composerNone: '不使用团队',
   composerHint: '为本会话启用一个团队预设。',
+  importPreset: '导入预设',
+  exportPreset: '导出',
+  importNote: '共享文档只携带名称、描述、系统提示词和颜色；模型路由与工具权限保留在本地。',
+  importConfirm: '导入',
+  cancel: '取消',
+  close: '关闭',
+  importConflictTitle: '处理导入冲突',
+  importTeamConflict: '已有团队使用了这个名称',
+  importTeamReplace: '替换该团队',
+  importTeamRename: '重命名后新增',
+  importNewTeamName: '新团队名称',
+  importCaptainConflict: '该团队的队长已使用这个名称',
+  importCaptainReplace: '替换该队长',
+  importCaptainRename: '重命名导入的队长',
+  importMemberConflict: '该团队已存在这些队员',
+  importMemberReplace: '替换该队员',
+  importMemberRename: '重命名后新增',
+  importInvalidJson: '该文件不是合法的 JSON。',
+  importInvalidFormat: '该文件不是团队预设文档。',
+  importUnsupportedVersion: '该文档由更新版本的插件生成。',
+  importUnsupportedFields: '该文档包含共享预设无法携带的字段，例如模型路由或工具权限。',
+  importDuplicateMembers: '该文档中有两个队员使用了相同名称。',
+  importTooManyMembers: '该文档声明的队员数量过多。',
+  importTooLarge: '该文件过大，不像是团队预设。',
+}
+
+/** Locale key for one refused import. */
+export const IMPORT_FAILURE_KEYS: Record<TeamPresetImportFailure, TeamPresetsLocaleKey> = {
+  'invalid-json': 'importInvalidJson',
+  'invalid-format': 'importInvalidFormat',
+  'unsupported-version': 'importUnsupportedVersion',
+  'unsupported-fields': 'importUnsupportedFields',
+  'duplicate-members': 'importDuplicateMembers',
+  'too-many-members': 'importTooManyMembers',
+  'too-large': 'importTooLarge',
 }

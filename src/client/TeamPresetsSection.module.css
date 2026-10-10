@@ -77,6 +77,60 @@
   gap: 8px;
 }
 
+/* The import control is a button that opens this input; the browser's own
+ * file button never renders in the page. */
+.fileInput {
+  display: none;
+}
+
+/* ── import conflict dialog ──────────────────────────────────────────────── */
+
+.conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conflict + .conflict {
+  margin-top: 16px;
+}
+
+.conflictLead {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.conflictName {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.conflictMember {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
 /* ── cards and rows ──────────────────────────────────────────────────────── */
 
 .card {

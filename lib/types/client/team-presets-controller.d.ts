@@ -5,6 +5,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-remotes/client';
 import { type SnapshotStore } from '@deepseek-ai/dsh-client-store';
+import type { TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts';
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset, ToolChoice } from '../types.ts';
 /**
  * Loader entry id of the Host row that owns the Team preset namespace. Spelled
@@ -68,6 +69,48 @@ export interface TeamSelectionRecordView {
     /** Selected Team identity. */
     readonly teamId: string;
 }
+/** What one import will do, once the document was read and its collisions are known. */
+export type TeamPresetImportPlan = {
+    /** The document being imported. */
+    readonly transfer: TeamPresetTransfer;
+    /** Index of the Team the document would overwrite, or undefined when it adds one. */
+    readonly targetIndex: number | undefined;
+    /** Display name of that Team, for the dialog that resolves the collision. */
+    readonly targetName: string;
+    /** The captain name that Team already uses, or an empty string when it is free. */
+    readonly captainConflict: string;
+    /** Member names that Team already uses, in document order. */
+    readonly memberConflicts: readonly string[];
+    /** Name the document's Team takes when it is added as a new Team. */
+    readonly suggestedTeamName: string;
+    /** Name the document's captain takes when it is renamed. */
+    readonly suggestedCaptainName: string;
+};
+/** Result of reading one shared document into a plan. */
+export type TeamPresetImportInspection = {
+    readonly ok: false;
+    readonly reason: TeamPresetImportFailure;
+} | {
+    readonly ok: true;
+    readonly plan: TeamPresetImportPlan;
+};
+/** How one import resolves the collisions it found. */
+export type TeamPresetImportResolution = {
+    /** Overwrite the same-named Team, or add the document as a new Team. */
+    readonly team: 'replace' | 'rename';
+    /** Name the added Team takes when it is not overwriting one. */
+    readonly teamName: string;
+    /** Overwrite the target Team's captain, or name the imported captain differently. */
+    readonly captain: 'replace' | 'rename';
+    /** Per conflicting member name: overwrite that member, or add the imported one renamed. */
+    readonly members: Readonly<Record<string, 'replace' | 'rename'>>;
+};
+/**
+ * The resolution one document needs when the user was asked nothing.
+ * @param plan - the inspection of the document.
+ * @returns the resolution that adds the document as a new Team.
+ */
+export declare function defaultImportResolution(plan: TeamPresetImportPlan): TeamPresetImportResolution;
 /**
  * Whether one stored Team still matches a staged draft, so the page can tell
  * a duplicate from a real edit.
@@ -119,6 +162,14 @@ export declare class TeamPresetsController {
     private projection;
     private publish;
     /**
+     * The Teams the page currently shows.
+     *
+     * A draft shadows the stored value while one is open, so an export and an
+     * import both see exactly what the user sees.
+     * @returns the staged Teams, or the stored ones while nothing is staged.
+     */
+    private visibleTeams;
+    /**
      * The business face both slot registrations inject.
      * @returns the state store and the page and composer callbacks.
      */
@@ -169,6 +220,32 @@ export declare class TeamPresetsController {
      * @returns the copy's identity, or undefined for an unknown position.
      */
     duplicateTeam(index: number): string | undefined;
+    /**
+     * Serialize one Team as the fixed shareable document.
+     * @param index - the Team position to export.
+     * @returns the document text, or undefined for a position the page does not show.
+     */
+    exportTeam(index: number): string | undefined;
+    /**
+     * Read one document and work out what importing it would collide with.
+     *
+     * Nothing is staged here: the caller decides whether the plan needs the user's
+     * answer before {@link applyImport} touches the draft.
+     * @param text - the document text the user chose.
+     * @returns the plan, or the reason the document is not a Team preset of this format.
+     */
+    inspectImport(text: string): TeamPresetImportInspection;
+    /**
+     * Stage one inspected document onto the draft.
+     *
+     * The document carries no identity, so it either overwrites the Team it is
+     * named after — keeping that Team's local id, routes, and tool policies — or
+     * joins the draft as a new Team under the resolved name.
+     * @param plan - the inspection produced by {@link inspectImport}.
+     * @param resolution - the user's answer for every collision in the plan.
+     * @returns the identity of the staged Team.
+     */
+    applyImport(plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution): string;
     /**
      * Delete one Team.
      * @param index - the Team to delete.
@@ -224,6 +301,12 @@ export interface TeamPresetsInjected {
     };
     createTeam: () => string;
     duplicateTeam: (index: number) => string | undefined;
+    /** Serialize one Team as the fixed shareable document, or undefined for an unknown position. */
+    exportTeam: (index: number) => string | undefined;
+    /** Read one shared document and report what importing it would collide with. */
+    inspectImport: (text: string) => TeamPresetImportInspection;
+    /** Stage one inspected document under the user's resolution of its collisions. */
+    applyImport: (plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution) => string;
     removeTeam: (index: number) => void;
     addMember: (teamIndex: number) => void;
     removeMember: (teamIndex: number, memberIndex: number) => void;

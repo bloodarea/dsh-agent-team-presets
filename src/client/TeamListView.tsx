@@ -3,6 +3,7 @@
  * opens that Team's own page.
  */
 
+import { useRef } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TeamPreset } from '../types.ts'
 import type { TeamPresetsLocaleKey } from './locales.ts'
@@ -16,19 +17,26 @@ export interface TeamListViewProps {
   readonly t: (key: TeamPresetsLocaleKey) => string
   /** Whether the Host document accepts writes. */
   readonly disabled: boolean
+  /** Copy describing why the last chosen document was refused. */
+  readonly importError?: TeamPresetsLocaleKey | undefined
   readonly onOpen: (teamId: string) => void
   readonly onCreate: () => void
   readonly onDuplicate: (teamId: string) => void
   readonly onDelete: (teamId: string) => void
+  /** Receives the document the user chose to import. */
+  readonly onImport: (file: File) => void
+  /** Writes the chosen Team out as a shareable document. */
+  readonly onExport: (teamId: string) => void
 }
 
 /**
  * Render the Team list.
  * @param props - the Teams, copy, and navigation callbacks.
- * @returns the header, the create action, and one row per Team.
+ * @returns the header, the create and import actions, and one row per Team.
  */
 export function TeamListView(props: TeamListViewProps) {
   const { t, disabled } = props
+  const fileInput = useRef<HTMLInputElement>(null)
   return (
     <>
       <header className={css.pageHead}>
@@ -38,7 +46,33 @@ export function TeamListView(props: TeamListViewProps) {
 
       <div className={css.actionRow}>
         <Button size="sm" variant="outline" disabled={disabled} onClick={props.onCreate}>{t('newTeam')}</Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disabled}
+          onClick={() => { fileInput.current?.click() }}
+        >
+          {t('importPreset')}
+        </Button>
+        <input
+          ref={fileInput}
+          className={css.fileInput}
+          type="file"
+          accept="application/json,.json"
+          disabled={disabled}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            // Clearing the value lets the same document be chosen twice in a row.
+            event.target.value = ''
+            if (file !== undefined) props.onImport(file)
+          }}
+        />
       </div>
+
+      <p className={css.hint}>{t('importNote')}</p>
+      {props.importError === undefined
+        ? null
+        : <p className={css.warn} role="status">{t(props.importError)}</p>}
 
       {props.teams.length === 0
         ? <p className={css.empty}>{t('emptyTeams')}</p>
@@ -60,6 +94,9 @@ export function TeamListView(props: TeamListViewProps) {
                   </span>
                 </button>
                 <span className={css.rowActions}>
+                  <Button size="sm" variant="ghost" onClick={() => { props.onExport(team.id) }}>
+                    {t('exportPreset')}
+                  </Button>
                   <Button size="sm" variant="ghost" disabled={disabled} onClick={() => { props.onDuplicate(team.id) }}>
                     {t('duplicate')}
                   </Button>
