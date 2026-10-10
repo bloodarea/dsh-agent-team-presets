@@ -142,8 +142,9 @@ export function TeamAgentView(props: TeamAgentViewProps) {
         </div>
         <div className={css.field}>
           <span className={css.fieldLabel}>{t('agentDescription')}</span>
-          <Input
-            className={css.input ?? ''}
+          <textarea
+            className={css.prompt}
+            rows={3}
             value={agent.description}
             disabled={disabled}
             onChange={(event) => { props.onChange({ description: event.target.value }) }}

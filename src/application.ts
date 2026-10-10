@@ -5,7 +5,10 @@
  * the captain's independent tool mode scopes the Session's visible global tools,
  * and the Session gains `spawn_team_member`, which applies the selected member's
  * own persona, route, reasoning effort, and tool mode. The Session keeps the
- * model it already selected: a captain never changes the Session's route.
+ * model it already selected: a captain never changes the Session's route. A
+ * member's persona and tool mode belong to the definition the Team task started
+ * with; its route does not, so a corrected route reaches the next member the
+ * task summons.
  * @module dsh-agent-team-presets/application
  */
 
@@ -18,7 +21,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { captainBriefing, findMember, memberBriefing, memberTargets, toolMode } from './presets.ts'
+import { captainBriefing, definitionFingerprint, findMember, memberBriefing, memberTargets, toolMode } from './presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from './types.ts'
 
 /** Output schema of one `spawn_team_member` result. */
@@ -36,11 +39,20 @@ const SPAWN_VALUE_SCHEMA = {
 export interface TeamApplication {
   /** Identity of the applied Team preset. */
   readonly teamId: string
-  /** JSON of the applied preset, so an unchanged Team is not re-applied. */
+  /** Fingerprint of the applied definition, so an unchanged one is not re-applied. */
   readonly fingerprint: string
   /** Release every registration and restore the Session's own composition. */
   dispose(): void
 }
+
+/**
+ * Read the latest stored definition of the Team a Session has applied.
+ *
+ * A running task keeps the definition it started with, but reads the fields it
+ * does not freeze — a member's route — from here at spawn time, so a corrected
+ * route reaches the next member that task summons.
+ */
+export type StoredTeam = () => TeamPreset | undefined
 
 /** Continuable-subagent providers the member tool spawns through. */
 export interface MemberProviders {
@@ -87,14 +99,54 @@ function restrictCaptainTools(agent: Agent, captain: TeamCaptainPreset): (() => 
 }
 
 /**
+ * Reject a Team this Session cannot apply, before any registration is touched.
+ *
+ * `tools.restrict` owns the authority on which global names an allow-list may
+ * carry, and the probe applies and lifts it so the real application still
+ * registers exactly one restriction. Every other registration a Team needs —
+ * the two prompt sections and the member tool — uses names and orders fixed by
+ * this plugin, so a captain allow-list naming an unknown tool is the failure an
+ * adoption can actually hit. Callers check before releasing a running
+ * application, so a refused preset never leaves a Session without one.
+ * @param agent - the live Session agent about to take the Team.
+ * @param team - the Team preset about to be applied.
+ * @throws when the captain's custom allow-list names a tool this Session cannot restrict.
+ */
+export function assertTeamApplicable(agent: Agent, team: TeamPreset): void {
+  const { captain } = team
+  if (toolMode(captain) === 'all') return
+  agent.ctx.tools.restrict({ allow: [...captain.tools] })()
+}
+
+/**
+ * Pick the member whose route one spawn uses.
+ *
+ * The roster, role, standing prompt, and tool scope come from the definition
+ * the task started with, so a task keeps summoning the members it began with.
+ * The route is operational rather than behavioral: it is read from the stored
+ * definition for the same target, which is how a route corrected while the task
+ * runs reaches the next member the captain summons. A stored Team that is gone,
+ * or that no longer carries the target, leaves the frozen route in place.
+ * @param frozen - the member as the applied definition holds it.
+ * @param target - the teammate target the captain summons.
+ * @param stored - the latest stored definition of the applied Team, when the Host still has it.
+ * @returns the member whose route this spawn uses.
+ */
+function routedMember(frozen: TeamAgentPreset, target: string, stored: TeamPreset | undefined): TeamAgentPreset {
+  if (stored === undefined) return frozen
+  return findMember(stored, target)?.member ?? frozen
+}
+
+/**
  * Register the model-facing member tool on one Session.
  * @param ctx - the plugin context providing `agentTeams`.
  * @param agent - the live Session agent that owns the tool.
  * @param team - the applied Team preset.
  * @param providers - continuable-subagent providers to spawn through.
+ * @param stored - reads the latest stored definition of the applied Team.
  * @returns the tool registration disposer.
  */
-function registerMemberTool(ctx: Context, agent: Agent, team: TeamPreset, providers: MemberProviders): () => void {
+function registerMemberTool(ctx: Context, agent: Agent, team: TeamPreset, providers: MemberProviders, stored: StoredTeam): () => void {
   const targets = memberTargets(team)
   const summary = targets.map(({ member, target }) => member.description.trim() === '' ? target : `${target} (${member.description.trim()})`).join('; ')
   return agent.ctx.tools.register(defineTool({
@@ -126,7 +178,9 @@ function registerMemberTool(ctx: Context, agent: Agent, team: TeamPreset, provid
       const { member, target } = resolved
       const context = args.context ?? 'fresh'
       const task: ContentBlock[] = [{ type: 'text', text: args.task }]
-      const route = routeOptions(member)
+      // Read the route now, not when the Team was applied: a route corrected
+      // during this task applies to the next member it summons.
+      const route = routeOptions(routedMember(member, target, stored()))
       const briefing = memberBriefing(team, member, target)
       const result = await ctx.agentTeams.spawnTeammate(caller, {
         name: target,
@@ -156,9 +210,17 @@ function registerMemberTool(ctx: Context, agent: Agent, team: TeamPreset, provid
  * @param agent - the live Session agent taking the Team.
  * @param team - the Team preset to apply.
  * @param providers - continuable-subagent providers the member tool spawns through.
+ * @param stored - reads the latest stored definition of this Team, so a member
+ *   spawned later runs on its current route; defaults to the applied definition.
  * @returns the applied Team, whose `dispose` releases every registration.
  */
-export function applyTeamToAgent(ctx: Context, agent: Agent, team: TeamPreset, providers: MemberProviders): TeamApplication {
+export function applyTeamToAgent(
+  ctx: Context,
+  agent: Agent,
+  team: TeamPreset,
+  providers: MemberProviders,
+  stored: StoredTeam = () => undefined,
+): TeamApplication {
   const disposers: Array<() => unknown> = []
   const register = (disposer: (() => unknown) | undefined): void => {
     if (disposer !== undefined) disposers.push(disposer)
@@ -181,14 +243,14 @@ export function applyTeamToAgent(ctx: Context, agent: Agent, team: TeamPreset, p
       }))
     }
     register(restrictCaptainTools(agent, captain))
-    register(registerMemberTool(ctx, agent, team, providers))
+    register(registerMemberTool(ctx, agent, team, providers, stored))
   } catch (error: unknown) {
     for (const dispose of disposers.reverse()) void dispose()
     throw error
   }
   return {
     teamId: team.id,
-    fingerprint: JSON.stringify(team),
+    fingerprint: definitionFingerprint(team),
     dispose() {
       for (const dispose of disposers.reverse()) void dispose()
     },

@@ -66,8 +66,9 @@ export function TeamEditorView(props: TeamEditorViewProps) {
         </div>
         <div className={css.field}>
           <span className={css.fieldLabel}>{t('teamDescription')}</span>
-          <Input
-            className={css.input ?? ''}
+          <textarea
+            className={css.prompt}
+            rows={3}
             value={team.description}
             disabled={disabled}
             onChange={(event) => { props.onPatch({ description: event.target.value }) }}

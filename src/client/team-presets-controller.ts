@@ -22,7 +22,9 @@ import {
   uniqueName,
 } from '../preset-transfer.ts'
 import type { TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts'
-import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset, TeamPresetsSection, ToolChoice } from '../types.ts'
+import type {
+  TeamAgentPreset, TeamCaptainPreset, TeamExecutionRow, TeamExecutionState, TeamPreset, TeamPresetsSection, ToolChoice,
+} from '../types.ts'
 
 /**
  * Loader entry id of the Host row that owns the Team preset namespace. Spelled
@@ -71,6 +73,12 @@ export interface TeamPresetsState {
   readonly selections: readonly TeamSelectionRecordView[]
   /** Whether the page holds edits a save would write. */
   readonly dirty: boolean
+  /** Team definitions the Host rewrote behind the page, or undefined while none was adopted. */
+  readonly externalUpdate: ExternalUpdateNotice | undefined
+  /** Whether the Host execution stream has delivered a frame the page can trust. */
+  readonly execution: 'loading' | 'ready' | 'error'
+  /** Execution state of every Team the Host reports, empty while it is not trusted. */
+  readonly executions: readonly TeamExecutionRow[]
   /** Provider/model choices the pickers render. */
   readonly providers: readonly ProviderChoice[]
   /** Whether the model catalogue is still loading or failed. */
@@ -81,6 +89,35 @@ export interface TeamPresetsState {
   readonly tools: readonly ToolChoice[]
   /** Whether the tool catalogue is still loading or failed. */
   readonly toolCatalogue: 'idle' | 'loading' | 'ready' | 'error'
+}
+
+/**
+ * Resolve the execution state of one Team as the page must show it.
+ *
+ * A stream that has not delivered its first frame, or that failed, leaves every
+ * Team `unknown`: an idle claim the page cannot support is worse than no claim,
+ * because the page promises when a save takes effect.
+ * @param state - the page state carrying the stream health and its rows.
+ * @param teamId - the Team the page is editing.
+ * @returns the execution state the footer reports.
+ */
+export function executionStateOf(state: TeamPresetsState, teamId: string): TeamExecutionState {
+  if (state.execution !== 'ready') return 'unknown'
+  return state.executions.find(row => row.teamId === teamId)?.state ?? 'unknown'
+}
+
+/** One adopted external Team update, as the page's status line reports it. */
+export interface ExternalUpdateNotice {
+  /** Display names of the adopted Teams in page order; an unnamed Team reports its id. */
+  readonly teams: readonly string[]
+  /** The subset of {@link teams} whose staged edit the saved version replaced. */
+  readonly overridden: readonly string[]
+  /** Display names of the Teams the Host added behind the draft, which joined it. */
+  readonly added: readonly string[]
+  /** Display names of the Teams the Host deleted behind the draft, which left it. */
+  readonly removed: readonly string[]
+  /** The subset of {@link removed} whose staged edit was dropped with the Team. */
+  readonly removedEdited: readonly string[]
 }
 
 /** One stored Session selection as the page reads it. */
@@ -251,6 +288,15 @@ function sameTeam(a: TeamPreset, b: TeamPreset): boolean {
 }
 
 /**
+ * The name the page shows for one Team.
+ * @param team - the Team to name.
+ * @returns its display name, or its id while the Team is unnamed.
+ */
+function teamLabel(team: TeamPreset): string {
+  return team.name === '' ? team.id : team.name
+}
+
+/**
  * Create an empty Team preset with a unique identity.
  * @param existing - Teams already configured.
  * @returns a new, unnamed Team preset.
@@ -307,6 +353,25 @@ export class TeamPresetsController {
   private readonly unsubscribe: () => void
   private draft: TeamPreset[] | undefined
   private draftRevision: number | undefined
+  /**
+   * The Host's Teams as they stood when the draft opened, by Team id. What the
+   * page reconciles an external write against: only a Team whose stored record
+   * moved away from this baseline was changed behind the draft.
+   */
+  private draftBase: ReadonlyMap<string, TeamPreset> | undefined
+  /**
+   * The last external update this page adopted, kept until the user acts on
+   * the draft again. Unrelated form changes leave it standing, so the status
+   * line is not wiped by a catalogue refresh or another Session's selection.
+   */
+  private externalUpdate: ExternalUpdateNotice | undefined
+  /** Whether a write this page started is still crossing the wire. */
+  private saving = false
+  /** Stream health of the Host execution state, and the frames it delivered. */
+  private execution: TeamPresetsState['execution'] = 'loading'
+  private executions: readonly TeamExecutionRow[] = []
+  private executionGeneration = 0
+  private executionAbort: AbortController | undefined
   private providers: readonly ProviderChoice[] = []
   private catalogue: TeamPresetsState['catalogue'] = 'idle'
   private cataloguePartial = false
@@ -323,12 +388,18 @@ export class TeamPresetsController {
   constructor(private readonly ctx: Context) {
     this.form = ctx.configForms.get<TeamPresetsSection>(TEAM_PRESETS_NS)
     this.store = createSnapshotStore(this.projection())
-    this.unsubscribe = this.form.subscribe(() => { this.publish() })
+    this.unsubscribe = this.form.subscribe(() => {
+      this.reconcile()
+      this.publish()
+    })
   }
 
-  /** Release the form subscription. */
+  /** Release the form subscription and the execution stream. */
   dispose(): void {
     this.disposed = true
+    this.executionGeneration += 1
+    this.executionAbort?.abort()
+    this.executionAbort = undefined
     this.unsubscribe()
   }
 
@@ -343,6 +414,9 @@ export class TeamPresetsController {
       teams: this.visibleTeams(),
       selections: stored.selections,
       dirty: this.draft !== undefined,
+      externalUpdate: this.externalUpdate,
+      execution: this.execution,
+      executions: this.executions,
       providers: this.providers,
       catalogue: this.catalogue,
       cataloguePartial: this.cataloguePartial,
@@ -365,6 +439,98 @@ export class TeamPresetsController {
    */
   private visibleTeams(): readonly TeamPreset[] {
     return this.draft ?? this.form.getSnapshot().value?.teams ?? []
+  }
+
+  /**
+   * Fold a stored change that landed behind an open draft into the draft.
+   *
+   * An Agent that rewrites a Team through its tools saves without this page, so
+   * the stored record of that Team is the newer definition and wins over the
+   * staged one; every other Team keeps its unsaved edit. A Team the Host moved
+   * away from the baseline the draft was opened on is adopted whole, a Team the
+   * Host deleted leaves the draft, and a Team the Host added joins it — the
+   * draft is the page's whole document, so saving it must neither drop what the
+   * Host gained nor resurrect what the Host removed. A Team this page added
+   * itself is the page's own and is never touched. The fence follows the Host
+   * revision so what stays staged can still be saved.
+   *
+   * Once nothing but Host records remain, the draft is dropped rather than left
+   * staged with nothing to write — including when a stored write landed on the
+   * value the draft already held, which needs no replacement and is no conflict.
+   * Everything the coordination did is reported through {@link externalUpdate},
+   * naming what changed and whether a staged edit was replaced or dropped; a
+   * change that coordinates nothing leaves the report standing.
+   *
+   * A write this page started owns the draft until it settles: its own
+   * accepted view and the read a refusal triggers must never roll back or
+   * discard what the user had staged when they pressed Save.
+   */
+  private reconcile(): void {
+    if (this.draft === undefined || this.saving) return
+    const snapshot = this.form.getSnapshot()
+    const stored = snapshot.value?.teams
+    const base = this.draftBase
+    if (snapshot.status !== 'ready' || stored === undefined || base === undefined) return
+    const hosts = new Map(stored.map(team => [team.id, team]))
+    const draft = this.draft
+    const staged = new Set(draft.map(team => team.id))
+    const adopted: { name: string; overridden: boolean }[] = []
+    const removed: { name: string; edited: boolean }[] = []
+    const kept: TeamPreset[] = []
+    for (const team of draft) {
+      const host = hosts.get(team.id)
+      const before = base.get(team.id)
+      // A Team the baseline never held is this page's own, not the Host's.
+      if (before === undefined) {
+        kept.push(team)
+        continue
+      }
+      if (host === undefined) {
+        // The Host deleted a Team the draft still held: keeping it would
+        // resurrect it on the next save.
+        removed.push({ name: teamLabel(team), edited: !sameTeam(before, team) })
+        continue
+      }
+      if (sameTeam(before, host) || sameTeam(team, host)) {
+        kept.push(team)
+        continue
+      }
+      adopted.push({ name: teamLabel(host), overridden: !sameTeam(before, team) })
+      kept.push(structuredClone(host))
+    }
+    // A Team neither the draft nor the baseline held is the Host's addition.
+    const added = stored.filter(host => !staged.has(host.id) && !base.has(host.id))
+    this.draftBase = new Map(stored.map(team => [team.id, structuredClone(team)]))
+    this.draftRevision = snapshot.revision
+    const coordinated = adopted.length > 0 || removed.length > 0 || added.length > 0
+    if (coordinated) {
+      this.externalUpdate = {
+        teams: adopted.map(entry => entry.name),
+        overridden: adopted.filter(entry => entry.overridden).map(entry => entry.name),
+        added: added.map(teamLabel),
+        removed: removed.map(entry => entry.name),
+        removedEdited: removed.filter(entry => entry.edited).map(entry => entry.name),
+      }
+    }
+    const next = added.length === 0 ? kept : [...kept, ...added.map(host => structuredClone(host))]
+    // Whatever the coordination did, a draft that now matches the Host field
+    // for field has nothing left to save: it is dropped rather than left staged
+    // as an "unsaved change" the user cannot see. A Host write that happened to
+    // land on the staged value needs no replacement and reports nothing, and
+    // the draft is still cleared here.
+    if (next.length === stored.length && next.every((team, index) => {
+      const host = stored[index]
+      return host !== undefined && sameTeam(team, host)
+    })) {
+      this.draft = undefined
+      this.draftBase = undefined
+      this.draftRevision = undefined
+      return
+    }
+    // An untouched draft keeps its identity, and the report the user may not
+    // have seen yet stands.
+    if (!coordinated) return
+    this.draft = next
   }
 
   /**
@@ -397,10 +563,65 @@ export class TeamPresetsController {
     }
   }
 
-  /** Read the provider/model catalogue and the tool catalogue the pickers render. */
+  /** Read the provider/model catalogue, the tool catalogue, and the execution stream. */
   loadCatalogue(): void {
     this.loadModelCatalogue()
     this.loadToolCatalogue()
+    this.ensureExecution()
+  }
+
+  /**
+   * Open the Host execution stream unless this generation already holds one.
+   *
+   * The stream is the page's only live source of "is this Team executing", so
+   * every page load and every Host notification re-subscribes a stream that
+   * ended or failed — without a timer, and without trusting the last frame a
+   * dead generation left behind.
+   */
+  private ensureExecution(): void {
+    if (this.disposed || this.executionAbort !== undefined) return
+    const abort = new AbortController()
+    this.executionAbort = abort
+    const generation = ++this.executionGeneration
+    // Nothing is known until this generation's opening frame arrives.
+    this.execution = 'loading'
+    this.executions = []
+    this.publish()
+    void this.consumeExecution(abort, generation)
+  }
+
+  /**
+   * Read whole-set execution frames until the stream ends.
+   * @param abort - the generation's cancellation.
+   * @param generation - the generation this read owns; a superseded read publishes nothing.
+   */
+  private async consumeExecution(abort: AbortController, generation: number): Promise<void> {
+    try {
+      for await (const frame of this.ctx.remote.teamPresets.execution(abort.signal)) {
+        if (this.disposed || generation !== this.executionGeneration) return
+        this.execution = 'ready'
+        this.executions = frame.teams
+        this.publish()
+      }
+      this.failExecution(generation)
+    } catch (_failure) {
+      this.failExecution(generation)
+    }
+  }
+
+  /**
+   * Record that the Host execution state is unknown.
+   *
+   * A stream that failed, or that ended without being cancelled, says nothing
+   * about any Team: its last frame is dropped rather than kept as live truth.
+   * @param generation - the generation whose read ended.
+   */
+  private failExecution(generation: number): void {
+    if (this.disposed || generation !== this.executionGeneration) return
+    this.executionAbort = undefined
+    this.execution = 'error'
+    this.executions = []
+    this.publish()
   }
 
   /**
@@ -483,13 +704,18 @@ export class TeamPresetsController {
    * Open the staged draft from the stored Teams.
    *
    * The published snapshot is deep-frozen outside production, so every edit
-   * rebuilds the array and the touched record instead of mutating either.
+   * rebuilds the array and the touched record instead of mutating either. A
+   * user edit also retires the last external-update report: the page is once
+   * again acting on the draft the user holds.
    * @returns the current staged Teams.
    */
   private beginDraft(): TeamPreset[] {
+    this.externalUpdate = undefined
     if (this.draft === undefined) {
       const snapshot = this.form.getSnapshot()
-      this.draft = structuredClone(snapshot.value?.teams ?? []) as TeamPreset[]
+      const stored = snapshot.value?.teams ?? []
+      this.draft = structuredClone(stored) as TeamPreset[]
+      this.draftBase = new Map(stored.map(team => [team.id, structuredClone(team)]))
       this.draftRevision = snapshot.revision
     }
     return this.draft
@@ -668,15 +894,30 @@ export class TeamPresetsController {
     if (this.draft === undefined || snapshot.status !== 'ready' || !snapshot.writable) return
     const draft = this.draft
     const revision = this.draftRevision
+    this.saving = true
+    this.externalUpdate = undefined
     this.publish({ saving: true, failed: false })
-    const landed = await this.form.mutate(
-      [{ op: 'set', path: ['teams'], value: draft.map(team => teamJson(team)) } satisfies SettingsPathOpView],
-      revision,
-    )
+    let landed = false
+    try {
+      landed = await this.form.mutate(
+        [{ op: 'set', path: ['teams'], value: draft.map(team => teamJson(team)) } satisfies SettingsPathOpView],
+        revision,
+      )
+    } finally {
+      this.saving = false
+    }
     if (this.disposed) return
     if (landed) {
       this.draft = undefined
+      this.draftBase = undefined
       this.draftRevision = undefined
+    } else {
+      // A refused write leaves the page fenced on a revision the Host has moved
+      // past, and the recovery read behind the refusal has already folded what
+      // changed meanwhile. Coordinating again adopts that stored change and
+      // re-aligns the fence, so the retry is a real retry instead of the same
+      // conflict forever.
+      this.reconcile()
     }
     this.publish({ saving: false, failed: !landed })
   }
@@ -685,7 +926,9 @@ export class TeamPresetsController {
   discard(): void {
     if (this.draft === undefined) return
     this.draft = undefined
+    this.draftBase = undefined
     this.draftRevision = undefined
+    this.externalUpdate = undefined
     this.publish()
   }
 

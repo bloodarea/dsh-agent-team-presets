@@ -7,7 +7,9 @@
  * so a teammate never sees them. A preset is shared by every Session that
  * selected it, so a teammate report or an automatic continuation must not
  * rewrite it, and a write waits for the run to end rather than changing the
- * definition under executing members.
+ * definition under executing members. A saved change reaches an idle Session
+ * right away, while a Session whose Team task is running adopts it before its
+ * next Team task begins.
  * @module dsh-agent-team-presets/preset-tools
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -29,7 +31,11 @@ export declare function hasDirectHumanInput(agent: Agent, openTurnStartSeq: numb
  * @param agent - the exact Session-root Agent that owns the tools.
  * @param config - live plugin configuration carrying the Teams and their selections.
  * @param namespace - this plugin's settings entry id.
+ * @param appliedTeamId - the Team one Session currently has applied; the freeze
+ *   keeps that Team live after a selection change, so its running members still
+ *   block a write. Defaults to no applied Team for callers that hold no
+ *   application state.
  * @returns the disposer that removes both tools.
  */
-export declare function registerPresetTools(ctx: Context, agent: Agent, config: Config, namespace: string): () => void;
+export declare function registerPresetTools(ctx: Context, agent: Agent, config: Config, namespace: string, appliedTeamId?: (root: Agent) => string | undefined): () => void;
 //# sourceMappingURL=preset-tools.d.ts.map

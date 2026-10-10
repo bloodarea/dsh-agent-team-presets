@@ -6,7 +6,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-remotes/client';
 import { type SnapshotStore } from '@deepseek-ai/dsh-client-store';
 import type { TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts';
-import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset, ToolChoice } from '../types.ts';
+import type { TeamAgentPreset, TeamCaptainPreset, TeamExecutionRow, TeamExecutionState, TeamPreset, ToolChoice } from '../types.ts';
 /**
  * Loader entry id of the Host row that owns the Team preset namespace. Spelled
  * here rather than imported: a client package must not depend on a Host package.
@@ -51,6 +51,12 @@ export interface TeamPresetsState {
     readonly selections: readonly TeamSelectionRecordView[];
     /** Whether the page holds edits a save would write. */
     readonly dirty: boolean;
+    /** Team definitions the Host rewrote behind the page, or undefined while none was adopted. */
+    readonly externalUpdate: ExternalUpdateNotice | undefined;
+    /** Whether the Host execution stream has delivered a frame the page can trust. */
+    readonly execution: 'loading' | 'ready' | 'error';
+    /** Execution state of every Team the Host reports, empty while it is not trusted. */
+    readonly executions: readonly TeamExecutionRow[];
     /** Provider/model choices the pickers render. */
     readonly providers: readonly ProviderChoice[];
     /** Whether the model catalogue is still loading or failed. */
@@ -61,6 +67,30 @@ export interface TeamPresetsState {
     readonly tools: readonly ToolChoice[];
     /** Whether the tool catalogue is still loading or failed. */
     readonly toolCatalogue: 'idle' | 'loading' | 'ready' | 'error';
+}
+/**
+ * Resolve the execution state of one Team as the page must show it.
+ *
+ * A stream that has not delivered its first frame, or that failed, leaves every
+ * Team `unknown`: an idle claim the page cannot support is worse than no claim,
+ * because the page promises when a save takes effect.
+ * @param state - the page state carrying the stream health and its rows.
+ * @param teamId - the Team the page is editing.
+ * @returns the execution state the footer reports.
+ */
+export declare function executionStateOf(state: TeamPresetsState, teamId: string): TeamExecutionState;
+/** One adopted external Team update, as the page's status line reports it. */
+export interface ExternalUpdateNotice {
+    /** Display names of the adopted Teams in page order; an unnamed Team reports its id. */
+    readonly teams: readonly string[];
+    /** The subset of {@link teams} whose staged edit the saved version replaced. */
+    readonly overridden: readonly string[];
+    /** Display names of the Teams the Host added behind the draft, which joined it. */
+    readonly added: readonly string[];
+    /** Display names of the Teams the Host deleted behind the draft, which left it. */
+    readonly removed: readonly string[];
+    /** The subset of {@link removed} whose staged edit was dropped with the Team. */
+    readonly removedEdited: readonly string[];
 }
 /** One stored Session selection as the page reads it. */
 export interface TeamSelectionRecordView {
@@ -144,6 +174,25 @@ export declare class TeamPresetsController {
     private readonly unsubscribe;
     private draft;
     private draftRevision;
+    /**
+     * The Host's Teams as they stood when the draft opened, by Team id. What the
+     * page reconciles an external write against: only a Team whose stored record
+     * moved away from this baseline was changed behind the draft.
+     */
+    private draftBase;
+    /**
+     * The last external update this page adopted, kept until the user acts on
+     * the draft again. Unrelated form changes leave it standing, so the status
+     * line is not wiped by a catalogue refresh or another Session's selection.
+     */
+    private externalUpdate;
+    /** Whether a write this page started is still crossing the wire. */
+    private saving;
+    /** Stream health of the Host execution state, and the frames it delivered. */
+    private execution;
+    private executions;
+    private executionGeneration;
+    private executionAbort;
     private providers;
     private catalogue;
     private cataloguePartial;
@@ -157,7 +206,7 @@ export declare class TeamPresetsController {
      * @param ctx - the browser plugin context providing the shared configuration forms.
      */
     constructor(ctx: Context);
-    /** Release the form subscription. */
+    /** Release the form subscription and the execution stream. */
     dispose(): void;
     private projection;
     private publish;
@@ -170,12 +219,60 @@ export declare class TeamPresetsController {
      */
     private visibleTeams;
     /**
+     * Fold a stored change that landed behind an open draft into the draft.
+     *
+     * An Agent that rewrites a Team through its tools saves without this page, so
+     * the stored record of that Team is the newer definition and wins over the
+     * staged one; every other Team keeps its unsaved edit. A Team the Host moved
+     * away from the baseline the draft was opened on is adopted whole, a Team the
+     * Host deleted leaves the draft, and a Team the Host added joins it — the
+     * draft is the page's whole document, so saving it must neither drop what the
+     * Host gained nor resurrect what the Host removed. A Team this page added
+     * itself is the page's own and is never touched. The fence follows the Host
+     * revision so what stays staged can still be saved.
+     *
+     * Once nothing but Host records remain, the draft is dropped rather than left
+     * staged with nothing to write — including when a stored write landed on the
+     * value the draft already held, which needs no replacement and is no conflict.
+     * Everything the coordination did is reported through {@link externalUpdate},
+     * naming what changed and whether a staged edit was replaced or dropped; a
+     * change that coordinates nothing leaves the report standing.
+     *
+     * A write this page started owns the draft until it settles: its own
+     * accepted view and the read a refusal triggers must never roll back or
+     * discard what the user had staged when they pressed Save.
+     */
+    private reconcile;
+    /**
      * The business face both slot registrations inject.
      * @returns the state store and the page and composer callbacks.
      */
     inject(): TeamPresetsInjected;
-    /** Read the provider/model catalogue and the tool catalogue the pickers render. */
+    /** Read the provider/model catalogue, the tool catalogue, and the execution stream. */
     loadCatalogue(): void;
+    /**
+     * Open the Host execution stream unless this generation already holds one.
+     *
+     * The stream is the page's only live source of "is this Team executing", so
+     * every page load and every Host notification re-subscribes a stream that
+     * ended or failed — without a timer, and without trusting the last frame a
+     * dead generation left behind.
+     */
+    private ensureExecution;
+    /**
+     * Read whole-set execution frames until the stream ends.
+     * @param abort - the generation's cancellation.
+     * @param generation - the generation this read owns; a superseded read publishes nothing.
+     */
+    private consumeExecution;
+    /**
+     * Record that the Host execution state is unknown.
+     *
+     * A stream that failed, or that ended without being cancelled, says nothing
+     * about any Team: its last frame is dropped rather than kept as live truth.
+     * @param generation - the generation whose read ended.
+     */
+    private failExecution;
     /**
      * Discard both catalogues and read them again from the Host.
      *
@@ -199,7 +296,9 @@ export declare class TeamPresetsController {
      * Open the staged draft from the stored Teams.
      *
      * The published snapshot is deep-frozen outside production, so every edit
-     * rebuilds the array and the touched record instead of mutating either.
+     * rebuilds the array and the touched record instead of mutating either. A
+     * user edit also retires the last external-update report: the page is once
+     * again acting on the draft the user holds.
      * @returns the current staged Teams.
      */
     private beginDraft;

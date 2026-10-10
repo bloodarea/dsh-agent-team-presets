@@ -382,8 +382,17 @@
   background: var(--dsw-alias-bg-base);
 }
 
-.footerNote {
+/* Every status line shares the left of the footer, so the buttons stay right. */
+.footerNotes {
   margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.footerNote {
   font-size: 11px;
   line-height: 17px;
   color: var(--dsw-alias-label-tertiary);

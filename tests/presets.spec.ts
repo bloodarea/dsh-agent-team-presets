@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  captainBriefing, findMember, findTeam, memberBriefing, memberTarget, memberTargets, selectedTeam, toolMode, withSelection,
+  captainBriefing, definitionFingerprint, findMember, findTeam, memberBriefing, memberTarget, memberTargets,
+  selectedTeam, toolMode, withSelection,
 } from '../src/presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from '../src/types.ts'
 
@@ -36,6 +37,45 @@ describe('toolMode', () => {
     expect(toolMode({ ...agent('empty'), toolMode: 'custom' })).toBe('custom')
     expect(toolMode({ ...agent('configured'), tools: ['read'] })).toBe('custom')
     expect(toolMode(agent('empty'))).toBe('all')
+  })
+})
+
+describe('definitionFingerprint', () => {
+  it('ignores a member route, which a running task reads when it spawns', () => {
+    const base = team([agent('reviewer', 'checks diffs')])
+    const routed = team([{ ...agent('reviewer', 'checks diffs'), provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' }])
+    expect(definitionFingerprint(routed)).toBe(definitionFingerprint(base))
+  })
+
+  it('ignores an accent color, which the roster reads live', () => {
+    const base = team([agent('reviewer')])
+    const recolored: TeamPreset = {
+      ...base,
+      captain: { ...base.captain, color: '#123456' },
+      members: [{ ...base.members[0]!, color: '#654321' }],
+    }
+    expect(definitionFingerprint(recolored)).toBe(definitionFingerprint(base))
+  })
+
+  it('reports every field a task freezes as a change', () => {
+    const base = team([{ ...agent('reviewer', 'checks diffs'), toolMode: 'custom', tools: ['read'], systemPrompt: 'Review.' }])
+    const variants: TeamPreset[] = [
+      { ...base, name: 'renamed' },
+      { ...base, description: 'purpose' },
+      { ...base, id: 'team-2' },
+      { ...base, captain: { ...base.captain, systemPrompt: 'Lead.' } },
+      { ...base, members: [{ ...base.members[0]!, description: 'other role' }] },
+      { ...base, members: [{ ...base.members[0]!, systemPrompt: 'Other.' }] },
+      { ...base, members: [{ ...base.members[0]!, tools: ['write'], toolMode: 'custom' }] },
+      { ...base, members: [] },
+    ]
+    for (const variant of variants) expect(definitionFingerprint(variant)).not.toBe(definitionFingerprint(base))
+  })
+
+  it('reads one effective tool policy as one definition', () => {
+    const legacy = team([{ ...agent('reviewer'), toolMode: undefined, tools: [] }])
+    const explicit = team([{ ...agent('reviewer'), toolMode: 'all', tools: [] }])
+    expect(definitionFingerprint(explicit)).toBe(definitionFingerprint(legacy))
   })
 })
 

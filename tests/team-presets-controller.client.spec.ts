@@ -16,11 +16,15 @@ import {
   emptyCaptainPreset,
   sameTeam,
 } from '../src/client/team-presets-controller.ts'
-import type { TeamPresetImportPlan } from '../src/client/team-presets-controller.ts'
+import { executionStateOf } from '../src/client/team-presets-controller.ts'
+import type { ExternalUpdateNotice, TeamPresetImportPlan } from '../src/client/team-presets-controller.ts'
+import { EXECUTION_NOTICE_KEYS, en, zh } from '../src/client/locales.ts'
 import { serializeTeamPreset } from '../src/preset-transfer.ts'
 import { teamAppearance } from '../src/client/appearance.ts'
 import type { TeamSelectionRecordView } from '../src/client/team-presets-controller.ts'
-import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset, TeamPresetsSection, ToolChoice } from '../src/types.ts'
+import type {
+  TeamAgentPreset, TeamCaptainPreset, TeamExecutionRow, TeamExecutionSnapshot, TeamPreset, TeamPresetsSection, ToolChoice,
+} from '../src/types.ts'
 
 /** One empty captain slot, so a test names only the fields it exercises. */
 const EMPTY_CAPTAIN: TeamCaptainPreset = {
@@ -73,10 +77,17 @@ function scriptedForm(options: {
   writable?: boolean
   value?: TeamPresetsSection | undefined
   revision?: number
-  landed?: boolean
+  landed?: boolean | (() => boolean)
+  /** Snapshot the mirror reloads after a refused write, exactly as the real form recovers. */
+  recover?: Partial<ConfigFormSnapshot<TeamPresetsSection>>
+  /** Refuse a write whose fence is not the revision the mirror holds right now. */
+  fenceRevision?: boolean
+  /** Hold every write until the test settles it, so a Host change can race it. */
+  deferMutations?: boolean
 } = {}) {
   const mutations: { ops: readonly SettingsPathOpView[]; revision: number | undefined }[] = []
   const listeners = new Set<() => void>()
+  const heldWrites: (() => void)[] = []
   let snapshot: ConfigFormSnapshot<TeamPresetsSection> = {
     status: options.status ?? 'ready',
     value: options.value,
@@ -94,9 +105,20 @@ function scriptedForm(options: {
     },
     mutate: async (ops, revision) => {
       mutations.push({ ops, revision })
-      const landed = options.landed ?? true
+      if (options.deferMutations === true) {
+        await new Promise<void>((resolve) => { heldWrites.push(resolve) })
+      }
+      if (options.fenceRevision === true && revision !== snapshot.revision) {
+        if (options.recover !== undefined) {
+          snapshot = { ...snapshot, ...options.recover }
+          for (const listener of listeners) listener()
+        }
+        return false
+      }
+      const landed = typeof options.landed === 'function' ? options.landed() : options.landed ?? true
       // A real ConfigForm folds an accepted write back into the mirror, so the
-      // next read sees it; the stand-in reproduces that read-back.
+      // next read sees it; the stand-in reproduces that read-back and the
+      // notification it publishes to subscribers.
       if (landed) {
         let next = snapshot.value ?? { teams: [], selections: [] }
         for (const op of ops) {
@@ -105,11 +127,12 @@ function scriptedForm(options: {
           }
         }
         snapshot = { ...snapshot, value: next }
+        for (const listener of listeners) listener()
       }
       return landed
     },
-    set: async () => options.landed ?? true,
-    unset: async () => options.landed ?? true,
+    set: async () => typeof options.landed === 'function' ? options.landed() : options.landed ?? true,
+    unset: async () => typeof options.landed === 'function' ? options.landed() : options.landed ?? true,
   }
   return {
     form,
@@ -118,6 +141,8 @@ function scriptedForm(options: {
     /** Deliver a form change exactly as the shared mirror would. */
     publishChange: () => { for (const listener of listeners) listener() },
     replace: (next: Partial<ConfigFormSnapshot<TeamPresetsSection>>) => { snapshot = { ...snapshot, ...next } },
+    /** Let the oldest held write settle. */
+    settleWrite: () => { heldWrites.shift()?.() },
   }
 }
 
@@ -132,6 +157,7 @@ function scriptedContext(form: ConfigForm<TeamPresetsSection>, options: {
   modelRejects?: boolean
   toolRejects?: boolean
   catalog?: () => ModelCatalog | Promise<ModelCatalog>
+  execution?: (signal: AbortSignal) => AsyncIterable<TeamExecutionSnapshot>
 } = {}): ClientContext {
   const partial = {
     configForms: { get: () => form },
@@ -151,6 +177,12 @@ function scriptedContext(form: ConfigForm<TeamPresetsSection>, options: {
           : Promise.resolve(options.toolOk === false
             ? { ok: false as const, error: { message: 'no tools' } }
             : { ok: true as const, value: { tools: TOOLS } }),
+        execution: options.execution ?? ((signal: AbortSignal) => (async function* () {
+          yield { teams: [] }
+          if (!signal.aborted) {
+            await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+          }
+        })()),
       },
     },
   }
@@ -158,6 +190,67 @@ function scriptedContext(form: ConfigForm<TeamPresetsSection>, options: {
   Object.defineProperty(ctx, 'configForms', { value: partial.configForms })
   Object.defineProperty(ctx, 'remote', { value: partial.remote })
   return ctx
+}
+
+/** One execution row, over the idle defaults a case does not exercise. */
+function executionRow(teamId: string, state: TeamExecutionRow['state']): TeamExecutionRow {
+  return {
+    teamId,
+    state,
+    busySessions: state === 'busy' ? 1 : 0,
+    executingMembers: state === 'busy' ? 1 : 0,
+    pendingSessions: 0,
+  }
+}
+
+/** One open scripted execution stream a case pushes frames and failures into. */
+interface ScriptedStream {
+  push(frame: TeamExecutionSnapshot): void
+  fail(error: unknown): void
+}
+
+/**
+ * A scripted execution stream factory.
+ *
+ * Each open records the stream, so a case can push into the generation it wants
+ * and prove that a superseded one publishes nothing.
+ */
+function executionStreams() {
+  const opened: ScriptedStream[] = []
+  const open = (signal: AbortSignal): AsyncIterable<TeamExecutionSnapshot> => {
+    const queue: (TeamExecutionSnapshot | Error)[] = []
+    let wake: (() => void) | undefined
+    const notify = (): void => { const current = wake; wake = undefined; current?.() }
+    const iterator = (async function* (): AsyncIterable<TeamExecutionSnapshot> {
+      for (;;) {
+        if (queue.length === 0) {
+          if (signal.aborted) return
+          await new Promise<void>((resolve) => { wake = resolve })
+          continue
+        }
+        const next = queue.shift()
+        if (next === undefined) continue
+        if (next instanceof Error) throw next
+        yield next
+      }
+    })()
+    opened.push({
+      push: (frame) => { queue.push(frame); notify() },
+      fail: (error) => { queue.push(error instanceof Error ? error : new Error(String(error))); notify() },
+    })
+    return iterator
+  }
+  return { open, opened }
+}
+
+/**
+ * One expected status line: every fact a coordination reports, over the empty
+ * default a case does not exercise.
+ * @param expected - the Teams adopted, added, and removed by the coordination.
+ * @returns the complete notice the page should hold.
+ */
+function notice(expected: Partial<ExternalUpdateNotice>): ExternalUpdateNotice {
+  return { teams: [], overridden: [], added: [], removed: [], removedEdited: [], ...expected }
 }
 
 /** Await the microtask queue so a scripted catalogue read settles. */
@@ -545,6 +638,466 @@ describe('writing staged Teams', () => {
   })
 })
 
+describe('external Team updates behind an open draft', () => {
+  /** One stored Team whose captain prompt the cases below move around. */
+  function team(id: string, prompt: string): TeamPreset {
+    return {
+      id,
+      name: id,
+      description: '',
+      captain: { ...EMPTY_CAPTAIN, name: 'lead', systemPrompt: prompt },
+      members: [],
+    }
+  }
+
+  /** The two stored Teams every case starts from. */
+  function stored(): TeamPreset[] {
+    return [team('team-1', 'OLD_A'), team('team-2', 'OLD_B')]
+  }
+
+  /** The section the Host holds once the captain rewrote Team 1 through its tool. */
+  function rewritten(): TeamPresetsSection {
+    return { teams: [team('team-1', 'NEW_A'), team('team-2', 'OLD_B')], selections: [] }
+  }
+
+  /** One controller over the two stored Teams, or over Teams a case supplies. */
+  function open(options: {
+    fenceRevision?: boolean
+    deferMutations?: boolean
+    landed?: boolean
+    teams?: TeamPreset[]
+  } = {}) {
+    const { teams = stored(), ...formOptions } = options
+    const form = scriptedForm({ value: { teams, selections: [] }, ...formOptions })
+    return { form, controller: new TeamPresetsController(scriptedContext(form.form)) }
+  }
+
+  it('shows the rewritten prompt the moment the Host holds it', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    expect(controller.store.getSnapshot().teams.map(entry => entry.captain.systemPrompt)).toEqual(['NEW_A', 'OLD_B'])
+    controller.dispose()
+  })
+
+  it('keeps the staged edit of a Team the captain did not touch', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.teams.map(entry => entry.captain.systemPrompt)).toEqual(['NEW_A', 'DRAFT_B'])
+    expect(state.dirty).toBe(true)
+    controller.dispose()
+  })
+
+  it('keeps the draft through notifications that carry no Team change', async () => {
+    const form = scriptedForm({
+      value: { teams: stored(), selections: [{ sessionId: 's1', teamId: 'team-1' }] },
+    })
+    const controller = new TeamPresetsController(scriptedContext(form.form))
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    // Another Session picked a Team: the section moved, the Teams did not.
+    form.replace({ value: { teams: stored(), selections: [{ sessionId: 's1', teamId: 'team-2' }] }, revision: 5 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().dirty).toBe(true)
+    expect(controller.store.getSnapshot().teams[0]?.captain.systemPrompt).toBe('DRAFT_A')
+
+    // The pickers re-read both catalogues, which republishes page state only.
+    controller.refreshCatalogue()
+    await settle()
+    expect(controller.store.getSnapshot().dirty).toBe(true)
+    expect(controller.store.getSnapshot().teams[0]?.captain.systemPrompt).toBe('DRAFT_A')
+
+    // The namespace lost its writability: still no Team to adopt.
+    form.replace({ writable: false })
+    form.publishChange()
+    expect(controller.store.getSnapshot().teams[0]?.captain.systemPrompt).toBe('DRAFT_A')
+    controller.dispose()
+  })
+
+  it('saves the kept draft under the revision the Host moved to', async () => {
+    const { form, controller } = open({ fenceRevision: true })
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    await controller.save()
+    expect(form.mutations[0]?.revision).toBe(5)
+    expect(controller.store.getSnapshot()).toMatchObject({ dirty: false, failed: false })
+    controller.dispose()
+  })
+
+  it('clears a draft that coordination made identical to the Host', async () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    expect(controller.store.getSnapshot().dirty).toBe(false)
+    expect(controller.store.getSnapshot().teams).toEqual(rewritten().teams)
+    // Nothing left to save, so the page writes nothing.
+    await controller.save()
+    expect(form.mutations).toHaveLength(0)
+    controller.dispose()
+  })
+
+  it('does not roll the draft back when the Host changes during a write', async () => {
+    const { form, controller } = open({ deferMutations: true, landed: false })
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    const saving = controller.save()
+    // The captain's own update lands while this page's write is still crossing.
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().teams[0]?.captain.systemPrompt).toBe('DRAFT_A')
+
+    form.settleWrite()
+    await saving
+
+    // The refused write carried the draft, never the value that raced it.
+    expect(JSON.stringify(form.mutations[0]?.ops)).toContain('DRAFT_A')
+    expect(JSON.stringify(form.mutations[0]?.ops)).not.toContain('NEW_A')
+    // Once the write was refused, its recovery read is coordinated: the saved
+    // version wins over the staged edit, and the report says so.
+    const state = controller.store.getSnapshot()
+    expect(state).toMatchObject({ saving: false, failed: true, dirty: false })
+    expect(state.teams.map(entry => entry.captain.systemPrompt)).toEqual(['NEW_A', 'OLD_B'])
+    expect(state.externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+    controller.dispose()
+  })
+
+  it('keeps a Team this page added itself out of the Host\'s reach', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+    controller.createTeam()
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    // The rewritten Team is adopted; the Team this page added is not the Host's
+    // to replace, so it stays staged exactly as the user left it.
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1', 'team-2', 'team-3'])
+    expect(state.teams[0]?.captain.systemPrompt).toBe('NEW_A')
+    expect(state.teams[2]).toMatchObject({ name: '', members: [] })
+    expect(state.dirty).toBe(true)
+    controller.dispose()
+  })
+
+  it('reports the Team the Host rewrote, and the edit it replaced', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    // The draft held a prompt of its own for that Team, so the report says so.
+    expect(controller.store.getSnapshot().externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+    controller.dispose()
+  })
+
+  it('reports an unnamed Team by its identity', () => {
+    const { form, controller } = open({ teams: [{ ...team('team-1', 'OLD_A'), name: '' }, team('team-2', 'OLD_B')] })
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    form.replace({
+      value: { teams: [{ ...team('team-1', 'NEW_A'), name: '' }, team('team-2', 'OLD_B')], selections: [] },
+      revision: 5,
+    })
+    form.publishChange()
+
+    expect(controller.store.getSnapshot().externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+    controller.dispose()
+  })
+
+  it('does not claim an edit was replaced when the draft held none for that Team', () => {
+    const { form, controller } = open()
+    // The staged work is on Team 2; the Host rewrites Team 1, which was untouched.
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.externalUpdate).toEqual(notice({ teams: ['team-1'] }))
+    expect(state.dirty).toBe(true)
+    controller.dispose()
+  })
+
+  it('summarizes every Team one coordination adopted', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    form.replace({
+      value: { teams: [team('team-1', 'NEW_A'), team('team-2', 'NEW_B')], selections: [] },
+      revision: 5,
+    })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.externalUpdate).toEqual(notice({ teams: ['team-1', 'team-2'], overridden: ['team-1', 'team-2'] }))
+    // Both staged edits were superseded, so no draft is left behind.
+    expect(state.dirty).toBe(false)
+    controller.dispose()
+  })
+
+  it('reports the adopted Team while the rest of the draft stays unsaved', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+    controller.createTeam()
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+    // The report and the remaining unsaved work share the footer.
+    expect(state.dirty).toBe(true)
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1', 'team-2', 'team-3'])
+    expect(state.teams[0]?.captain.systemPrompt).toBe('NEW_A')
+    controller.dispose()
+  })
+
+  it('reports nothing for notifications that carry no Team change, and keeps a standing report', async () => {
+    const form = scriptedForm({
+      value: { teams: stored(), selections: [{ sessionId: 's1', teamId: 'team-1' }] },
+    })
+    const controller = new TeamPresetsController(scriptedContext(form.form))
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    // Another Session picked a Team: the section moved, the Teams did not.
+    form.replace({ value: { teams: stored(), selections: [{ sessionId: 's1', teamId: 'team-2' }] }, revision: 5 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().externalUpdate).toBeUndefined()
+
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+    form.replace({ value: rewritten(), revision: 6 })
+    form.publishChange()
+    // Team 1 still carried the staged prompt of the first edit, so the report
+    // says that edit was replaced; Team 2's own edit is untouched.
+    expect(controller.store.getSnapshot().externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+
+    // A later unrelated change must not wipe the report the user has not seen.
+    form.replace({ value: { ...rewritten(), selections: [{ sessionId: 's1', teamId: 'team-1' }] }, revision: 7 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+
+    controller.refreshCatalogue()
+    await settle()
+    expect(controller.store.getSnapshot().externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+    controller.dispose()
+  })
+
+  it('retires the report when the user edits, saves, or discards', async () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+    controller.createTeam()
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().externalUpdate).toBeDefined()
+
+    // An edit of the user's own retires it.
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+    expect(controller.store.getSnapshot().externalUpdate).toBeUndefined()
+
+    // So does a save.
+    controller.patchCaptain(0, { systemPrompt: 'AGAIN_A' })
+    form.replace({ value: { teams: [team('team-1', 'NEWER_A'), team('team-2', 'OLD_B')], selections: [] }, revision: 6 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().externalUpdate).toBeDefined()
+    await controller.save()
+    expect(controller.store.getSnapshot().externalUpdate).toBeUndefined()
+
+    // And a discard, which needs a draft left to drop.
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B2' })
+    controller.createTeam()
+    form.replace({ value: { teams: [team('team-1', 'NEWEST_A'), team('team-2', 'OLD_B')], selections: [] }, revision: 7 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().externalUpdate).toBeDefined()
+    expect(controller.store.getSnapshot().dirty).toBe(true)
+    controller.discard()
+    expect(controller.store.getSnapshot().externalUpdate).toBeUndefined()
+    controller.dispose()
+  })
+
+  it('joins a Team the Host added behind the draft and keeps it on save', async () => {
+    const { form, controller } = open()
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    form.replace({
+      value: { teams: [team('team-1', 'OLD_A'), team('team-2', 'OLD_B'), team('team-3', 'HOST_C')], selections: [] },
+      revision: 5,
+    })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    // The added Team joined the draft with the stored value, and the staged edit
+    // of the other Team is untouched.
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1', 'team-2', 'team-3'])
+    expect(state.teams[2]?.captain.systemPrompt).toBe('HOST_C')
+    expect(state.teams[1]?.captain.systemPrompt).toBe('DRAFT_B')
+    expect(state.externalUpdate).toEqual(notice({ added: ['team-3'] }))
+    expect(state.dirty).toBe(true)
+
+    // Saving the whole document no longer drops what the Host added.
+    await controller.save()
+    expect(JSON.stringify(form.mutations[0]?.ops)).toContain('"id":"team-3"')
+    controller.dispose()
+  })
+
+  it('drops a Team the Host deleted behind the draft instead of resurrecting it', async () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+
+    form.replace({ value: { teams: [team('team-1', 'OLD_A')], selections: [] }, revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1'])
+    expect(state.externalUpdate).toEqual(notice({ removed: ['team-2'] }))
+
+    await controller.save()
+    expect(JSON.stringify(form.mutations[0]?.ops)).not.toContain('team-2')
+    controller.dispose()
+  })
+
+  it('reports the staged edit a deleted Team took with it', () => {
+    const { form, controller } = open()
+    // The staged work is on the Team the Host deletes.
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    form.replace({ value: { teams: [team('team-1', 'OLD_A')], selections: [] }, revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.externalUpdate).toEqual(notice({ removed: ['team-2'], removedEdited: ['team-2'] }))
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1'])
+    // Nothing but Host records remain, so no draft is left to save.
+    expect(state.dirty).toBe(false)
+    controller.dispose()
+  })
+
+  it('re-coordinates after a refused write, so the retry is not the same conflict', async () => {
+    let land = false
+    const form = scriptedForm({
+      value: { teams: stored(), selections: [] },
+      fenceRevision: true,
+      landed: () => land,
+      recover: { value: rewritten(), revision: 5 },
+    })
+    const controller = new TeamPresetsController(scriptedContext(form.form))
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+
+    // Another writer won the race: the Host is at revision 5 with Team 1 rewritten.
+    form.replace({ revision: 5 })
+    await controller.save()
+
+    expect(form.mutations[0]?.revision).toBe(4)
+    const refused = controller.store.getSnapshot()
+    expect(refused).toMatchObject({ failed: true, dirty: true })
+    // The recovery read behind the refusal was coordinated, not left pending.
+    expect(refused.teams.map(entry => entry.captain.systemPrompt)).toEqual(['NEW_A', 'DRAFT_B'])
+    expect(refused.externalUpdate).toEqual(notice({ teams: ['team-1'] }))
+
+    land = true
+    await controller.save()
+    expect(form.mutations[1]?.revision).toBe(5)
+    expect(controller.store.getSnapshot()).toMatchObject({ dirty: false, failed: false })
+    controller.dispose()
+  })
+
+  it('keeps a Team this page added while the Host changed another one', () => {
+    const { form, controller } = open()
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+    controller.createTeam()
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    // The page's own Team is neither the Host's addition nor its deletion.
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1', 'team-2', 'team-3'])
+    expect(state.externalUpdate).toEqual(notice({ teams: ['team-1'], overridden: ['team-1'] }))
+    expect(state.dirty).toBe(true)
+    controller.dispose()
+  })
+
+  it('clears a draft the Host write landed on exactly, without claiming a conflict', async () => {
+    const { form, controller } = open()
+    // The staged value and the stored one end up identical: the Host wrote the
+    // very text the draft already held, so nothing had to be replaced.
+    controller.patchCaptain(0, { systemPrompt: 'NEW_A' })
+    expect(controller.store.getSnapshot().dirty).toBe(true)
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state.teams.map(entry => entry.captain.systemPrompt)).toEqual(['NEW_A', 'OLD_B'])
+    expect(state).toMatchObject({ dirty: false })
+    // Nothing was overwritten, so nothing may claim that it was.
+    expect(state.externalUpdate).toBeUndefined()
+    // Save has nothing to write, so the page writes nothing.
+    await controller.save()
+    expect(form.mutations).toHaveLength(0)
+    controller.dispose()
+  })
+
+  it('keeps a draft the Host write did not fully catch up with', () => {
+    const { form, controller } = open()
+    // The same stored write as above, but the draft also holds an unrelated
+    // edit and a Team of its own, so it is not the Host's document yet.
+    controller.patchCaptain(0, { systemPrompt: 'NEW_A' })
+    controller.patchCaptain(1, { systemPrompt: 'DRAFT_B' })
+    controller.createTeam()
+
+    form.replace({ value: rewritten(), revision: 5 })
+    form.publishChange()
+
+    const state = controller.store.getSnapshot()
+    expect(state).toMatchObject({ dirty: true })
+    expect(state.externalUpdate).toBeUndefined()
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1', 'team-2', 'team-3'])
+    expect(state.teams.map(entry => entry.captain.systemPrompt)).toEqual(['NEW_A', 'DRAFT_B', ''])
+    controller.dispose()
+  })
+
+  it('keeps a Team staged before the Host ever served a section', () => {
+    const form = scriptedForm({ status: 'loading', value: undefined })
+    const controller = new TeamPresetsController(scriptedContext(form.form))
+    controller.createTeam()
+
+    // No accepted section yet, so there is no stored Team to adopt.
+    form.publishChange()
+    expect(controller.store.getSnapshot().teams.map(entry => entry.id)).toEqual(['team-1'])
+
+    // Ready, but still no section: nothing to reconcile against either.
+    form.replace({ status: 'ready' })
+    form.publishChange()
+    expect(controller.store.getSnapshot().teams.map(entry => entry.id)).toEqual(['team-1'])
+
+    // The first accepted section carries a Team of the same id; the staged one
+    // is this page's own work, so the Host does not replace it.
+    form.replace({ value: { teams: [team('team-1', 'HOST_A')], selections: [] }, revision: 2 })
+    form.publishChange()
+    expect(controller.store.getSnapshot().teams).toEqual([{
+      id: 'team-1', name: '', description: '', captain: emptyCaptainPreset(), members: [],
+    }])
+    expect(controller.store.getSnapshot().dirty).toBe(true)
+    controller.dispose()
+  })
+})
+
 describe('composer selection writes', () => {
   it('adds, replaces, and clears one Session selection', async () => {
     const form = scriptedForm({ value: SECTION })
@@ -828,6 +1381,148 @@ describe('sharing one Team as a document', () => {
     const plan = planOf(controller, serializeTeamPreset({ ...shareable(), id: 'team-9', name: 'Build team' }))
     expect(injected.applyImport(plan, defaultImportResolution(plan))).toBe('team-2')
     controller.dispose()
+  })
+})
+
+describe('the Host execution stream', () => {
+  /** One controller over the stored section and a scripted stream. */
+  function streaming() {
+    const streams = executionStreams()
+    const form = scriptedForm({ value: SECTION })
+    const controller = new TeamPresetsController(scriptedContext(form.form, { execution: streams.open }))
+    return { streams, form, controller }
+  }
+
+  it('reports unknown until the first frame, then the Host state', async () => {
+    const { streams, controller } = streaming()
+    expect(controller.store.getSnapshot()).toMatchObject({ execution: 'loading', executions: [] })
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('unknown')
+
+    controller.loadCatalogue()
+    expect(streams.opened).toHaveLength(1)
+    streams.opened[0]?.push({ teams: [executionRow('team-1', 'busy')] })
+    await settle()
+
+    expect(controller.store.getSnapshot()).toMatchObject({
+      execution: 'ready',
+      executions: [executionRow('team-1', 'busy')],
+    })
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('busy')
+    controller.dispose()
+  })
+
+  it('falls back to unknown when the stream fails, never to its last idle frame', async () => {
+    const { streams, controller } = streaming()
+    controller.loadCatalogue()
+    streams.opened[0]?.push({ teams: [executionRow('team-1', 'idle')] })
+    await settle()
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('idle')
+
+    streams.opened[0]?.fail(new Error('the carrier dropped'))
+    await settle()
+    expect(controller.store.getSnapshot()).toMatchObject({ execution: 'error', executions: [] })
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('unknown')
+    controller.dispose()
+  })
+
+  it('reports unknown when the Host does not serve the stream at all', async () => {
+    const form = scriptedForm({ value: SECTION })
+    const controller = new TeamPresetsController(scriptedContext(form.form, {
+      execution: () => { throw new Error('teamPresets.execution is not a function') },
+    }))
+    controller.loadCatalogue()
+    await settle()
+    expect(controller.store.getSnapshot()).toMatchObject({ execution: 'error' })
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('unknown')
+    controller.dispose()
+  })
+
+  it('re-subscribes on refresh and ignores a superseded generation', async () => {
+    const { streams, controller } = streaming()
+    controller.loadCatalogue()
+    streams.opened[0]?.fail(new Error('the carrier dropped'))
+    await settle()
+    expect(controller.store.getSnapshot()).toMatchObject({ execution: 'error' })
+
+    controller.refreshCatalogue()
+    expect(streams.opened).toHaveLength(2)
+    streams.opened[1]?.push({ teams: [executionRow('team-1', 'idle')] })
+    await settle()
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('idle')
+
+    // The dead generation may still deliver a frame; it must publish nothing.
+    streams.opened[0]?.push({ teams: [executionRow('team-1', 'busy')] })
+    await settle()
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('idle')
+    controller.dispose()
+  })
+
+  it('keeps one live subscription, so a superseded generation cannot deliver a frame', async () => {
+    const { streams, controller } = streaming()
+    controller.loadCatalogue()
+    streams.opened[0]?.push({ teams: [executionRow('team-1', 'idle')] })
+    await settle()
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('idle')
+
+    // A Host notification re-reads the catalogues, but a subscription that is
+    // still open is not replaced: two generations never coexist, which is what
+    // keeps a frame from a superseded read out of the published state.
+    controller.refreshCatalogue()
+    expect(streams.opened).toHaveLength(1)
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('idle')
+
+    // The next subscription opens only once the live read ended, and its frames
+    // are the ones the page reports.
+    streams.opened[0]?.fail(new Error('the carrier dropped'))
+    await settle()
+    expect(controller.store.getSnapshot()).toMatchObject({ execution: 'error' })
+    controller.refreshCatalogue()
+    expect(streams.opened).toHaveLength(2)
+    streams.opened[1]?.push({ teams: [executionRow('team-1', 'busy')] })
+    await settle()
+    expect(executionStateOf(controller.store.getSnapshot(), 'team-1')).toBe('busy')
+    controller.dispose()
+  })
+
+  it('leaves the draft and its report untouched by stream frames', async () => {
+    const { streams, controller } = streaming()
+    controller.loadCatalogue()
+    streams.opened[0]?.push({ teams: [executionRow('team-1', 'idle')] })
+    await settle()
+
+    controller.patchCaptain(0, { systemPrompt: 'DRAFT_A' })
+    controller.createTeam()
+    streams.opened[0]?.push({ teams: [executionRow('team-1', 'busy')] })
+    await settle()
+
+    const state = controller.store.getSnapshot()
+    expect(state.dirty).toBe(true)
+    expect(state.teams.map(entry => entry.id)).toEqual(['team-1', 'team-2'])
+    expect(state.teams[0]?.captain.systemPrompt).toBe('DRAFT_A')
+    controller.dispose()
+  })
+
+  it('picks the hint copy of each state, in both languages', () => {
+    const base = new TeamPresetsController(scriptedContext(scriptedForm({ value: SECTION }).form))
+    const state = base.store.getSnapshot()
+    base.dispose()
+
+    expect(executionStateOf({ ...state, execution: 'loading' }, 'team-1')).toBe('unknown')
+    expect(executionStateOf({ ...state, execution: 'error' }, 'team-1')).toBe('unknown')
+    expect(executionStateOf({ ...state, execution: 'ready' }, 'team-1')).toBe('unknown')
+    expect(executionStateOf({ ...state, execution: 'ready', executions: [executionRow('team-1', 'idle')] }, 'team-1')).toBe('idle')
+    expect(executionStateOf({ ...state, execution: 'ready', executions: [executionRow('team-1', 'busy')] }, 'team-1')).toBe('busy')
+
+    for (const execution of ['idle', 'busy', 'unknown'] as const) {
+      const key = EXECUTION_NOTICE_KEYS[execution]
+      expect(en[key].trim()).not.toBe('')
+      expect(zh[key].trim()).not.toBe('')
+    }
+    // The three states must not read alike, or the page would mislead.
+    expect(new Set(Object.values(EXECUTION_NOTICE_KEYS)).size).toBe(3)
+    expect(zh[EXECUTION_NOTICE_KEYS.busy]).toContain('下一次团队任务')
+    expect(zh[EXECUTION_NOTICE_KEYS.idle]).toContain('立即生效')
+    expect(zh[EXECUTION_NOTICE_KEYS.unknown]).toContain('无法确认')
   })
 })
 

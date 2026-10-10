@@ -3,10 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import type { AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { apply, inject } from '../src/index.ts'
 import type { Config } from '../src/config.ts'
+import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
 import TeamPresetsToolCatalog from '../src/tool-catalog.ts'
 import { routedCaptain, team } from './fixtures/team-presets.ts'
 import type { TeamPreset, TeamSelectionRecord } from '../src/types.ts'
@@ -38,7 +39,20 @@ async function setup(teams: TeamPreset[], selections: TeamSelectionRecord[]) {
   await ctx.plugin(AgentLoop, { agents: [] })
   const teamsRef = volatileRef(teams)
   const selectionsRef = volatileRef(selections)
-  ctx.provide('agentTeams', { spawnTeammate: async () => ({ member: { name: 'member', status: 'active' } }) })
+  ctx.provide('agentTeams', {
+    spawnTeammate: async () => ({ member: { name: 'member', status: 'active' } }),
+    // Reconciliation asks the roster whether a Team task is still running. This
+    // composition has no teammates, so only the Lead row exists and it follows
+    // the real Agent status.
+    tryMembership: (agent: Agent) => ({ root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }),
+    listMembers: (agent: Agent) => [{
+      id: SessionId(agent.id),
+      name: 'lead',
+      role: 'lead' as const,
+      status: agent.status === 'running' ? 'running' as const : 'inactive' as const,
+      diagnostics: [],
+    }],
+  })
   const configure = vi.fn(() => () => {})
   const update = vi.fn(async (_ns: string, _patch: { teams: TeamPreset[] }) => {})
   ctx.provide('settings', { configure, update })

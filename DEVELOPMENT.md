@@ -1,12 +1,16 @@
 # Development status
 
-This repository holds the source of `dsh-agent-team-presets`. It is a **source
-release**, not yet an independently installable package. This file records what
-works today, what is blocked, and what has to happen for the standalone path.
+This repository holds the source and prebuilt artifacts of
+`dsh-agent-team-presets`. It is an **installable community plugin** for a
+compatible DeepSeek Harness: `dsh plugin add github:bloodarea/dsh-agent-team-presets#v0.1.3`
+installs the committed `lib/` without building. Developing and rebuilding the
+plugin still requires a DeepSeek Harness source checkout. This file distinguishes
+that source-build limitation from the supported installation path.
 
 ## What works today
 
-The plugin runs as a package inside a DeepSeek Harness source checkout:
+The plugin installs from GitHub into a compatible Harness using its prebuilt
+artifacts. Source development runs inside a DeepSeek Harness checkout:
 
 - `packages/experimental/agent-team-presets/` in a checkout at the `0.2.0-rc`
   line, built and tested through that checkout's workspace tooling.
@@ -16,16 +20,16 @@ The plugin runs as a package inside a DeepSeek Harness source checkout:
   `@deepseek-ai/dsh-experimental-client-ui-agent-team` in `src/` is type-only
   and erases at build time.
 
-## What is blocked
+## What limits standalone source builds
 
-Two independent blockers, both outside this repository.
+These limitations concern rebuilding from source, not installing the prebuilt
+plugin into a compatible Harness.
 
-1. **The needed packages are not published at the required version.** npm
-   currently carries the `@deepseek-ai/dsh-*` line at `0.0.1-rc.1` /
-   `0.1.0-rc.6`, and the Agent Teams packages at `0.1.5-alpha.2`. This plugin
-   targets `>=0.2.0-rc.1 <0.3.0`, and it needs `AgentTeamAppearance` from
-   `@deepseek-ai/dsh-experimental-client-ui-agent-team`, which is not in any
-   published version yet.
+1. **Source dependencies must match the supported Harness API.** This plugin
+   targets `>=0.2.0-rc.1 <0.3.0`, including `AgentTeamAppearance` from
+   `@deepseek-ai/dsh-experimental-client-ui-agent-team`. Older published package
+   versions cannot substitute for these APIs. The supported development workflow
+   resolves them through the matching Harness workspace.
 
 2. **The build is monorepo-coupled.** `tsconfig.*.json` extends the checkout's
    base configs and references workspace projects; `tsdown.config.ts` imports

@@ -11,7 +11,7 @@
 
 ## 概述
 
-`dsh-agent-team-presets` 增加一个 Settings 页面来配置具名 Agent Team，并增加一个 composer 控件把某个 Team 应用到会话。一个 Team 有一个 captain 和任意数量的成员：captain 携带自己的提示词与工具策略，而每个成员在此之外还携带自己的 provider/model 路由与推理强度。应用一个 Team 会安装 captain 的提示词、限制其工具，并注册 `spawn_team_member`，它用该成员自己的 persona、路由、强度与工具召唤成员。captain 以会话已经选好的模型工作。
+`dsh-agent-team-presets` 增加一个 Settings 页面来配置具名 Agent Team，并增加一个 composer 控件把某个 Team 应用到会话。一个 Team 有一个 captain 和任意数量的成员：captain 携带自己的提示词与工具策略，而每个成员在此之外还携带自己的 provider/model 路由与推理强度，每次召唤该成员时都从存储的 Team 读取。应用一个 Team 会安装 captain 的提示词、限制其工具，并注册 `spawn_team_member`，它用该成员自己的 persona、路由、强度与工具召唤成员。captain 以会话已经选好的模型工作。
 
 <a id="project-introduction"></a>
 ## 项目介绍
@@ -85,7 +85,13 @@ Settings → Agent team presets 是三个层叠页面，因此狭窄的 Settings
 2. **One Team** —— 它的名称与描述、captain 行以及成员 roster。添加成员会打开该成员的页面。
 3. **One agent**（captain 或成员）—— 身份、工具与系统提示词各占一张卡片；成员页面额外有模型卡片，并可删除该成员。
 
-每次编辑都先在共享页脚中暂存，再由 **Save** 控件写入；存储值保存在 profile 的用户设置文档中。
+每次编辑都先在共享页脚中暂存，再由 **Save** 控件写入；存储值保存在 profile 的用户设置文档中。Settings 在团队任务进行中仍接受保存，不会中断任务。只要会话的 captain 为 `running`，或任一 teammate 为 `running` / `provisioning`，该会话就处于执行中；队长 persona、briefing、成员工具描述与名单、工具权限均保持已应用的定义，任务期间新召唤的成员也使用该定义。成员的**模型路由**与每个槽位的**颜色**被有意排除在这份冻结定义之外，因为二者在需要时才从存储的 Team 读取：修正后的 provider、模型或推理强度会被进行中的任务在下次召唤成员时直接采用，无需重启任务；颜色改动也会立即重绘。会话整体空闲后，在下一次团队任务开始前采用最新保存的定义；连续保存以最新值为准。共享同一预设的会话分别采用。
+
+页脚汇总在线会话，报告所选 Team 的执行状态：
+
+- **`idle`** —— 当前没有会话在执行该团队任务，保存后立即生效。
+- **`busy`** —— 至少一个会话正在执行；空闲会话立即采用定义修改，执行中的会话在下一次任务前采用。执行期间保存的成员路由会在下次召唤该成员时生效，进行中的任务同样适用。只要队长仍在运行，队员结束就不会解除定义冻结。
+- **`unknown`** —— 无法确认是否执行中，包括流尚未就绪、结束或失败、连接中断，或 Host 缺少该方法或某个 Team 的状态。页面不会把先前的空闲帧当成当前事实。定义修改仍不会改变进行中的任务，而执行期间保存的成员路由会在下次召唤时生效。
 
 | 字段 | 含义 |
 |---|---|
@@ -102,7 +108,7 @@ Settings → Agent team presets 是三个层叠页面，因此狭窄的 Settings
 
 ### 选择一个 Team
 
-composer 的 team 控件位于工具行中、权限控件之后。选择某个 Team 会写入该会话的选择记录，captain 部分立即应用到活动会话：它的提示词区段与工具作用域。模型仍是 composer 已经显示的那一个，因为没有任何 Team 会写入模型选择。选择 "No team" 会移除该应用：会话保持当前的模型、提示词与工具，直到其他因素改变它们。
+composer 的 team 控件位于工具行中、权限控件之后。选择某个 Team 会写入该会话的选择记录；空闲会话立即应用其 captain 提示词与工具作用域，执行中的会话保留当前应用，直到整体空闲。选择 "No team" 也在同一时机移除 Team 应用，恢复会话的其他提示词与工具贡献。模型仍是 composer 已经显示的那一个，因为没有任何 Team 会写入模型选择。
 
 ### 分享单个 Team
 
@@ -119,11 +125,13 @@ composer 的 team 控件位于工具行中、权限控件之后。选择某个 T
 - **`get_team_preset`** —— 读出本会话 Team（或 `team_id` 指定的 Team）的全部可编辑字段，以及设置文档当前的修订号。会话尚未选择 Team 时，它报告 `no-selection` 并列出所有已配置 Team，因此 captain 会向用户询问要改哪一个，而不是自行猜测。
 - **`update_team_preset`** —— 替换 `team_description`、`captain_description`、`captain_system_prompt`，以及每个成员的 `description` / `system_prompt`，并以 `get_team_preset` 返回的修订号作为写入围栏。
 
-写入用的是 Settings 页面编辑的那份设置文档，因此会触发同一次 `loader/volatile-update` 调和：在选中该 Team 的每个会话里，captain 从下一个 step 起读到新预设，之后召唤的成员使用新 persona。**已经召唤过的 teammate 保留它被召唤时的提示词**，因为 Agent Teams 把成员描述与 persona 当作创建时的一次性输入；要改变它的职责，应当改预设后重新召唤，或给它追加一条保留历史的新要求。
+工具成功写入时，保存的是 Settings 页面编辑的同一份设置文档，并遵循上文按会话采用的时机。captain 若仍在执行当前任务，后续模型步骤继续使用旧定义。**已有 teammate 保留创建时的描述、persona 与工具过滤器**，即使通过消息唤醒也不变；会话采用新预设后，未来新建的成员才使用新定义。要调整已有 teammate 的工作，可发送新要求，而不替换其已存储的组合。
 
 两个工具只注册在会话根 Agent（captain）的作用域内，teammate 看不到它们；写入还要求当前回合带有用户直接发起的输入，因此自动续跑或 teammate 汇报的回合无法改写这份共享预设。名称、成员路由与工具权限不在它们的编辑范围内 —— 改名会改变 teammate target 并撞上 Agent Teams 的名称永久占用规则，因此这件事仍由 Settings 页面负责。
 
-预设写入不会打断正在运行的团队，也不会在运行途中生效：只要选中该 Team 的任一 Session 还有 running 或 provisioning 的成员，`update_team_preset` 就返回 `team-busy` 且不写任何东西 —— 因为正在执行的 teammate 会继续持有它们被召唤时的定义，而 captain 已经读到新定义。等这一轮跑完，或用 `interrupt_agent` 中断那些成员后再写；`get_team_preset` 会报告正在执行的成员数，captain 可以提前告知。除此之外写入还拒绝两种情况：修订号已被别的写入者推进（重新读取后重试）；某个常驻提示词里的 `{{变量}}` 无法解析 —— Team 提示词是插值模板，未知名字会让 captain 的下一次请求直接失败，而不是降级。校验只针对本次调用提交的提示词，因此对 Settings 页面写入的既有文本不会造成无关编辑被拒。
+工具的写入策略与 Settings 页面不同：只要选中或仍应用该 Team 的任一在线会话还有 `running` / `provisioning` 的 teammate，`update_team_preset` 就返回 `team-busy`，不保存。这项保守的模型发起写入检查只统计 teammate，不统计正在执行工具的 captain；否则每次调用都会自我阻塞。等待这些队员结束，或用 `interrupt_agent` 中断它们，然后再次调用 `get_team_preset`，用其修订号重试。进行中的任务保持原定义；Settings 页面仍可保存供之后采用的修改，且在那里保存的成员路由会在该任务下次召唤成员时生效。`get_team_preset` 会报告正在执行的队员数。
+
+工具还会拒绝被其他写入者推进的修订号（重新读取后重试），以及本次提交的常驻提示词中无法解析的 `{{variable}}` 组。未知变量会在模板被使用时使请求失败，而不是降级。校验只针对本次调用提交的提示词，因此对 Settings 页面写入的既有文本不会造成无关编辑被拒。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
@@ -134,16 +142,19 @@ Host 半边拥有实时配置与按会话的应用：
 
 | 文件 | 作用 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：实时 Config，在 `agent/created`、`agent/disposed` 与 `loader/volatile-update` 上做按会话的调和。 |
+| [`src/index.ts`](src/index.ts) | 插件入口：实时 Config，依据 Agent 生命周期、设置提交与 `team/member` 结算，按会话冻结与采用定义。 |
+| [`src/execution.ts`](src/execution.ts) | 事件驱动的执行状态监控：队长与队员状态、已应用与已存储定义的比较，以及聚合全量帧。 |
 | [`src/config.ts`](src/config.ts) | 易变的 `teams` 与 `selections` 字段、continuable provider 名称，以及存储 Team 的 captain 路由清理。 |
 | [`src/application.ts`](src/application.ts) | 把一个 Team 应用到一个活动 Agent：提示词区段、工具作用域与 `spawn_team_member` 工具。 |
 | [`src/preset-editor.ts`](src/preset-editor.ts) | 预设工具背后的纯编辑逻辑：可编辑字段白名单、成员解析与 roster 的描述长度上限。 |
 | [`src/preset-tools.ts`](src/preset-tools.ts) | captain 的 `get_team_preset` 与 `update_team_preset`、它们的授权检查，以及设置写入。 |
 | [`src/presets.ts`](src/presets.ts) | 与浏览器半边共享的纯函数：teammate target、成员查找、选择记录改写、roster 文本。 |
-| [`src/tool-catalog.ts`](src/tool-catalog.ts) | Host Remote 服务 `teamPresetsToolCatalog`：成员允许列表可以命名的全局工具。 |
+| [`src/tool-catalog.ts`](src/tool-catalog.ts) | Host Remote 服务 `teamPresetsToolCatalog`：可限制的全局工具，以及供 Settings 页面使用的 `teamPresets.execution` 流。 |
 | [`src/client/*`](src/client) | 浏览器半边：Settings 页面、composer 控件与共享表单控制器。 |
 
 应用一个 Team 会把 captain 的提示词作为 `deployment:persona-prefix` 安装到该 Agent 的作用域上，因此它只遮蔽该会话的部署 persona。captain 与每个成员各自解析自己的工具模式。自定义的 captain 允许列表会过滤其全局工具；被召唤的成员收到自己的自定义允许列表，与 captain 的选择无关。captain 以会话已经选好的模型工作，因此本插件完全不写入模型选择：该引用始终只由 composer 的模型控件拥有，而渲染后的 captain 提示词会在请求之前记录为 `system/message` 表层事件，因此模型可见输入始终可以从会话日志重建。 Host 半边还提供 `teamPresetsToolCatalog` Remote 服务，它列出的正是 `ctx.tools.restrict()` 校验所依据的全局工具，因此 Settings 页面不会给出 summon 路径会拒绝的名字。
+
+`teamPresets.execution` 是发送全量快照的 Remote 流：`{ teams: [{ teamId, state, busySessions, executingMembers, pendingSessions }] }`。计数覆盖选中或仍应用该预设的在线会话；`pendingSessions` 统计尚无应用，或已应用内容与已存储选择或冻结定义不同的会话，会话实时读取的成员路由与颜色不计入。帧仅携带 Team 身份与聚合计数，不传 persona、会话名称或会话内容。生命周期与设置事件刷新流，无需轮询；无法读取 roster 时报告 `unknown`，但已有确定的执行活动时报告 `busy`。
 
 ### 选择与存储
 
@@ -205,7 +216,7 @@ You review one diff at a time and report findings.
 
 #### KV Cache 影响
 
-在 Team 预设不变时，两个区段保持逐字节一致，因此会话的系统前缀保留其 prompt-cache 前缀。编辑该 Team、添加成员或重命名成员都会重写队长的 briefing 区段。
+即使保存了更新的预设，执行中任务所应用的 Team 区段模板也保持不变。在任务之间采用变更后的 Team 时，队长提示词与 briefing 可能被重写；实际缓存复用还取决于提示词变量与提供商能力。
 
 ### `spawn_team_member`
 
@@ -219,7 +230,7 @@ You review one diff at a time and report findings.
 
 #### KV Cache 影响
 
-在 Team 预设、其成员列表与工具表保持不变期间，区段文本与该工具 schema 保持稳定。
+执行中的任务所应用的成员名单与工具 schema 保持不变。在任务之间采用变更后的名单或工具策略时，请求中的工具可能变化，并影响缓存复用。
 
 ## 已知限制与延期工作
 
@@ -231,8 +242,8 @@ You review one diff at a time and report findings.
 - **允许列表只遮蔽全局工具。** 诸如 Team 协调工具（`send_message`、`team_task_*`）这样的作用域注册对受限 agent 仍然可见，因为 `ctx.tools.restrict()` 只对全局名称取交集，而保留作用域注册。因此成员仍保留其答复 Lead 所需的工具。
 - **会话模型不属于 Team。** captain 以 composer 选定的那个模型工作，只有成员带路由，因此编辑 Team 永远不会改动你的模型。
 - **本版本之前保存的 captain 会一次性失去其路由。** 插件在加载时通过常规设置写入重写这样的 Team，因此 profile 补丁不再在 captain 上写出 `provider`、`model` 与 `reasoningEffort`。
-- **预设编辑到达 captain 与新成员，不到已经运行的 teammate。** Agent Teams 把成员的描述与 persona 当作创建时输入，并配有严格的 provisioning 生命周期，因此 `update_team_preset` 无法改写一个已经存在的 teammate；改变它的职责意味着改预设后重新召唤，或发送一条保留其历史的新要求。
-- **预设是共享的。** 编辑一个 Team 会改变所有选中它的会话，这正是写入要求用户直接发起的回合、并逐字回报替换了哪些字段的原因。
+- **已有 teammate 保留创建时的组合。** 应用保存的预设会更新 captain 与未来新建的成员，不会更新已有 teammate 的描述、persona 或工具过滤器；发送新要求可调整工作，但不会替换该组合。
+- **共享预设按会话采用，成员路由无需等待。** Settings 保存不改变进行中任务的定义；captain 在会话整体空闲后、下次任务前采用最新定义。成员路由在该成员被召唤时读取，因此在 Settings 修正路由后，进行中的任务下次召唤成员即可使用，无需重启。队长工具还会在任一受影响会话有 running / provisioning 的 teammate 时拒绝保存，并要求用户直接发起的轮次。
 
 -----
 

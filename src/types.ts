@@ -88,3 +88,36 @@ export type ToolCatalogValue = {
   /** Every global tool name a member allow-list can select. */
   tools: readonly ToolChoice[]
 }
+
+/**
+ * How one Team's execution state reads to the settings page.
+ *
+ * `idle` is a positive finding — every online Session that references the Team
+ * was inspected and none is running a Team task. `unknown` means the Host could
+ * not decide, so the page must never present it as idle.
+ */
+export type TeamExecutionState = 'idle' | 'busy' | 'unknown'
+
+/** One Team's live execution state, aggregated over the online Sessions. */
+export type TeamExecutionRow = {
+  /** Team identity the row describes. */
+  teamId: string
+  /** Whether the Team is executing, known idle, or undecidable. */
+  state: TeamExecutionState
+  /** Online Sessions running a Team task on it. */
+  busySessions: number
+  /** Teammates running or provisioning across those Sessions. */
+  executingMembers: number
+  /**
+   * Sessions whose applied definition or selection the next Team task has not
+   * adopted yet. A member route or accent color saved meanwhile is read live,
+   * so it is no reason to wait.
+   */
+  pendingSessions: number
+}
+
+/** Whole-set frame of the Team execution stream. */
+export type TeamExecutionSnapshot = {
+  /** One row per Team the Host reports, ordered by Team identity. */
+  teams: readonly TeamExecutionRow[]
+}

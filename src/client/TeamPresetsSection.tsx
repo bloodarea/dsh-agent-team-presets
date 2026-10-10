@@ -13,10 +13,12 @@ import { TeamEditorView } from './TeamEditorView.tsx'
 import type { AgentSlot } from './TeamEditorView.tsx'
 import { TeamImportDialog } from './TeamImportDialog.tsx'
 import { TeamListView } from './TeamListView.tsx'
-import { defaultImportResolution } from './team-presets-controller.ts'
-import type { TeamPresetImportPlan, TeamPresetsInjected } from './team-presets-controller.ts'
+import { defaultImportResolution, executionStateOf } from './team-presets-controller.ts'
+import type {
+  ExternalUpdateNotice, TeamPresetImportPlan, TeamPresetsInjected,
+} from './team-presets-controller.ts'
 import { downloadPresetText, presetFileName, readPresetFile } from './preset-file.ts'
-import { IMPORT_FAILURE_KEYS } from './locales.ts'
+import { EXECUTION_NOTICE_KEYS, IMPORT_FAILURE_KEYS } from './locales.ts'
 import type { TeamPresetsLocaleKey } from './locales.ts'
 import type { TeamAgentPreset, TeamCaptainPreset } from '../types.ts'
 import css from './TeamPresetsSection.module.css'
@@ -52,6 +54,52 @@ type View =
   | { readonly kind: 'list' }
   | { readonly kind: 'team'; readonly teamId: string }
   | { readonly kind: 'agent'; readonly teamId: string; readonly slot: AgentSlot }
+
+/**
+ * Read one coordinated external update as the footer's status sentences.
+ *
+ * The saved version wins silently, so the line names what the Host rewrote,
+ * added, and deleted, and says a staged edit was replaced or dropped only for
+ * the Teams where one really was.
+ * @param notice - what the coordination adopted, added, and removed.
+ * @param t - the page's locale reader.
+ * @returns the sentences the footer shows.
+ */
+function externalUpdateText(notice: ExternalUpdateNotice, t: TeamPresetsSectionProps['t']): string {
+  const parts: string[] = []
+  if (notice.teams.length > 0) {
+    parts.push(notice.teams.length === 1
+      ? t('externalUpdateOne', { team: notice.teams[0] ?? '' })
+      : t('externalUpdateMany', { count: notice.teams.length, teams: notice.teams.join(', ') }))
+    if (notice.overridden.length > 0) {
+      parts.push(notice.overridden.length === 1
+        ? t('externalUpdateOverriddenOne', { team: notice.overridden[0] ?? '' })
+        : t('externalUpdateOverriddenMany', {
+          count: notice.overridden.length,
+          teams: notice.overridden.join(', '),
+        }))
+    }
+  }
+  if (notice.added.length > 0) {
+    parts.push(notice.added.length === 1
+      ? t('externalAddedOne', { team: notice.added[0] ?? '' })
+      : t('externalAddedMany', { count: notice.added.length, teams: notice.added.join(', ') }))
+  }
+  if (notice.removed.length > 0) {
+    parts.push(notice.removed.length === 1
+      ? t('externalRemovedOne', { team: notice.removed[0] ?? '' })
+      : t('externalRemovedMany', { count: notice.removed.length, teams: notice.removed.join(', ') }))
+    if (notice.removedEdited.length > 0) {
+      parts.push(notice.removedEdited.length === 1
+        ? t('externalRemovedEditedOne', { team: notice.removedEdited[0] ?? '' })
+        : t('externalRemovedEditedMany', {
+          count: notice.removedEdited.length,
+          teams: notice.removedEdited.join(', '),
+        }))
+    }
+  }
+  return parts.join(' ')
+}
 
 /**
  * Render the Team preset settings page.
@@ -120,6 +168,9 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
     downloadPresetText(presetFileName(team), text)
   }
 
+  // The page promises when a save takes effect, so the footer reports the
+  // execution state of the Team being edited — never a state it cannot support.
+  const execution = team === undefined ? undefined : executionStateOf(state, team.id)
   const memberSlot = active.kind === 'agent' && active.slot !== 'captain' ? active.slot : undefined
   const agent = team === undefined || active.kind !== 'agent'
     ? undefined
@@ -210,8 +261,19 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
       )}
 
       <footer className={css.footer}>
-        {state.failed ? <span className={css.warn} role="status">{t('saveFailed')}</span> : null}
-        {state.dirty ? <span className={css.footerNote}>{t('unsaved')}</span> : null}
+        <div className={css.footerNotes}>
+          {execution === undefined ? null : (
+            <span className={css.footerNote} role="status">
+              {t(EXECUTION_NOTICE_KEYS[execution])}
+              {execution === 'busy' ? ` ${t('executionBusyShared')}` : ''}
+            </span>
+          )}
+          {state.failed ? <span className={css.warn} role="status">{t('saveFailed')}</span> : null}
+          {state.externalUpdate === undefined ? null : (
+            <span className={css.warn} role="status">{externalUpdateText(state.externalUpdate, t)}</span>
+          )}
+          {state.dirty ? <span className={css.footerNote}>{t('unsaved')}</span> : null}
+        </div>
         <Button
           size="sm"
           variant="ghost"
