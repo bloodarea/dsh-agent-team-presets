@@ -6,6 +6,8 @@ node_modules/
 # Local evidence and operational notes. Public usage/development guidance
 # belongs in the READMEs; publish a reviewed, sanitized copy when needed.
 /docs/evidence/
+/docs/**/*.md
+/docs/**/*.html
 /DEVELOPMENT.md
 /CHANGELOG.md
 /contrib/awesome-dsh-plugin/PR.md
