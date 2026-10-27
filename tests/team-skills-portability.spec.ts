@@ -112,8 +112,11 @@ describe('portable Team Skill storage', () => {
   it('keeps root resolution failures inside asynchronous startup and ignores unpublished atomic manifest temps', async () => {
     const path = await root()
     await writeFile(join(path, 'file'), 'regular file')
-    const invalid = new TeamSkillStore(join(path, 'file', 'parent', 'store'))
-    await expect(invalid.open()).rejects.toBeDefined()
+    for (const location of [join(path, 'file'), join(path, 'file', 'parent', 'store')]) {
+      const invalid = new TeamSkillStore(location)
+      expect(() => invalid.root).not.toThrow()
+      await expect(invalid.open()).rejects.toMatchObject({ code: 'ENOTDIR' })
+    }
     const store = new TeamSkillStore(join(path, 'good')); await store.open()
     const asset = await store.install(package_, { id: 'custom:portable', version: '1', origin: 'custom' })
     const manifestDirectory = join(store.root, 'manifests', diskComponent(asset.id))

@@ -23,9 +23,35 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { TeamSkillManager, CAPTAIN_ROLE } from './manager.ts'
 import { TeamSkillRuntime } from './provider.ts'
+import type { SkillSyncResult } from './provider.ts'
 import { TeamSkillStore } from './store.ts'
 import type { TeamSkillAsset, TeamPreset } from '../types.ts'
 import { memberTargets } from '../presets.ts'
+
+/**
+ * What one {@link TeamSkills.syncAgent} call produced.
+ *
+ * `assigned` is the number of assets the role holds in the library. A caller at
+ * a creation edge uses both fields together: assignments that exist but could
+ * not be published (`deferred`, `failed`) must be refused rather than run as a
+ * member that silently sees nothing.
+ */
+export interface AgentSkillSync {
+  /** The Agent whose assignment was applied. */
+  readonly agent: Agent
+  /** What its registration is now. */
+  readonly outcome: SkillSyncResult
+  /**
+   * How many assets this role is assigned, or `undefined` when the bindings
+   * themselves could not be read.
+   *
+   * The distinction is load-bearing: `0` is a positive fact ("this role holds
+   * nothing, so there is nothing to publish"), while `undefined` means this
+   * activation cannot know. A creation edge must refuse the unknown case rather
+   * than mistake an unreadable library for an empty assignment.
+   */
+  readonly assigned: number | undefined
+}
 
 /** The skills the package ships under `assets/skills`. */
 export const OFFICIAL_SKILL_IDS = [
@@ -89,8 +115,7 @@ export function roleOfMember(team: TeamPreset, memberTarget: string): string | u
 }
 
 /** The Team Skill subsystem, ready for the runtime to drive. */
-export class TeamSkills {
-  /** The asset store. */
+export class TeamSkills {  /** The asset store. */
   readonly store: TeamSkillStore
   /** The binding table and its delete guards. */
   readonly manager: TeamSkillManager
@@ -101,6 +126,8 @@ export class TeamSkills {
   /** Retain a degraded-start reason for both GUI and tool callers. */
   issue: string | undefined
   private opened = false
+  /** The store's one startup pass, shared by every caller that awaits readiness. */
+  private readiness: Promise<boolean> | undefined
   private readonly syncGeneration = new WeakMap<Agent, number>()
   private closed = false
   private readonly log: (message: string) => void
@@ -138,7 +165,15 @@ export class TeamSkills {
    * @returns whether the subsystem is usable.
    */
   async open(log: (message: string) => void): Promise<boolean> {
-    if (this.opened) return true
+    // One open per instance: an assignment that arrives while the store is
+    // still loading awaits this same promise instead of seeing `opened === false`
+    // and reporting an empty catalog.
+    this.readiness ??= this.start(log)
+    return await this.readiness
+  }
+
+  /** The store's one startup pass, awaited by every caller that needs an answer. */
+  private async start(log: (message: string) => void): Promise<boolean> {
     try {
       await this.store.open()
       await this.manager.open()
@@ -171,6 +206,18 @@ export class TeamSkills {
   }
 
   /**
+   * Wait until this subsystem's store has been opened once.
+   *
+   * A caller that must publish a registration before an Agent's next request
+   * awaits this first, so `syncAgent` itself becomes a microtask instead of a
+   * disk read at the moment the surface is installed.
+   * @returns whether the store is usable.
+   */
+  async whenOpened(): Promise<boolean> {
+    return await this.open(message => this.log(message))
+  }
+
+  /**
    * Resolve the assets one role receives.
    * @param role - Team and role identity.
    * @returns the bound assets that still exist.
@@ -180,20 +227,58 @@ export class TeamSkills {
   }
 
   /**
-   * Apply one Agent's assignment, installing or releasing its provider.
-   * @param agent - the Agent whose scope is synchronized.
-   * @param role - the role it fills, or undefined when it fills none.
-   * @returns after the registration matches the current bindings.
+   * Install one Agent's assignment, resolving once an answer exists.
+   *
+   * The answer matters at a creation edge: the Host reads the model-facing
+   * catalog from a step boundary, so a member whose assignment was not published
+   * spends its whole first turn believing nothing was assigned. This method
+   * therefore reports `installed`, `none`, `deferred` or `failed` instead of
+   * resolving silently, and it never waits for a skill service that this
+   * deployment does not compose.
+   *
+   * Calls for one Agent are serialized: a newer intent supersedes an older one
+   * through the generation counter, so the reconcile follow-up cannot install a
+   * stale asset set after a newer assignment already landed.
+   * @param agent - the Agent whose visible skills change.
+   * @param role - the assignment, or undefined to release the registration.
+   * @returns the registration outcome, plus the assets it was asked to publish.
    */
-  syncAgent(agent: Agent, role: TeamSkillRole | undefined): void {
-    if (!this.opened) return
+  async syncAgent(agent: Agent, role: TeamSkillRole | undefined, options: { readonly signal?: AbortSignal } = {}): Promise<AgentSkillSync> {
+    if (this.closed) return { agent, outcome: { status: 'none' }, assigned: 0 }
+    // Await the store instead of answering from a half-initialized index: a
+    // member created during startup would otherwise be told it has no skills.
+    // The store is opened once, at activation. When that has already happened
+    // this call performs its registration in the same synchronous turn, which
+    // is what lets the captain path publish a catalog without awaiting a disk
+    // read mid-application.
+    if (!this.opened) await this.open(message => this.log(message))
+    if (options.signal?.aborted === true) return { agent, outcome: { status: 'none' }, assigned: 0 }
+    if (this.closed) return { agent, outcome: { status: 'none' }, assigned: 0 }
+    const assets = role === undefined ? [] : this.assetsForRole(role)
+    if (!this.opened) {
+      // The bindings themselves are unreadable, so nothing about this role can be
+      // proven: `assigned` stays undefined and the caller must fail closed. An
+      // unreadable library is never reported as "this role holds nothing".
+      const reason = this.issue ?? 'the Team Skill store could not be opened'
+      return { agent, outcome: { status: 'failed', reason }, assigned: undefined }
+    }
     const generation = (this.syncGeneration.get(agent) ?? 0) + 1
     this.syncGeneration.set(agent, generation)
-    this.runtime.sync({ agent, assets: role === undefined ? [] : this.assetsForRole(role) })
-    void this.manager.reconcile().then(() => {
+    const outcome = await this.runtime.sync({ agent, assets }, options.signal === undefined ? {} : { signal: options.signal })
+    void this.manager.reconcile().then(async () => {
       if (this.closed || this.syncGeneration.get(agent) !== generation) return
-      this.runtime.sync({ agent, assets: role === undefined || !this.manager.hasRole(role.teamId, role.roleId) ? [] : this.assetsForRole(role) })
+      const settled = role === undefined || !this.manager.hasRole(role.teamId, role.roleId) ? [] : this.assetsForRole(role)
+      const followUp = await this.runtime.sync({ agent, assets: settled })
+      if (followUp.status === 'deferred' || followUp.status === 'failed') {
+        this.log(`Team Skill registration for Agent "${String((agent as unknown as { id?: string }).id ?? '?')}" `
+          + `did not settle: ${followUp.reason ?? followUp.status}`)
+      }
     }).catch(error => this.log(`Team Skill reconciliation failed: ${String(error)}`))
+    if (outcome.status === 'deferred' || outcome.status === 'failed') {
+      this.log(`Team Skill assignment for Agent "${String((agent as unknown as { id?: string }).id ?? '?')}" `
+        + `is not visible: ${outcome.reason ?? outcome.status}`)
+    }
+    return { agent, outcome, assigned: assets.length }
   }
 
   /**
@@ -210,7 +295,9 @@ export class TeamSkills {
    * @param registered - every live Agent and the role it fills.
    */
   resync(registered: readonly { agent: Agent; role: TeamSkillRole | undefined }[]): void {
-    for (const row of registered) this.syncAgent(row.agent, row.role)
+    for (const row of registered) {
+      void this.syncAgent(row.agent, row.role).catch(error => this.log(`Team Skill resync failed: ${String(error)}`))
+    }
   }
 
   /** Release the whole subsystem. */

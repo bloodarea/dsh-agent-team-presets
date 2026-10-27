@@ -11,7 +11,7 @@
  */
 
 import { lstat } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
+import { lstatSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, join, parse, resolve, sep } from 'node:path'
 
 /** Most files one Team Skill folder may hold. */
@@ -190,15 +190,33 @@ export function checkNotSymlink(stats: { isSymbolicLink(): boolean }, path: stri
  */
 export function canonicalRoot(path: string): string {
   const absolute = resolve(path)
+  try {
+    const root = lstatSync(absolute)
+    if (!root.isDirectory() && !root.isSymbolicLink()) throw notDirectory(absolute)
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
   let ancestor = dirname(absolute)
   const suffix = [basename(absolute)]
   for (;;) {
-    try { return join(realpathSync(ancestor), ...suffix) } catch (error: unknown) {
+    try {
+      const physical = realpathSync(ancestor)
+      // Windows reports descendants of a file as missing; reject the file ancestor explicitly.
+      if (!statSync(physical).isDirectory()) throw notDirectory(ancestor)
+      return join(physical, ...suffix)
+    } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(ancestor) === ancestor) throw error
       suffix.unshift(basename(ancestor))
       ancestor = dirname(ancestor)
     }
   }
+}
+
+/** Build the ENOTDIR refusal a regular-file ancestor produces on POSIX. */
+function notDirectory(path: string): NodeJS.ErrnoException {
+  const error: NodeJS.ErrnoException = new Error(`ENOTDIR: not a directory, canonicalize '${path}'`)
+  error.code = 'ENOTDIR'
+  return error
 }
 
 /** Reject actual symlinks in every existing component of an already pinned path. */

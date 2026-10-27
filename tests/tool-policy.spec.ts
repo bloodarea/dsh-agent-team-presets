@@ -19,7 +19,9 @@ function guarded(): { verdict(name: string): string | undefined; dispose(): void
 describe('strict tool policy guard', () => {
   it('keeps fixed Team operations reachable under an empty custom allow-list', () => {
     const guard = guarded()
-    for (const name of ['spawn_team_member', 'get_team_preset', 'update_team_preset', 'send_message', 'wait_agent']) {
+    // `skill` rides this list because the catalog is not a capability: hiding it
+    // would drop every Team Skill assigned to the role.
+    for (const name of ['spawn_team_member', 'get_team_preset', 'update_team_preset', 'send_message', 'wait_agent', 'skill']) {
       expect(guard.verdict(name), name).toBeUndefined()
     }
     expect(guard.verdict('read')).toContain('denies "read"')

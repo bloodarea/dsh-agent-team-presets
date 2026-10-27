@@ -12,6 +12,7 @@ import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { GET_TEAM_PRESET_DESCRIPTION, SPAWN_TEAM_MEMBER_DESCRIPTION, UPDATE_TEAM_PRESET_DESCRIPTION } from './tool-descriptions.ts'
+import { IMPLICIT_TOOLS } from './presets.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TeamExecutionMonitor } from './execution.ts'
 import type { TeamExecutionSnapshot, ToolCatalogValue, ToolChoice, ToolSource } from './types.ts'
@@ -126,9 +127,13 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
   /**
    * List global, standing-preset and fixed Team capability choices.
    *
-   * The reserved PTC mode transport is excluded: `ctx.tools.restrict()` refuses
-   * it, so offering it as a checkbox would produce a selection the summon path
-   * rejects.
+   * Two kinds of name are deliberately absent. The reserved PTC mode transport
+   * is excluded because `ctx.tools.restrict()` refuses it, so offering it as a
+   * checkbox would produce a selection the summon path rejects. The implicit
+   * tools (`skill`) are excluded because a Team policy always admits them: they
+   * are a precondition of a Team Skill assignment, not a capability an operator
+   * could withhold, so a checkbox for one would be a control that cannot do
+   * anything.
    * @returns the tool names and model-facing descriptions, sorted by name.
    */
   @Remote
@@ -136,7 +141,7 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
     const choices = new Map<string, ToolChoice>()
     const add = (schemas: readonly { name: string; description: string }[]): void => {
       for (const schema of schemas) {
-        if (schema.name === RUN_CODE_NAME) continue
+        if (schema.name === RUN_CODE_NAME || IMPLICIT_TOOLS.includes(schema.name)) continue
         choices.set(schema.name, {
           name: schema.name,
           description: schema.description,

@@ -10,7 +10,7 @@ import { AGENT_COLORS } from './team-presets-controller.ts'
 import type { ProviderChoice } from './team-presets-controller.ts'
 import { FieldPicker } from './FieldPicker.tsx'
 import type { PickerChoice } from './FieldPicker.tsx'
-import { toolMode } from '../presets.ts'
+import { IMPLICIT_TOOLS, toolMode } from '../presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, ToolChoice } from '../types.ts'
 import type { TeamPresetsLocaleKey } from './locales.ts'
 import css from './TeamPresetsSection.module.css'
@@ -139,7 +139,12 @@ export function TeamAgentView(props: TeamAgentViewProps) {
   const toolsReady = props.toolCatalogue === 'ready'
   const mode = toolMode(agent)
   const customTools = mode === 'custom'
-  const unavailable = toolsReady ? agent.tools.filter(name => !props.tools.some(tool => tool.name === name)) : []
+  // An implicit tool is never offered as a choice, so a saved entry naming one
+  // is neither missing nor removable: it is admitted by the policy itself. A
+  // document written by an earlier version keeps loading unchanged.
+  const unavailable = toolsReady
+    ? agent.tools.filter(name => !IMPLICIT_TOOLS.includes(name) && !props.tools.some(tool => tool.name === name))
+    : []
   const toolChoices: readonly ToolChoice[] = props.tools.length === 0
     ? agent.tools.map(name => ({ name, description: '', source: 'other' as const }))
     : props.tools

@@ -5,7 +5,21 @@
  */
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools';
+import { SKILL_TOOL_NAME } from './presets.ts';
 import type { TeamSlotPreset } from './types.ts';
+/**
+ * The host tool that publishes the model-facing skill catalog and loads a body.
+ *
+ * This is not one capability among many: the host emits the catalog only while
+ * this exact definition is visible to the Agent. A policy that hides it removes
+ * the whole catalog, so every assigned Team Skill becomes unreachable even
+ * though its provider is registered. Callers therefore treat it as a
+ * precondition of an assignment rather than an optional tool.
+ *
+ * Re-exported from `./presets.ts` because both faces need the name and the page
+ * must not import the Host half.
+ */
+export { SKILL_TOOL_NAME };
 export declare const PRESET_TOOLS: readonly ["spawn_team_member", "get_team_preset", "update_team_preset"];
 export declare const TEAM_TOOLS: readonly ["spawn_teammate", "send_message", "list_agents", "wait_agent", "interrupt_agent", "team_task_create", "team_task_get", "team_task_list", "team_task_update"];
 /**

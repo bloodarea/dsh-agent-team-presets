@@ -6,6 +6,28 @@
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset, TeamSelectionRecord, TeamSlotPreset } from './types.ts'
 
 /**
+ * The host tool that publishes the model-facing skill catalog and loads a body.
+ *
+ * It lives in this pure module because both faces need the name: the Host
+ * admits it and the page must not offer it as a choice. It is not one
+ * capability among many — the Host emits the whole catalog only while this
+ * exact definition stays visible to the Agent, so a policy that hides it
+ * silently removes every Team Skill assigned to that role. The plugin therefore
+ * treats it as a precondition of an assignment, never as a configurable
+ * capability.
+ */
+export const SKILL_TOOL_NAME = 'skill'
+
+/**
+ * The tool names a Team policy always admits and the page therefore never shows.
+ *
+ * Reading a saved allow-list that still contains one of these must keep working:
+ * the value is admitted implicitly, so a document written by an earlier version
+ * neither gains an unavailable-tool warning nor loses the entry on save.
+ */
+export const IMPLICIT_TOOLS: readonly string[] = [SKILL_TOOL_NAME]
+
+/**
  * Resolve a slot's explicit tool policy or its legacy list-only setting.
  * @param agent - the configured captain or member.
  * @returns the policy shown in Settings and enforced by the runtime.

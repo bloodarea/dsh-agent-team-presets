@@ -51,7 +51,8 @@ interface Captured {
 
 test('applies independent captain and member tool policies through the production Loader composition', async () => {
   let captured: Captured | undefined
-  await runLoaderSmoke({
+  const smoke = await runLoaderSmoke({
+    env: { TSX_DISABLE_CACHE: '1' },
     label: 'agent-team-presets tool permissions',
     tempDirPrefix: 'team-presets-permissions-',
     binScript: resolve(import.meta.dirname, 'fixtures/driver.ts'),
@@ -60,6 +61,7 @@ test('applies independent captain and member tool policies through the productio
     tsconfigPath: resolve(checkoutRoot(), 'tsconfig.base.json'),
     inspect: async (cwd) => { captured = JSON.parse(await readFile(resolve(cwd, 'tool-permissions.json'), 'utf8')) as Captured },
   })
+  console.log(smoke.stderr.trim())
   if (captured === undefined) throw new Error('the composition driver wrote no capture')
 
   // The captain's custom-empty policy masks every configurable global tool from

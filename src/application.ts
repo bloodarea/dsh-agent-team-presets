@@ -21,7 +21,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { captainBriefing, definitionFingerprint, findMember, memberBriefing, memberTargets, memberTeamDivision, toolMode } from './presets.ts'
+import { IMPLICIT_TOOLS, captainBriefing, definitionFingerprint, findMember, memberBriefing, memberTargets, memberTeamDivision, toolMode } from './presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from './types.ts'
 import type { MemberRuntime } from './member-runtime.ts'
 import { depthRefusal, routeRefusal } from './delegation.ts'
@@ -193,6 +193,11 @@ export function capabilityRefusal(agent: Agent, team: TeamPreset): string | unde
     if (toolMode(slot) !== 'custom') continue
     for (const name of slot.tools) {
       if (isOwnLayerTool(name)) continue
+      // An implicit tool is admitted by the policy itself and is never required
+      // to exist, so a document written by an earlier version that still lists
+      // one must not refuse the whole Team on a deployment that composes no such
+      // tool.
+      if (IMPLICIT_TOOLS.includes(name)) continue
       if (agent.ctx.tools.get(name, agent) !== undefined) continue
       missing.set(label, [...missing.get(label) ?? [], name])
     }

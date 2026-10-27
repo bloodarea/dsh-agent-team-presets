@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /** Build local sources in an isolated staging workspace. Never emit into Harness. */
 import { createRequire, isBuiltin } from 'node:module'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, cpSync, readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync, readdirSync, rmSync } from 'node:fs'
+import { isWithinDirectory, mirrorWorkspace, privateCopy, withBuildWorkspace } from './build-utils.mjs'
+import { cpSync, readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -37,57 +37,48 @@ const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 // existing checkout file is ever modified, because every file this script
 // patches is first re-created as a private copy, which breaks the hard link.
 const stageRoot = process.env.BUILD_STAGE_ROOT || tmpdir()
-const stage = mkdtempSync(join(stageRoot, 'team-presets-build-'))
-console.log(`Isolated build workspace: ${stage}`)
-const pkg = join(stage, 'packages/experimental/agent-team-presets')
-const mirror = ['packages', 'vendor', 'node_modules']
-for (const entry of mirror) {
-  if (!existsSync(join(harness, entry))) continue
-  try {
-    // `cp -a -l` links when the filesystems allow it, so the mirror costs
-    // inodes rather than gigabytes; anything it refuses falls back to a copy.
-    execFileSync('cp', ['-a', '-l', join(harness, entry), join(stage, entry)], { stdio: 'ignore' })
-  } catch {
-    cpSync(join(harness, entry), join(stage, entry), { recursive: true })
+await withBuildWorkspace(stageRoot, async (stage) => {
+  const pkg = join(stage, 'packages/experimental/agent-team-presets')
+  mirrorWorkspace(harness, stage, ['packages', 'vendor', 'node_modules'])
+  // The standalone package resolves its private schema dependencies from the
+  // staging workspace, which has no node_modules of its own.
+  const stagedYaml = join(stage, 'node_modules', 'yaml')
+  if (!existsSync(stagedYaml)) cpSync(yamlDir, stagedYaml, { recursive: true })
+  for (const name of ['package.json', 'tsconfig.base.json', 'tsconfig.base.client.json']) {
+    if (existsSync(join(harness, name))) cpSync(join(harness, name), join(stage, name))
   }
-}
-// The standalone package resolves its private schema dependencies from the
-// staging workspace, which has no node_modules of its own.
-const stagedYaml = join(stage, 'node_modules', 'yaml')
-if (!existsSync(stagedYaml)) cpSync(yamlDir, stagedYaml, { recursive: true })
-for (const name of ['package.json', 'tsconfig.base.json', 'tsconfig.base.client.json']) {
-  if (existsSync(join(harness, name))) cpSync(join(harness, name), join(stage, name))
-}
-/**
- * Copy one file so the destination is a private inode, never a hard link.
- * @param from - absolute source path.
- * @param to - absolute destination path.
- */
-function privateCopy(from, to) {
-  const text = readFileSync(from, 'utf8')
-  rmSync(to, { force: true })
-  writeFileSync(to, text)
-}
-/** The aggregate faces the analyzer reads: one reference per project, plugins included. */
-for (const face of ['host', 'client']) {
-  const source = join(harness, `tsconfig.${face}.json`)
-  if (!existsSync(source)) continue
-  const target = join(stage, `tsconfig.${face}.json`)
-  privateCopy(source, target)
-  const text = readFileSync(target, 'utf8')
-  // A DIRECTORY reference would resolve to the package's solution tsconfig,
-  // which declares no files, and the analyzer would then look for the entry
-  // sources in a program that never contained them. Naming the face project
-  // file directly is what makes the sources part of the analysis.
-  const reference = `{ "path": "./packages/experimental/agent-team-presets/tsconfig.${face}.json" }`
-  if (!text.includes('agent-team-presets')) writeFileSync(target, text.replace('"references": [', `"references": [\n    ${reference},`))
-}
-mkdirSync(pkg, { recursive: true })
-const generatedFiles = ['lib/typert.host.js', 'lib/typert.host.d.ts', 'lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts']
-try {
+  /** The aggregate faces the analyzer reads: one reference per project, plugins included. */
+  for (const face of ['host', 'client']) {
+    const source = join(harness, `tsconfig.${face}.json`)
+    if (!existsSync(source)) continue
+    const target = join(stage, `tsconfig.${face}.json`)
+    privateCopy(source, target)
+    const text = readFileSync(target, 'utf8')
+    // A DIRECTORY reference would resolve to the package's solution tsconfig,
+    // which declares no files, and the analyzer would then look for the entry
+    // sources in a program that never contained them. Naming the face project
+    // file directly is what makes the sources part of the analysis.
+    const reference = `{ "path": "./packages/experimental/agent-team-presets/tsconfig.${face}.json" }`
+    if (!text.includes('agent-team-presets')) writeFileSync(target, text.replace('"references": [', `"references": [\n    ${reference},`))
+  }
+  // Replace a mirrored plugin directory before emitting into it.
+  rmSync(pkg, { recursive: true, force: true })
+  mkdirSync(pkg, { recursive: true })
+  const generatedFiles = ['lib/typert.host.js', 'lib/typert.host.d.ts', 'lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts']
   cpSync(join(root, 'src'), join(pkg, 'src'), { recursive: true })
   mkdirSync(join(pkg, 'lib'), { recursive: true })
-  cpSync(join(root, 'lib/typert.remote-client.d.ts'), join(pkg, 'lib/typert.remote-client.d.ts'))
+  // The Typert generator EMITS this face from the Host sources below; the file is
+  // only needed while the project is analyzed, because `dsh-agent-team-presets/remote`
+  // must resolve for the client sources that import it. An earlier artifact is
+  // reused when one exists, and an empty seed is written when it does not, so a
+  // checkout with no `lib/` at all still builds. The seed is never read for its
+  // declarations: the generated file replaces it before any typecheck runs (both
+  // faces are type-checked after the generator returns, and the generated
+  // declarations are what the emitted `lib/types` was compiled against).
+  const remoteFace = join(pkg, 'lib/typert.remote-client.d.ts')
+  const previousFace = join(root, 'lib/typert.remote-client.d.ts')
+  if (existsSync(previousFace)) cpSync(previousFace, remoteFace)
+  else writeFileSync(remoteFace, 'export {}\n')
   // 0.2.1's generated remote factory imports the protocol's runtime helper. It is
   // inlined from source in every face: a wire face must load in a process that
   // resolves no peers (tests/typert-isolation.spec.ts), and the browser factory
@@ -143,14 +134,14 @@ try {
     const parsed = ts.parseJsonConfigFileContent({ compilerOptions: options, files: faceFiles[face] }, ts.sys, pkg)
     const program = ts.createProgram(parsed.fileNames, parsed.options)
     const diagnostics = ts.getPreEmitDiagnostics(program)
-    const local = diagnostics.filter(row => !row.file || row.file.fileName.startsWith(pkg + sep))
+    const local = diagnostics.filter(row => !row.file || isWithinDirectory(pkg, row.file.fileName))
     if (local.length) throw new Error(ts.formatDiagnosticsWithColorAndContext(local, { getCanonicalFileName: n => n, getCurrentDirectory: () => pkg, getNewLine: () => '\n' }))
     console.log(`${face}: zero local diagnostics; ${diagnostics.length - local.length} checkout dependency diagnostics excluded`)
     for (const source of program.getSourceFiles()) {
-      if (source.isDeclarationFile || !source.fileName.startsWith(join(pkg, 'src') + sep)) continue
+      if (source.isDeclarationFile || !isWithinDirectory(join(pkg, 'src'), source.fileName)) continue
       const stem = relative(join(pkg, 'src'), source.fileName).replace(/\.(?:tsx?|mts|cts)$/, '')
       const result = program.emit(source, (name, text, _bom, _error, sources) => {
-        if (!sources?.length || sources.some(row => !row.fileName.startsWith(join(pkg, 'src') + sep))) throw new Error('Refused nonlocal declaration emit')
+        if (!sources?.length || sources.some(row => !isWithinDirectory(join(pkg, 'src'), row.fileName))) throw new Error('Refused nonlocal declaration emit')
         const extension = name.endsWith('.d.ts') ? '.d.ts' : name.endsWith('.js') ? '.js' : undefined
         if (!extension) throw new Error(`Unexpected emitted artifact: ${name}`)
         const target = resolve(pkg, 'lib/types', stem + extension)
@@ -159,6 +150,9 @@ try {
       })
       if (result.emitSkipped || result.diagnostics.length) throw new Error(`Emit failed: ${source.fileName}`)
     }
+  }
+  for (const entry of ['index.js', 'client/index.js']) {
+    if (!existsSync(join(pkg, 'lib/types', entry))) throw new Error('TypeScript did not emit required local entry: ' + entry)
   }
   // Harness peers must retain the Host's service identities. Private schema
   // code, unlike those peers, must not depend on a file-linked source checkout
@@ -188,20 +182,20 @@ try {
       if (id === manifest.name + '/remote') return join(pkg, 'lib/typert.remote-client.js')
       if (id === 'zod') return join(zodDir, 'index.js')
       if (id === '@deepseek-ai/dsh-typert-protocol/remote-info') return protocolSource
-      if (id.endsWith('.module.css') && importer) return '\0team-css:' + resolve(dirname(importer).replace(join(pkg, 'lib/types'), join(pkg, 'src')), id) + '.mjs'
+      if (id.endsWith('.module.css') && importer) return '\0team-css:' + resolve(pkg, 'src', relative(join(pkg, 'lib/types'), dirname(importer)), id) + '.mjs'
       if (id.startsWith('@deepseek-ai/')) throw new Error(`Undeclared Client value import: ${id}`)
     },
     load(id) {
       if (!id.startsWith('\0team-css:')) return
       const path = id.slice('\0team-css:'.length, -4)
       this.addWatchFile(path)
-      const css = transform({ filename: relative(pkg, path), code: readFileSync(path), cssModules: { pattern: '[hash]_[local]' }, minify: true })
+      const css = transform({ filename: relative(pkg, path).split(sep).join('/'), code: readFileSync(path), cssModules: { pattern: '[hash]_[local]' }, minify: true })
       // Lightning CSS returns its export map in hash order, which changes from
       // run to run. Sort it so two builds of the same source are byte-identical.
       const classes = Object.fromEntries(Object.entries(css.exports ?? {})
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([name, value]) => [name, value.name]))
-      const key = manifest.name + ':' + relative(join(pkg, 'src'), path)
+      const key = manifest.name + ':' + relative(join(pkg, 'src'), path).split(sep).join('/')
       return `const key=${JSON.stringify(key)};if(typeof document!=='undefined'&&!document.querySelector('style[data-team-presets-style="'+key+'"]')){const style=document.createElement('style');style.dataset.teamPresetsStyle=key;style.textContent=${JSON.stringify(css.code.toString())};document.head.appendChild(style);}export default ${JSON.stringify(classes)};`
     },
   }
@@ -228,10 +222,4 @@ try {
     writeFileSync(destination, text ?? bytes)
   }
   console.log(`Built ${outputs.length} local artifacts; Host SHA256 ${createHash('sha256').update(readFileSync(join(root, 'lib/index.js'))).digest('hex')}`)
-} finally {
-  // Verify the exact mkdtemp root before deleting only our isolated workspace.
-  const checked = realpathSync(stage)
-  if (checked !== stage || !/team-presets-build-/.test(checked)) throw new Error('Refused unsafe staging cleanup')
-  if (process.env.DSH_BUILD_KEEP !== '1') rmSync(checked, { recursive: true, force: true })
-  else console.log(`Kept build workspace at ${checked}`)
-}
+}, process.env.DSH_BUILD_KEEP === '1')

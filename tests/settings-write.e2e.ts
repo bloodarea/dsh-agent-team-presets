@@ -129,7 +129,7 @@ async function prepareProfile(cwd: string): Promise<void> {
 
 test('a fresh settings revision fence lands and a stale one is refused with a conflict', async () => {
   let captured: Captured | undefined
-  await runLoaderSmoke({
+  const smoke = await runLoaderSmoke({
     label: 'agent-team-presets settings write',
     tempDirPrefix: 'team-presets-settings-write-',
     binScript: resolve(import.meta.dirname, 'fixtures/settings-write-driver.ts'),
@@ -145,6 +145,8 @@ test('a fresh settings revision fence lands and a stale one is refused with a co
     // which points at the checkout's install anchor and at the parent holding
     // this repository. Nothing is installed into the repository for the test.
     env: {
+      // Each source smoke owns its transpilation cache; disk cache state must not decide startup.
+      TSX_DISABLE_CACHE: '1',
       NODE_PATH: [
         resolve(checkoutRoot(), 'apps/cli/node_modules'),
         resolve(import.meta.dirname, '../..'),
@@ -154,6 +156,7 @@ test('a fresh settings revision fence lands and a stale one is refused with a co
       captured = JSON.parse(await readFile(resolve(cwd, 'settings-write.json'), 'utf8')) as Captured
     },
   })
+  console.log(smoke.stderr.trim())
   if (captured === undefined) throw new Error('the settings-write driver wrote no capture')
 
   // The plugin's settings row is served by the real Loader composition: the

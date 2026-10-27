@@ -31,6 +31,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runNpm } from './fixtures/npm.ts'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const libDir = join(repoRoot, 'lib')
@@ -402,9 +403,7 @@ describe('Published package contents', () => {
     // the inputs that decide what a tarball contains.
     const destination = mkdtempSync(join(tmpdir(), 'team-presets pack '))
     try {
-      const report = execFileSync('npm', ['pack', '--dry-run', '--json', '--pack-destination', destination], {
-        cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
-      })
+      const report = runNpm(['pack', '--dry-run', '--json', '--pack-destination', destination], repoRoot)
       files = (JSON.parse(report) as { files: { path: string }[] }[])[0]!.files.map(row => row.path)
     } finally {
       rmSync(destination, { recursive: true, force: true })

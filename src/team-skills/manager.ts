@@ -18,10 +18,11 @@
  * @module dsh-agent-team-presets/team-skills/manager
  */
 
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { atomicWriteJson } from './store.ts'
 import { assertNoSymlinks } from './paths.ts'
+
 import { BUILTIN_TEAM_CATALOG, BUILTIN_TEAM_IDS } from '../team-catalog.ts'
 import { constants } from 'node:fs'
 import type {
@@ -35,6 +36,54 @@ const BINDINGS_VERSION = 1
 
 /** The role slot the captain is stored under. */
 export const CAPTAIN_ROLE = 'captain'
+
+/** Windows executable extensions assumed when PATHEXT is unset. */
+const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD'
+
+/**
+ * The file names one declared executable may resolve to on this platform.
+ *
+ * Windows does not look up a bare name directly: the shell appends each
+ * PATHEXT extension, so probing only `join(directory, name)` reports every
+ * `*.exe`/`*.cmd` tool as missing. A name that already ends in a known
+ * executable extension is checked as written instead of gaining a second one.
+ * @param name - the executable name a skill declared.
+ * @returns candidate file names, in lookup order.
+ */
+function executableCandidates(name: string): string[] {
+  if (process.platform !== 'win32') return [name]
+  const extensions = (process.env['PATHEXT'] ?? DEFAULT_PATHEXT).split(';')
+    .map(extension => extension.trim()).filter(extension => extension !== '')
+    .map(extension => (extension.startsWith('.') ? extension : `.${extension}`))
+  if (extensions.length === 0) return [name]
+  const lower = name.toLowerCase()
+  if (extensions.some(extension => lower.endsWith(extension.toLowerCase()))) return [name]
+  return extensions.map(extension => name + extension)
+}
+
+/** Whether one path is a regular file this platform would execute. */
+async function isExecutableFile(path: string): Promise<boolean> {
+  try {
+    // A directory passes existence and even X_OK checks; it is not an executable.
+    if (!(await stat(path)).isFile()) return false
+    if (process.platform === 'win32') return true
+    await access(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Whether one declared executable resolves inside any PATH directory. */
+async function executableOnPath(name: string, directories: readonly string[]): Promise<boolean> {
+  const candidates = executableCandidates(name)
+  for (const directory of directories) {
+    for (const candidate of candidates) {
+      if (await isExecutableFile(join(directory, candidate))) return true
+    }
+  }
+  return false
+}
 
 /** One bindings document. */
 interface BindingsDocument {
@@ -478,17 +527,7 @@ export class TeamSkillManager {
     const directories = (process.env['PATH'] ?? '').split(delimiter).filter(entry => entry !== '')
     const executables: { name: string; found: boolean }[] = []
     for (const name of asset.dependencies.executables) {
-      let found = false
-      for (const directory of directories) {
-        try {
-          await access(join(directory, name), constants.X_OK)
-          found = true
-          break
-        } catch {
-          // Not in this directory; keep looking.
-        }
-      }
-      executables.push({ name, found })
+      executables.push({ name, found: await executableOnPath(name, directories) })
     }
     return {
       executables,

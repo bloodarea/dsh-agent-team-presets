@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
@@ -121,7 +121,9 @@ describe('importing a skill folder', () => {
   })
 
   it('keeps a resolved path inside its asset root', () => {
-    expect(resolveInside('/tmp/skill', 'a/b.txt')).toBe('/tmp/skill/a/b.txt')
+    // The resolved path is native to the host: asserting a POSIX literal made
+    // this test fail on Windows for the correct implementation.
+    expect(resolveInside('/tmp/skill', 'a/b.txt')).toBe(resolve('/tmp/skill', 'a', 'b.txt'))
     expect(() => resolveInside('/tmp/skill', '../other.txt')).toThrow()
   })
 })
@@ -546,26 +548,32 @@ describe('per-Agent visibility', () => {
     const notes: string[] = []
     const runtime = new TeamSkillRuntime(ctx, store, message => notes.push(message))
     expect(runtime.available).toBe(false)
-    const pending = runtime.sync({ agent: agentA as never, assets: [asset] })
-    expect(notes.join(' ')).toContain('skill service is not composed')
-    runtime.release(agentA as never)
-    await pending
+    // The call reports the state instead of waiting for a service this
+    // deployment does not compose: a creation edge can refuse, and nothing here
+    // blocks on a promise that may never settle.
+    const result = await runtime.sync({ agent: agentA as never, assets: [asset] })
+    expect(result.status).toBe('deferred')
+    expect(result.reason).toContain('composes no skill service')
+    expect(notes.join(' ')).toContain('composes no skill service')
+    expect(runtime.assetsOf(agentA as never)).toHaveLength(1)
     await runtime.dispose()
   })
 
-  it('registers the pending assignment when the real SkillRegistry is composed later', async () => {
+  it('registers the armed assignment when the real SkillRegistry is composed later', async () => {
     const root = await base()
     const ctx = new Context()
     contexts.push(ctx)
     const { store, asset } = await stored(root)
     const runtime = new TeamSkillRuntime(ctx, store, () => {})
     try {
-      const pending = runtime.sync({ agent: agentA as never, assets: [asset] })
-      // An identical sync while waiting must retain the original inject fiber.
-      await runtime.sync({ agent: agentA as never, assets: [asset] })
+      expect((await runtime.sync({ agent: agentA as never, assets: [asset] })).status).toBe('deferred')
+      // An identical sync while the intent is armed must report the same state
+      // and must not fabricate success.
+      expect((await runtime.sync({ agent: agentA as never, assets: [asset] })).status).toBe('deferred')
       expect(runtime.available).toBe(false)
+      const settled = runtime.whenSettled(agentA as never)
       await ctx.plugin(SkillRegistry)
-      await pending
+      expect((await settled).status).toBe('installed')
       expect(runtime.available).toBe(true)
       expect((await ctx.skills.get('frontend-design', { scope: agentA }))?.content).toBe('Use this method.')
       expect(await ctx.skills.get('frontend-design', { scope: agentB })).toBeUndefined()

@@ -230,12 +230,16 @@ function teamOps(team: Team): SettingsPathOp[] {
 const configPath = process.argv[2]
 if (configPath === undefined) throw new Error('settings-write fixture requires an overlay')
 
+const startupBegan = Date.now()
+console.error('settings-write startup: importing profile bootstrap')
 const bootProductionProfile = await loadBootProductionProfile()
+console.error('settings-write startup: bootstrap imported after ' + (Date.now() - startupBegan) + 'ms')
 const ctx = await bootProductionProfile({
   binName: 'agent-team-presets-settings-write',
   profile: PROFILE,
   overlayPaths: [configPath],
 })
+console.error('settings-write startup: profile ready after ' + (Date.now() - startupBegan) + 'ms')
 
 try {
   // The namespace is served by the composition, with the Team section at the

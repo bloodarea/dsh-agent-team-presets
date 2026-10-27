@@ -28,10 +28,13 @@ interface ProductionProfileOptions {
   readonly overlayPaths: readonly string[]
 }
 
+const startupBegan = Date.now()
+console.error('tool-permissions startup: importing profile bootstrap')
 const { bootProductionProfile } = await import(
   pathToFileURL(join(checkout, 'packages/test-support/loader-smoke/tests/fixtures/production-profile.ts')).href
 ) as { readonly bootProductionProfile: (options: ProductionProfileOptions) => Promise<Context> }
 
+console.error('tool-permissions startup: bootstrap imported after ' + (Date.now() - startupBegan) + 'ms')
 const configPath = process.argv[2]
 if (configPath === undefined) throw new Error('tool-permission fixture requires an overlay')
 
@@ -40,6 +43,7 @@ const ctx = await bootProductionProfile({
   profile: 'headless',
   overlayPaths: [configPath],
 })
+console.error('tool-permissions startup: profile ready after ' + (Date.now() - startupBegan) + 'ms')
 
 const signal = new AbortController().signal
 const toolResults: Array<{ sessionId: string; content: string[] }> = []

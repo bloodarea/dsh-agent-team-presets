@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -71,9 +71,22 @@ describe('the Team Skill tools', () => {
 })
 
 describe('dependency reporting', () => {
-  it('resolves declared executables against PATH and keeps MCP as declared only', async () => {
+  it('resolves declared executables against PATH with platform extension rules and keeps MCP as declared only', async () => {
     const root = await mkdtemp(join(tmpdir(), 'team-skill-deps-'))
     roots.push(root)
+    const bin = join(root, 'bin')
+    await mkdir(bin)
+    // A real runnable file whose name a bare command would not match verbatim
+    // on Windows (lookup appends PATHEXT), plus a directory that only *looks*
+    // executable: existence alone must never count as found.
+    const toolName = process.platform === 'win32' ? 'probe-tool.CMD' : 'probe-tool'
+    const trapName = process.platform === 'win32' ? 'trap-tool.EXE' : 'trap-tool'
+    const toolPath = join(bin, toolName)
+    await writeFile(toolPath, process.platform === 'win32' ? '@echo off\r\n' : '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    await chmod(toolPath, 0o755)
+    await mkdir(join(bin, trapName))
+    await writeFile(join(bin, 'not-executable'), 'not executable', { mode: 0o644 })
+    await chmod(join(bin, 'not-executable'), 0o644)
     const store = new TeamSkillStore(root)
     await store.open()
     const built = buildSkillPackage([{ path: 'SKILL.md', bytes: TEXT('---\nname: dep-skill\ndescription: d\n---\n') }])
@@ -82,7 +95,7 @@ describe('dependency reporting', () => {
       id: 'custom:dep-skill', origin: 'custom', version: '1',
       dependencies: {
         mcpServers: [{ serverName: 'browser-mcp', required: true }],
-        executables: ['sh', 'definitely-not-a-real-binary-xyz'],
+        executables: ['probe-tool', ...(process.platform === 'win32' ? [toolName] : []), 'trap-tool', 'not-executable', 'definitely-not-a-real-binary-xyz'],
         otherSkills: [],
       },
     })
@@ -90,12 +103,27 @@ describe('dependency reporting', () => {
       teams: () => [], activeAssetIds: () => new Set(), activeSessions: () => [],
     })
     await manager.open()
-    const report = await manager.dependencyReport('custom:dep-skill')
-    expect(report.mcpServers).toEqual(['browser-mcp'])
-    expect(report.executables).toEqual([
-      { name: 'sh', found: true },
-      { name: 'definitely-not-a-real-binary-xyz', found: false },
-    ])
+    // Isolate PATH (and PATHEXT on Windows) to the fixture: the assertion must
+    // not depend on what this machine happens to have installed.
+    const previousPath = process.env['PATH']
+    const previousPathext = process.env['PATHEXT']
+    process.env['PATH'] = bin
+    if (process.platform === 'win32') process.env['PATHEXT'] = '.COM;.EXE;.BAT;.CMD'
+    try {
+      const report = await manager.dependencyReport('custom:dep-skill')
+      expect(report.mcpServers).toEqual(['browser-mcp'])
+      expect(report.executables).toEqual([
+        { name: 'probe-tool', found: true },
+        ...(process.platform === 'win32' ? [{ name: toolName, found: true }] : []),
+        { name: 'trap-tool', found: false },
+        { name: 'not-executable', found: false },
+        { name: 'definitely-not-a-real-binary-xyz', found: false },
+      ])
+      expect(report.unverified).toEqual(['browser-mcp'])
+    } finally {
+      if (previousPath === undefined) delete process.env['PATH']; else process.env['PATH'] = previousPath
+      if (previousPathext === undefined) delete process.env['PATHEXT']; else process.env['PATHEXT'] = previousPathext
+    }
   })
 })
 

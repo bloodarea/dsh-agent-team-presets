@@ -37,9 +37,13 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
     /**
      * List global, standing-preset and fixed Team capability choices.
      *
-     * The reserved PTC mode transport is excluded: `ctx.tools.restrict()` refuses
-     * it, so offering it as a checkbox would produce a selection the summon path
-     * rejects.
+     * Two kinds of name are deliberately absent. The reserved PTC mode transport
+     * is excluded because `ctx.tools.restrict()` refuses it, so offering it as a
+     * checkbox would produce a selection the summon path rejects. The implicit
+     * tools (`skill`) are excluded because a Team policy always admits them: they
+     * are a precondition of a Team Skill assignment, not a capability an operator
+     * could withhold, so a checkbox for one would be a control that cannot do
+     * anything.
      * @returns the tool names and model-facing descriptions, sorted by name.
      */
     catalog(): Promise<ToolCatalogValue>;

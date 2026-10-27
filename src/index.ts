@@ -38,6 +38,7 @@ import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { registerPresetTools } from './preset-tools.ts'
 import { CAPTAIN_ROLE, TeamSkills, resolveSkillRoot, roleOfMember } from './team-skills/index.ts'
+import type { AgentSkillSync } from './team-skills/index.ts'
 import { TeamSkillService } from './team-skills/service.ts'
 import { registerTeamSkillTools } from './team-skills/tools.ts'
 import { definitionFingerprint, findTeam, selectedTeam, toolMode } from './presets.ts'
@@ -108,6 +109,36 @@ export function apply(ctx: Context, config: Config): void {
   )
   /** The Team role each live Agent fills, so a binding change can re-sync it. */
   const agentRoles = new Map<Agent, { teamId: string; roleId: string; captain: boolean }>()
+  /**
+   * Re-apply one live Agent's Team Skill assignment and report an unusable one.
+   *
+   * For an Agent that already exists this cannot veto anything, so an assignment
+   * that could not be published is reported at the exact Agent identity. The
+   * creation edge uses `skillAssignmentRefusal` instead, where a refusal is
+   * still possible and is what keeps a member from starting on an empty catalog.
+   * @param agent - the live Agent whose assignment changes.
+   * @param role - the role it fills, or undefined to release the registration.
+   * @returns the settled registration outcome.
+   */
+  const syncRoleSkills = async (
+    agent: Agent, role: { teamId: string; roleId: string; captain: boolean } | undefined,
+    signal?: AbortSignal,
+  ): Promise<AgentSkillSync> => {
+    // Exactly two arguments when nothing can cancel: callers (and their
+    // assertions) identify an application by `(agent, role)`.
+    const synced = signal === undefined
+      ? await teamSkills.syncAgent(agent, role)
+      : await teamSkills.syncAgent(agent, role, { signal })
+    // `undefined` means the bindings themselves were unreadable, which is
+    // reported as loudly as a non-empty assignment.
+    if ((synced.assigned === undefined || synced.assigned > 0) && synced.outcome.status !== 'installed') {
+      ctx.logger.warn(
+        '%s: Agent "%s" holds %s assigned Team Skill(s) that are not visible to it: %s',
+        LOG, agent.id, synced.assigned ?? 'an unreadable number of', synced.outcome.reason ?? synced.outcome.status,
+      )
+    }
+    return synced
+  }
   // Every member is summoned through this plugin's own execution alias, so the
   // Host itself persists the fact that the child is preset-managed. The aliases
   // delegate the whole provider contract to the deployment's providers, and
@@ -163,7 +194,97 @@ export function apply(ctx: Context, config: Config): void {
     ctx.logger.warn(`${LOG}: %s`, reason)
     quarantine(agent, reason)
   }
-  const initializeChild = (agent: Agent, live: boolean): void => {
+  /**
+   * Veto one member's creation and release everything this edge installed.
+   *
+   * The claim, the role binding, the child envelope and the skill registration
+   * were all taken before the assignment could be proven publishable, so a
+   * refusal that only threw would leave this activation believing a member it
+   * never created is still live. Releasing them keeps the durable record and the
+   * in-memory tables in step with the Host's rollback.
+   * @param agent - the member whose creation is vetoed.
+   * @param reason - the refusal text the Host reports to the summoner.
+   */
+  const refuseMember = (agent: Agent, reason: string): void => {
+    // Every registration this creation edge installed is released, not only the
+    // skill one: a legacy child policy would otherwise keep a guard installed on
+    // an Agent the Host is about to roll back.
+    childPolicies.get(agent)?.()
+    childPolicies.delete(agent)
+    skillTools.get(agent)?.()
+    skillTools.delete(agent)
+    presetTools.get(agent)?.()
+    presetTools.delete(agent)
+    quarantines.get(agent)?.dispose()
+    quarantines.delete(agent)
+    pendingRoster.delete(agent)
+    pendingApplications.delete(agent)
+    teamSkills.releaseAgent(agent)
+    agentRoles.delete(agent)
+    childEnvelopes.delete(agent)
+    managedMembers.delete(agent)
+    members.release(agent)
+    refuseChild(agent, false, reason)
+  }
+
+  /**
+   * Release this activation's state for one Agent the Host rolled back.
+   *
+   * A cancelled creation installs the same registrations a vetoed one does, and
+   * the Host's rollback only unwinds `agent.ctx`. Leaving the plugin's own maps
+   * pointing at a dead Agent would make a later scan believe a member it never
+   * created is live.
+   * @param agent - the Agent whose creation the Host cancelled.
+   */
+  const abandonCreation = (agent: Agent): void => {
+    childPolicies.get(agent)?.()
+    childPolicies.delete(agent)
+    quarantines.get(agent)?.dispose()
+    quarantines.delete(agent)
+    pendingRoster.delete(agent)
+    pendingApplications.delete(agent)
+    teamSkills.releaseAgent(agent)
+    agentRoles.delete(agent)
+    childEnvelopes.delete(agent)
+    managedMembers.delete(agent)
+    members.release(agent)
+  }
+
+  /**
+   * Why one member's Team Skill assignment must refuse its creation.
+   *
+   * A role with bound assets whose registration is not published would start its
+   * first turn on an empty catalog while every operator-facing surface still
+   * reported the skill as assigned — exactly the failure the assignment exists
+   * to prevent. The refusal is therefore explicit and names the cause. A role
+   * with no assignment, a published registration and a released registration are
+   * all fine, so a deployment that composes no skill service keeps working for
+   * Teams that assign nothing.
+   * @param synced - the outcome of this member's own registration.
+   * @returns the refusal text, or undefined when the member may be created.
+   */
+  const skillAssignmentRefusal = (synced: AgentSkillSync): string | undefined => {
+    if (synced.outcome.status === 'installed') return undefined
+    // An unreadable library leaves `assigned` unknown, and "unknown" is refused
+    // exactly like "assigned": treating it as an empty assignment would start the
+    // member on a catalog this activation could not even enumerate.
+    if (synced.assigned === 0) return undefined
+    const cause = synced.outcome.reason ?? synced.outcome.status
+    const held = synced.assigned === undefined
+      ? 'this role\'s Team Skill bindings could not be read'
+      : `this role holds ${String(synced.assigned)} assigned Team Skill(s)`
+    return `This member's Team role cannot start with a usable skill catalog: ${held}, but they could not be `
+      + `published to it (${cause}). It is refused rather than started with an empty skill catalog; `
+      + 'check the Team Skill library, or unassign them from this role.'
+  }
+  /**
+   * Registration this child must finish before it may take a request.
+   *
+   * Returned by {@link initializeChild} to the exact caller that started it, so
+   * two creation edges never share one slot: each Agent's readiness is its own
+   * promise, and a caller only ever awaits the registration it caused.
+   */
+  const initializeChild = (agent: Agent, live: boolean): Promise<AgentSkillSync> | undefined => {
     if (isSessionRoot(agent) || childPolicies.has(agent) || managedMembers.has(agent)) return
     // The child's OWN establishing descriptor comes first: it is where the Host
     // itself persisted the execution backend this member was created through.
@@ -224,10 +345,15 @@ export function apply(ctx: Context, config: Config): void {
         const claimedTeam = findTeam(config.teams.get(), claim.record.teamId)
         const role = claim.record.roleId
           ?? (claimedTeam === undefined ? claim.record.memberName : roleOfMember(claimedTeam, claim.record.memberName))
+        let installation: Promise<AgentSkillSync> | undefined
         if (role !== undefined) {
           const assignment = { teamId: claim.record.teamId, roleId: role, captain: false }
           agentRoles.set(agent, assignment)
-          teamSkills.syncAgent(agent, assignment)
+          // Registration is this member's own promise, returned to the exact
+          // caller that triggered the creation edge. The host publishes the
+          // catalog from a step boundary, so a member that starts running first
+          // would see an empty catalog for its whole first turn.
+          installation = teamSkills.syncAgent(agent, assignment)
         }
         // Ordinary descendants of this member must still see its strict policy,
         // so an escape through a provider path stays refused.
@@ -236,7 +362,7 @@ export function apply(ctx: Context, config: Config): void {
           mode: claim.record.policy.mode,
           allow: [...claim.record.policy.allow],
         })
-        return
+        return installation
       }
       if (claim.kind === 'invalid') {
         // Identified as managed with an unusable snapshot: refuse before any
@@ -306,7 +432,7 @@ export function apply(ctx: Context, config: Config): void {
     store: teamSkills.store,
     manager: teamSkills.manager,
     teams: () => config.teams.get(),
-    resync: () => { for (const [live, role] of agentRoles) teamSkills.syncAgent(live, role) },
+    resync: () => { for (const [live, role] of agentRoles) void syncRoleSkills(live, role) },
   }
   // Volatile settings updates also carry routes, colors, selections and
   // unrelated plugin values. Only a changed Team/role roster can invalidate a
@@ -325,7 +451,7 @@ export function apply(ctx: Context, config: Config): void {
     rosterFingerprint = next
     void teamSkills.manager.reconcile().then(() => {
       if (disposed) return
-      for (const [agent, role] of agentRoles) teamSkills.syncAgent(agent, role)
+      for (const [agent, role] of agentRoles) void syncRoleSkills(agent, role)
     }).catch(error => { ctx.logger.warn(`${LOG}: Team Skill bindings could not be reconciled: %s`, String(error)) })
   }
   /** Session roots whose durable roster settlement waits for the next microtask. */
@@ -357,12 +483,12 @@ export function apply(ctx: Context, config: Config): void {
     official: () => teamSkills.official,
     ready,
     startupIssue: () => teamSkills.issue,
-    resync: () => { for (const [agent, role] of agentRoles) teamSkills.syncAgent(agent, role) },
+    resync: () => { for (const [agent, role] of agentRoles) void syncRoleSkills(agent, role) },
   }
   ctx.plugin(TeamSkillService, teamSkillService)
   void ready.then((opened) => {
     if (!opened || disposed) return
-    for (const [agent, role] of agentRoles) teamSkills.syncAgent(agent, role)
+    for (const [agent, role] of agentRoles) void syncRoleSkills(agent, role)
   })
   ctx.effect(() => () => { monitor.dispose() }, 'agent-team-presets: execution monitor')
 
@@ -387,11 +513,32 @@ export function apply(ctx: Context, config: Config): void {
    * @param agent - the Session-root Agent to reconcile.
    * @param startingTask - whether this call runs on a root's own wake-up edge.
    */
-  const reconcile = (agent: Agent, startingTask = false): void => {
+  const reconcile = (agent: Agent, startingTask = false): Promise<void> | undefined => {
     adopt(agent, startingTask)
     // Any edge that can adopt, drop, or freeze a definition changes what the
     // settings page must promise, so the stream is re-read once per turn.
     monitor.invalidate()
+    // The application this edge just queued, so a creation edge can await the
+    // surface (member tool, captain policy) that the first request must see.
+    return jobs.get(agent)?.promise
+  }
+
+  /**
+   * Await one queued step, stopping when the creation is cancelled.
+   *
+   * The signal is the Host's creation cancellation, not a timer: a cancelled
+   * creation must not keep awaiting a job whose result can no longer be applied.
+   * @param pending - the promise to await.
+   * @param signal - creation cancellation, when the Host supplies one.
+   * @returns whether the promise settled before cancellation.
+   */
+  const settleOrCancel = async (pending: Promise<void>, signal?: AbortSignal): Promise<boolean> => {
+    if (signal === undefined) { await pending; return true }
+    if (signal.aborted) return false
+    const cancelled = new Promise<boolean>((resolve) => {
+      signal.addEventListener('abort', () => { resolve(false) }, { once: true })
+    })
+    return await Promise.race([pending.then(() => true), cancelled])
   }
 
   /** One serialized Team-application job per Session root. */
@@ -480,7 +627,7 @@ export function apply(ctx: Context, config: Config): void {
       definitions.set(agent, previous)
       const role = { teamId: previous.id, roleId: CAPTAIN_ROLE, captain: true }
       agentRoles.set(agent, role)
-      teamSkills.syncAgent(agent, role)
+      void syncRoleSkills(agent, role)
     } catch (error: unknown) {
       // The restore is the last line of defence: the update that got us here was
       // already refused, so a restore that also fails leaves this Agent with no
@@ -606,7 +753,14 @@ export function apply(ctx: Context, config: Config): void {
       const captainRole = { teamId: team.id, roleId: CAPTAIN_ROLE, captain: true }
       if (agentRoles.get(agent)?.teamId !== team.id) teamSkills.releaseAgent(agent)
       agentRoles.set(agent, captainRole)
-      teamSkills.syncAgent(agent, captainRole)
+      // Installed in THIS turn, not awaited as a job: the store was opened once
+      // at activation, `syncAgent` therefore registers synchronously before it
+      // returns a promise, and the captain's next request already carries the
+      // catalog. The promise is only for the warning, so awaiting it would add a
+      // tick to every Team application for no readiness gain. The Team itself is
+      // never refused over a captain assignment: a Session that was already
+      // applied must not be left without its policy.
+      void syncRoleSkills(agent, captainRole)
       quarantines.get(agent)?.dispose()
       quarantines.delete(agent)
       provenUnteamed.delete(agent)
@@ -914,9 +1068,43 @@ export function apply(ctx: Context, config: Config): void {
       if (!isSessionRoot(agent)) initializeChild(agent, true)
     }
   })
-  ctx.on('agent/created', async ({ agent }) => {
-    if (isSessionRoot(agent)) { reconcile(agent); return }
-    initializeChild(agent, false)
+  ctx.on('agent/created', async ({ agent, signal }) => {
+    if (isSessionRoot(agent)) {
+      // The Host assembles the prompt for a root's first request BEFORE
+      // `agent/pre-step`, so the only place a Team can still reach that request
+      // is this creation edge. It awaits the application job this reconcile just
+      // queued — the member tool and the captain's tool policy are installed by
+      // it — and then the captain's Team Skill registration, which publishes the
+      // catalog the same request reads.
+      const applied = reconcile(agent)
+      if (applied !== undefined && !await settleOrCancel(applied, signal)) return
+      const role = agentRoles.get(agent)
+      if (role !== undefined && signal?.aborted !== true) await syncRoleSkills(agent, role, signal)
+      return
+    }
+    const installation = initializeChild(agent, false)
+    // A member must not take its first request on an empty catalog: the host
+    // publishes the catalog from a step boundary, so the registration this
+    // creation edge started has to exist before the transaction completes. The
+    // promise awaited here belongs to THIS Agent only.
+    if (installation !== undefined) {
+      const synced = await installation
+      // An assignment that exists in the library but could not be published is a
+      // refusal, not a degraded success: the member would run its whole first
+      // turn with no Team Skill while every surface still reported it bound.
+      const refusal = skillAssignmentRefusal(synced)
+      if (refusal !== undefined) {
+        // A cancelled creation is the Host's decision, not a configuration to
+        // report — but this activation's own registrations are released either
+        // way, so nothing here believes in a member the Host never created.
+        if (signal?.aborted === true) {
+          abandonCreation(agent)
+          return
+        }
+        refuseMember(agent, refusal)
+        return
+      }
+    }
     // A member the runtime just claimed is known by its exact Team identity, so
     // the durable binding is written inside this awaited creation transaction.
     if (managedMembers.has(agent)) {

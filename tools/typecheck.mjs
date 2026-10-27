@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
+import { isWithinDirectory } from './build-utils.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const checkout = process.env.DSH_CHECKOUT
 if (!checkout || !existsSync(join(checkout, 'tsconfig.base.json'))) throw new Error('Set DSH_CHECKOUT to a dependency-installed compatible Harness checkout.')
@@ -30,7 +31,7 @@ for (const face of ['host', 'client']) {
   delete parsed.options.rootDir
   const program = ts.createProgram(parsed.fileNames, parsed.options)
   const diagnostics = ts.getPreEmitDiagnostics(program)
-  const ours = diagnostics.filter(row => row.file === undefined || row.file.fileName.startsWith(`${root}/`))
+  const ours = diagnostics.filter(row => row.file === undefined || isWithinDirectory(root, row.file.fileName))
   if (ours.length) {
     console.error(ts.formatDiagnosticsWithColorAndContext(ours, { getCanonicalFileName: name => name, getCurrentDirectory: () => root, getNewLine: () => '\n' }))
     process.exitCode = 1
