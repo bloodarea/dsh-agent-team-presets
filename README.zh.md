@@ -6,7 +6,7 @@
 
 [English](<README.md>) | 中文
 
-> **社区插件 v0.1.7** · [发布版本](https://github.com/bloodarea/dsh-agent-team-presets/releases/tag/v0.1.7)
+> **社区插件 v0.1.8** · [发布版本](https://github.com/bloodarea/dsh-agent-team-presets/releases/tag/v0.1.8)
 >
 > 需要启用 Agent Teams 的兼容 DeepSeek Harness 部署。本版本支持 DSH rc.2 与 0.2.1-rc.2 API，详见[环境要求](#requirements)。仓库已包含预构建产物，安装时无需从源码构建。
 
@@ -78,7 +78,7 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="screenshots"></a>
 ## 界面预览
 
-以下截图展示 v0.1.7 设置页团队管理、私有技能库与输入区选用流程。模型与工具取决于你的实际部署。
+以下截图展示 v0.1.8 设置页团队管理、私有技能库与输入区选用流程。模型与工具取决于你的实际部署。
 
 **管理已保存的团队：标签页、搜索框、来源与系列筛选**
 
@@ -148,12 +148,12 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="requirements"></a>
 ## 环境要求
 
-- **具备所需 rc.2 API 的 DeepSeek Harness。** 支持版本：`>=0.2.0-rc.2 <0.3.0`。插件管理器按声明的 `engines.dsh` 范围判定，超出即拒绝安装或激活；`@deepseek-ai/dsh-*` 的 peer 范围供包管理器使用，该判定不读取它们。本版本实测环境为 **`0.2.1-rc.2`**；0.1.7 未在 `0.2.0-rc.2` 上复验。详见 [package.json](<package.json>)。
+- **具备所需 rc.2 API 的 DeepSeek Harness。** 支持版本：`>=0.2.0-rc.2 <0.3.0`。插件管理器按声明的 `engines.dsh` 范围判定，超出即拒绝安装或激活；`@deepseek-ai/dsh-*` 的 peer 范围供包管理器使用，该判定不读取它们。本版本实测环境为 **`0.2.1-rc.2`**；0.1.8 未在 `0.2.0-rc.2` 上复验。详见 [package.json](<package.json>)。
 - **目标 profile 已启用 Agent Teams。** 标准集成是 `@deepseek-ai/dsh-experimental-agent-team-profile`，提供团队服务、工具和 Web 名册。本插件负责配置与管理团队，不替代该子系统。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.1.7`）和 Harness 版本（如 `0.2.1-rc.2`）是不同的版本线。
+插件版本（`0.1.8`）和 Harness 版本（如 `0.2.1-rc.2`）是不同的版本线。
 
 <a id="use-this-package"></a>
 ## 安装与升级
@@ -163,13 +163,13 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 打开 **全局面板 → 插件 → 添加插件**，把下面这一行粘贴到「包名或地址」，点击 **安装**：
 
 ```text
-dsh-agent-team-presets@0.1.7
+dsh-agent-team-presets@0.1.8
 ```
 
 <!-- release-version: 与 package.json 的 version 同步 -->
 
 - **安装源**决定从哪个 npm 源下载。「默认安装源」指 pnpm 自身配置所指的源。要绕开镜像选「npm 官方源」；要换内网私有源或云厂商镜像选「自定义地址」。
-- `@0.1.7` 指定版本；想装 npm 上最新的已发布版本，去掉它只填 `dsh-agent-team-presets`。
+- `@0.1.8` 指定版本；想装 npm 上最新的已发布版本，去掉它只填 `dsh-agent-team-presets`。
 - 输入框支持包名、`name@version`、`github:作者/仓库`、tarball 地址或本地绝对路径。
 - 本包声明了自己的 `dsh.bundle`，安装后由插件管理器登记为 profile 的 bundle 层，不要再手写 loader 条目。
 - 已安装本包时无法重复安装同一包名。要更换安装来源（如由 GitHub 改为 npm），先在插件列表中卸载，再粘贴新规格安装。
@@ -189,10 +189,10 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 dsh plugin --profile web add github:bloodarea/dsh-agent-team-presets
 ```
 
-需要固定 v0.1.7 发布标签时：
+需要固定 v0.1.8 发布标签时：
 
 ```sh
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.7
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.8
 ```
 
 ### npm 发布渠道
@@ -206,7 +206,7 @@ dsh plugin --profile <profile> add dsh-agent-team-presets
 
 ### 确认安装并安全升级
 
-安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.1.7`，且组件处于运行中状态。
+安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.1.8`，且组件处于运行中状态。
 
 - 升级前备份 profile 设置、团队定义与会话选择记录。
 - 从开发链接迁移时，先通过插件管理器移除 `@deepseek-ai/dsh-experimental-agent-team-presets`，再启用社区包。

@@ -6,7 +6,7 @@
 
 English | [中文](<README.zh.md>)
 
-> **Community plugin v0.1.7** · [Release](https://github.com/bloodarea/dsh-agent-team-presets/releases/tag/v0.1.7)
+> **Community plugin v0.1.8** · [Release](https://github.com/bloodarea/dsh-agent-team-presets/releases/tag/v0.1.8)
 >
 > Requires a compatible DeepSeek Harness deployment with Agent Teams enabled. This version supports DSH rc.2 and 0.2.1-rc.2 APIs; see [Requirements](#requirements). Prebuilt artifacts are included, so installation does not require a source build.
 
@@ -78,7 +78,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 <a id="screenshots"></a>
 ## Screenshots
 
-The screenshots illustrate the v0.1.7 settings interface, Team Skill management, and composer workflow. Example provider and model names depend on your deployment.
+The screenshots illustrate the v0.1.8 settings interface, Team Skill management, and composer workflow. Example provider and model names depend on your deployment.
 
 **Manage Teams: tabs, search, source and series filters**
 
@@ -148,12 +148,12 @@ The screenshots illustrate the v0.1.7 settings interface, Team Skill management,
 <a id="requirements"></a>
 ## Requirements
 
-- **DeepSeek Harness with the required rc.2 APIs.** Supported versions: `>=0.2.0-rc.2 <0.3.0`. The plugin manager enforces the declared `engines.dsh` range and refuses to install or activate the plugin outside it; the `@deepseek-ai/dsh-*` peer ranges serve package managers and are ignored by that check. This release was verified against **`0.2.1-rc.2`**; `0.2.0-rc.2` was not re-run for 0.1.7. See [package.json](<package.json>).
+- **DeepSeek Harness with the required rc.2 APIs.** Supported versions: `>=0.2.0-rc.2 <0.3.0`. The plugin manager enforces the declared `engines.dsh` range and refuses to install or activate the plugin outside it; the `@deepseek-ai/dsh-*` peer ranges serve package managers and are ignored by that check. This release was verified against **`0.2.1-rc.2`**; `0.2.0-rc.2` was not re-run for 0.1.8. See [package.json](<package.json>).
 - **Agent Teams enabled in the target profile.** The standard integration is `@deepseek-ai/dsh-experimental-agent-team-profile`, which supplies the Team service, tools, and Web roster. This plugin configures and manages Teams; it does not replace that subsystem.
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.1.7`) and the Harness version (`0.2.1-rc.2`, for example) are separate version lines.
+The plugin version (`0.1.8`) and the Harness version (`0.2.1-rc.2`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -163,13 +163,13 @@ The plugin version (`0.1.7`) and the Harness version (`0.2.1-rc.2`, for example)
 Open **Global panels → Plugins → Add plugin**, paste the line below into **Package name or address**, and click **Install**:
 
 ```text
-dsh-agent-team-presets@0.1.7
+dsh-agent-team-presets@0.1.8
 ```
 
 <!-- release-version: keep in sync with package.json version -->
 
 - **Registry** selects which npm source the download comes from. **Default registry** uses pnpm's own configuration. Pick **Official npm registry** to bypass a mirror, or **Custom address** for an internal or cloud mirror.
-- `@0.1.7` pins the version; omit it to install the latest published package.
+- `@0.1.8` pins the version; omit it to install the latest published package.
 - The field accepts package names, `name@version`, `github:owner/repo`, tarball URLs, or absolute filesystem paths.
 - This package declares `dsh.bundle`, so the plugin manager automatically registers it as a profile bundle layer; do not add a loader entry by hand.
 - Once installed, reinstalling the same package identity is blocked. To switch sources (e.g. from GitHub to npm), uninstall first, then install the new spec.
@@ -189,10 +189,10 @@ Replace `<profile>` with your active profile (e.g. `web` or `desktop`):
 dsh plugin --profile web add github:bloodarea/dsh-agent-team-presets
 ```
 
-To pin the v0.1.7 release tag:
+To pin the v0.1.8 release tag:
 
 ```sh
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.7
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.8
 ```
 
 ### npm release channel
@@ -206,7 +206,7 @@ dsh plugin --profile <profile> add dsh-agent-team-presets
 
 ### Verify and upgrade safely
 
-After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.1.7`, and a running component.
+After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.1.8`, and a running component.
 
 - Back up profile settings, Team definitions, and Session selections before upgrading.
 - When migrating from a development link, remove `@deepseek-ai/dsh-experimental-agent-team-presets` first before enabling the community package.
