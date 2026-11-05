@@ -191,15 +191,13 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 打开 **全局面板 → 插件 → 添加插件**，把下面这一行粘贴到「包名或地址」，点击 **安装**：
 
 ```text
-github:bloodarea/dsh-agent-team-presets#v0.1.9
+dsh-agent-team-presets@0.1.9
 ```
 
 <!-- release-version: 与 package.json 的 version 同步 -->
 
-0.1.9 目前从 GitHub 标签分发；npm 仍为 0.1.8，待下一次 npm 发布后再使用下方 npm 渠道。
-
 - **安装源**决定从哪个 npm 源下载。「默认安装源」指 pnpm 自身配置所指的源。要绕开镜像选「npm 官方源」；要换内网私有源或云厂商镜像选「自定义地址」。
-- `#v0.1.9` 指定 GitHub 标签；npm 发布 0.1.9 后也可用 `@0.1.9`。想装 npm 上最新的已发布版本，去掉版本只填 `dsh-agent-team-presets`。
+- `@0.1.9` 指定已发布版本；`github:bloodarea/dsh-agent-team-presets#v0.1.9` 从同一版本的 GitHub 标签安装。想装 npm 上最新的已发布版本，去掉版本只填 `dsh-agent-team-presets`。
 - 输入框支持包名、`name@version`、`github:作者/仓库`、tarball 地址或本地绝对路径。
 - 本包声明了自己的 `dsh.bundle`，安装后由插件管理器登记为 profile 的 bundle 层，不要再手写 loader 条目。
 - 已安装本包时无法重复安装同一包名。要更换安装来源（如由 GitHub 改为 npm），先在插件列表中卸载，再粘贴新规格安装。

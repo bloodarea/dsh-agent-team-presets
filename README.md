@@ -191,15 +191,13 @@ The plugin version (`0.1.9`) and the Harness version (`0.2.2-rc.1`, for example)
 Open **Global panels → Plugins → Add plugin**, paste the line below into **Package name or address**, and click **Install**:
 
 ```text
-github:bloodarea/dsh-agent-team-presets#v0.1.9
+dsh-agent-team-presets@0.1.9
 ```
 
 <!-- release-version: keep in sync with package.json version -->
 
-0.1.9 is currently distributed from the GitHub tag. npm still publishes 0.1.8; use the npm channel below once 0.1.9 is published there.
-
 - **Registry** selects which npm source the download comes from. **Default registry** uses pnpm's own configuration. Pick **Official npm registry** to bypass a mirror, or **Custom address** for an internal or cloud mirror.
-- `#v0.1.9` pins the GitHub tag; `@0.1.9` works on npm after the next npm publish. Omit the pin to install the latest published package.
+- `@0.1.9` pins the published version; `github:bloodarea/dsh-agent-team-presets#v0.1.9` installs the same release from the GitHub tag. Omit the pin to install the latest published package.
 - The field accepts package names, `name@version`, `github:owner/repo`, tarball URLs, or absolute filesystem paths.
 - This package declares `dsh.bundle`, so the plugin manager automatically registers it as a profile bundle layer; do not add a loader entry by hand.
 - Once installed, reinstalling the same package identity is blocked. To switch sources (e.g. from GitHub to npm), uninstall first, then install the new spec.
@@ -227,7 +225,7 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.
 
 ### npm release channel
 
-GitHub and [npm](https://www.npmjs.com/package/dsh-agent-team-presets) are separate release channels. npm currently publishes 0.1.8; 0.1.9 is available from the GitHub tag until the npm publish follows. Verify the published version before installing:
+GitHub and [npm](https://www.npmjs.com/package/dsh-agent-team-presets) are separate release channels. npm publishes 0.1.9. Verify the published version before installing:
 
 ```sh
 npm view dsh-agent-team-presets version
