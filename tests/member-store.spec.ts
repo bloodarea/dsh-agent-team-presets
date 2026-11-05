@@ -30,6 +30,7 @@ import { mountMemberStorage } from './fixtures/member-storage.ts'
 import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
 import { subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -89,7 +90,7 @@ describe('a deployment without the member store', () => {
     // refused, and the refusal happens before the Team service is asked.
     expect(h.ctx.tools.get('spawn_team_member', h.root)).toBeDefined()
     expect(h.ctx.tools.get('get_team_preset', h.root)).toBeDefined()
-    const spawn = await h.ctx.tools.execute({
+    const spawn = await executeTool(h.ctx, {
       callId: ToolCallId('no-store'),
       name: 'spawn_team_member',
       arguments: { member: 'reviewer', task: 'review' },

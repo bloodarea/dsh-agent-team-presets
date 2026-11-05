@@ -1542,6 +1542,119 @@ describe('composer selection writes', () => {
   })
 })
 
+describe('composer member selection writes', () => {
+  /** One Team whose single member carries a stable role identity. */
+  const MEMBER_TEAM: TeamPreset = {
+    ...preset([{ ...EMPTY_AGENT, id: 'role-reviewer', name: 'reviewer', provider: 'deepseek', model: 'deepseek-chat' }]),
+    captain: { ...EMPTY_CAPTAIN, name: 'lead' },
+  }
+
+  it('writes a member selection with the stable role identity and nothing else', async () => {
+    const form = scriptedForm({ value: { teams: [MEMBER_TEAM], selections: [{ sessionId: 's1', teamId: 'team-1' }] } })
+    const document = scriptedDocument()
+    const controller = new TeamPresetsController(scriptedContext(form.form, { document }))
+
+    await controller.selectMember('s2', 'team-1', 'role-reviewer')
+
+    // The whole payload: the captain-led record of another Session is untouched
+    // and the new record names exactly the member, never a name or an index.
+    expect(document.calls).toHaveLength(1)
+    expect(document.calls[0]?.ops).toEqual([{
+      op: 'set',
+      path: ['selections'],
+      value: [
+        { sessionId: 's1', teamId: 'team-1' },
+        { sessionId: 's2', teamId: 'team-1', roleId: 'role-reviewer' },
+      ],
+    }])
+    expect(controller.store.getSnapshot().selections).toEqual([
+      { sessionId: 's1', teamId: 'team-1' },
+      { sessionId: 's2', teamId: 'team-1', roleId: 'role-reviewer' },
+    ])
+    expect(controller.store.getSnapshot().selectionFailure).toBeUndefined()
+    controller.dispose()
+  })
+
+  it('clears the member role when the captain is selected again', async () => {
+    const form = scriptedForm({
+      value: { teams: [MEMBER_TEAM], selections: [{ sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' }] },
+    })
+    const document = scriptedDocument()
+    const controller = new TeamPresetsController(scriptedContext(form.form, { document }))
+
+    await controller.selectTeam('s1', 'team-1')
+
+    // Selecting the captain means the Team leads again: the stored record must
+    // lose its roleId rather than keep pointing at a member.
+    expect(document.calls[0]?.ops).toEqual([{
+      op: 'set', path: ['selections'], value: [{ sessionId: 's1', teamId: 'team-1' }],
+    }])
+    expect(controller.store.getSnapshot().selections).toEqual([{ sessionId: 's1', teamId: 'team-1' }])
+    controller.dispose()
+  })
+
+  it('preserves another Session\'s member selection when writing a captain-led one', async () => {
+    const form = scriptedForm({
+      value: { teams: [MEMBER_TEAM], selections: [{ sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' }] },
+    })
+    const document = scriptedDocument()
+    const controller = new TeamPresetsController(scriptedContext(form.form, { document }))
+
+    await controller.selectTeam('s2', 'team-1')
+
+    // A whole-list write must not downgrade the other Session's member chat to
+    // its captain, which is what dropping every role would do.
+    expect(document.calls[0]?.ops[0]).toMatchObject({
+      value: [
+        { sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' },
+        { sessionId: 's2', teamId: 'team-1' },
+      ],
+    })
+    controller.dispose()
+  })
+
+  it('retries a refused member selection with the role intact', async () => {
+    const form = scriptedForm({ value: { teams: [MEMBER_TEAM], selections: [{ sessionId: 's1', teamId: 'team-1' }] } })
+    const document = scriptedDocument()
+    document.refusals = 1
+    const controller = new TeamPresetsController(scriptedContext(form.form, { document }))
+
+    await controller.selectMember('s2', 'team-1', 'role-reviewer')
+
+    expect(document.calls).toHaveLength(2)
+    expect(document.calls[0]?.revision).not.toBe(document.calls[1]?.revision)
+    for (const call of document.calls) {
+      expect(call.ops[0]).toMatchObject({
+        value: [
+          { sessionId: 's1', teamId: 'team-1' },
+          { sessionId: 's2', teamId: 'team-1', roleId: 'role-reviewer' },
+        ],
+      })
+    }
+    expect(controller.store.getSnapshot().selectionFailure).toBeUndefined()
+    controller.dispose()
+  })
+
+  it('reports a refused member selection without inventing a record', async () => {
+    const form = scriptedForm({ value: { teams: [MEMBER_TEAM], selections: [{ sessionId: 's1', teamId: 'team-1' }] } })
+    const document = scriptedDocument()
+    document.refusals = 2
+    document.refusalMessage = 'Config field "selections" is not volatile'
+    const controller = new TeamPresetsController(scriptedContext(form.form, { document }))
+
+    await controller.selectMember('s2', 'team-1', 'role-reviewer')
+
+    expect(controller.store.getSnapshot().selectionFailure).toEqual({
+      kind: 'refused',
+      sessionId: 's2',
+      teamId: 'team-1',
+      detail: 'Config field "selections" is not volatile',
+    })
+    expect(controller.store.getSnapshot().selections).toEqual([{ sessionId: 's1', teamId: 'team-1' }])
+    controller.dispose()
+  })
+})
+
 describe('the stored document behind the shared form', () => {
   it('serves the stored Teams and selections from the describe mirror', () => {
     const form = scriptedForm({ value: SECTION })
@@ -1549,6 +1662,22 @@ describe('the stored document behind the shared form', () => {
     expect(controller.store.getSnapshot()).toMatchObject({
       status: 'ready', teams: SECTION.teams, selections: SECTION.selections, formIssue: undefined,
     })
+    controller.dispose()
+  })
+
+  it('carries a stored member role through the describe mirror', () => {
+    const form = scriptedForm({ value: SECTION })
+    const document = scriptedDocument()
+    document.value = {
+      teams: SECTION.teams,
+      selections: [{ sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' }],
+    }
+    const controller = new TeamPresetsController(scriptedContext(form.form, { document }))
+    // The page must see the member chat, not just the Team: the composer trigger
+    // and the missing-member notice both resolve from this projection.
+    expect(controller.store.getSnapshot().selections).toEqual([
+      { sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' },
+    ])
     controller.dispose()
   })
 
@@ -1683,6 +1812,18 @@ describe('the injected business face', () => {
 
     await injected.selectTeam('s2', 'team-2')
     expect(document.calls[0]?.ops[0]).toMatchObject({ op: 'set', path: ['selections'] })
+
+    // The composer's member click is exposed on the same face, so the slot
+    // component never reaches past the controller to build its own payload.
+    await injected.selectMember('s2', 'team-2', 'role-reviewer')
+    expect(document.calls[1]?.ops[0]).toMatchObject({
+      op: 'set',
+      path: ['selections'],
+      value: [
+        { sessionId: 's1', teamId: 'team-1' },
+        { sessionId: 's2', teamId: 'team-2', roleId: 'role-reviewer' },
+      ],
+    })
     controller.dispose()
   })
 

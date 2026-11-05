@@ -174,9 +174,11 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     selections: z<NoInfer<({
         sessionId?: string | null;
         teamId?: string | null;
+        roleId?: string | null;
     } & import("@deepseek-ai/cosmokit").Dict)[]>, NoInfer<Schemastery.ObjectT<NoInfer<{
         sessionId: z<string, string, "defined">;
         teamId: z<string, string, "defined">;
+        roleId: z<string, string, "plain">;
     }>>[]>, "volatile-defined">;
     seededDefaults: z<NoInfer<string[]>, NoInfer<string[]>, "volatile-defined">;
     freshProvider: z<string, string, "defined">;
@@ -300,9 +302,11 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     selections: z<NoInfer<({
         sessionId?: string | null;
         teamId?: string | null;
+        roleId?: string | null;
     } & import("@deepseek-ai/cosmokit").Dict)[]>, NoInfer<Schemastery.ObjectT<NoInfer<{
         sessionId: z<string, string, "defined">;
         teamId: z<string, string, "defined">;
+        roleId: z<string, string, "plain">;
     }>>[]>, "volatile-defined">;
     seededDefaults: z<NoInfer<string[]>, NoInfer<string[]>, "volatile-defined">;
     freshProvider: z<string, string, "defined">;

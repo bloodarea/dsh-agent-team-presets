@@ -69,6 +69,7 @@ import { mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -403,7 +404,7 @@ async function wireTools(ctx: Context, agent: Agent): Promise<string[]> {
 
 /** Execute one tool as one Agent and report whether it was refused, and why. */
 async function call(h: Harness, agent: Agent, name: string, args: object = {}) {
-  const result = await h.ctx.tools.execute({
+  const result = await executeTool(h.ctx, {
     callId: ToolCallId(`${name}-${Math.random()}`),
     name,
     arguments: args,

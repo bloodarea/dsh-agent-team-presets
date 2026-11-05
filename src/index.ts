@@ -24,13 +24,14 @@ import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { applyTeamToAgent, assertTeamApplicable, capabilityRefusal } from './application.ts'
-import type { TeamApplication, TeamApplicationOptions } from './application.ts'
+import { applyTeamToAgent, assertSlotApplicable, capabilityRefusal, memberRouteOptions } from './application.ts'
+import { registerBuiltinSkill } from './builtin-skill.ts'
+import type { TeamApplication, TeamApplicationOptions, TeamApplicationTarget } from './application.ts'
 import { MemberRuntime } from './member-runtime.ts'
 import type { MemberClaim } from './member-runtime.ts'
-import { createdDepthRefusal } from './delegation.ts'
+import { createdDepthRefusal, routeRefusal } from './delegation.ts'
 import { isPresetMemberProvider, memberProviderMarker, registerMemberProviders } from './member-identity.ts'
-import { installNativePresentation, personaBaseline, prepareNativePresentation, readWire } from './presentation.ts'
+import { personaBaseline, prepareNativePresentation, readWire } from './presentation.ts'
 import type { Config } from './config.ts'
 import { teamSettingsReconcile } from './settings-reconcile.ts'
 import { hasTeamApplicationMarker, isSessionRoot, TeamExecutionMonitor, teammatesBusy } from './execution.ts'
@@ -41,7 +42,7 @@ import { CAPTAIN_ROLE, TeamSkills, resolveSkillRoot, roleOfMember } from './team
 import type { AgentSkillSync } from './team-skills/index.ts'
 import { TeamSkillService } from './team-skills/service.ts'
 import { registerTeamSkillTools } from './team-skills/tools.ts'
-import { definitionFingerprint, findTeam, selectedTeam, toolMode } from './presets.ts'
+import { definitionFingerprint, findMemberById, findTeam, memberRouteOf, sameMemberRoute, selectedRoleId, selectedTeam, toolMode } from './presets.ts'
 import type { TeamPreset } from './types.ts'
 import TeamPresetsToolCatalog from './tool-catalog.ts'
 import { CAPTAIN_RECOVERY_TOOLS, descriptorPolicy, guardPolicy, hasLegacyPresetBriefing, policyOf } from './tool-policy.ts'
@@ -74,6 +75,10 @@ const LOG = 'agent-team-presets'
  * @param config - the live configuration whose volatile values carry the stored Teams.
  */
 export function apply(ctx: Context, config: Config): void {
+  // A plugin-level skill is registered once per activation on the global skill
+  // layer. It is deliberately not a Team Skill: no Team, role, or Agent scope
+  // gates it, so every Session can load the troubleshooting guide.
+  registerBuiltinSkill(ctx)
   const applications = new Map<Agent, TeamApplication>()
   const definitions = new Map<Agent, ReturnType<typeof selectedTeam>>()
   const quarantines = new Map<Agent, { reason: string; dispose: () => void }>()
@@ -561,20 +566,32 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   /**
-   * Options that declare a custom Team's native presentation at the Agent scope.
+   * Resolve the role one stored selection names into an application target.
    *
-   * The install is part of the application's rollback region: releasing the
-   * application releases the declaration with it.
-   * @param agent - the Agent the Team is applied to.
-   * @param disclosure - locale key of the effective presentation, when it replaced another one.
-   * @returns the application options.
+   * A captain-led selection is the absence of a role, not a role named
+   * `captain`: the two states must stay distinguishable so an old document and
+   * a current one describe the same thing.
+   * @param team - the selected Team definition.
+   * @param roleId - the stored member identity, when the Session talks to one.
+   * @returns the application target, or the missing member identity.
    */
-  const presentationOptions = (agent: Agent, disclosure?: string): TeamApplicationOptions => ({
-    presentation: {
-      ...disclosure === undefined ? {} : { disclosure },
-      install: () => installNativePresentation(agent),
-    },
-  })
+  const resolveTarget = (
+    team: TeamPreset,
+    roleId: string | undefined,
+  ): { target: TeamApplicationTarget } | { missing: string } => {
+    if (roleId === undefined) return { target: { kind: 'captain' } }
+    const member = findMemberById(team, roleId)
+    return member === undefined ? { missing: roleId } : { target: { kind: 'member', member, roleId } }
+  }
+
+  /** Human label of one application target, for logs and refusals. */
+  const targetLabel = (team: TeamPreset, target: TeamApplicationTarget): string => target.kind === 'captain'
+    ? `Team "${team.id}"`
+    : `Team "${team.id}" member "${target.roleId}"`
+
+  /** Member identity of one application target, or undefined for the captain. */
+  const targetRoleId = (target: TeamApplicationTarget): string | undefined =>
+    target.kind === 'member' ? target.roleId : undefined
 
   /**
    * Report one refused application.
@@ -582,9 +599,14 @@ export function apply(ctx: Context, config: Config): void {
    * A rejected update never lifts the last effective capability policy: the
    * previous application stays installed, and only a Session that has none is
    * quarantined until Settings supplies a valid definition.
+   * @param agent - the Session-root Agent the application was for.
+   * @param team - the Team definition that was refused.
+   * @param reason - why the application was refused.
+   * @param roleId - the member the selection named, when it named one.
    */
-  const refuseTeam = (agent: Agent, team: TeamPreset, reason: string): void => {
-    ctx.logger.warn(`${LOG}: Team "%s" was refused for Session "%s": %s`, team.id, agent.session.id, reason)
+  const refuseTeam = (agent: Agent, team: TeamPreset, reason: string, roleId?: string): void => {
+    const subject = roleId === undefined ? `Team "${team.id}"` : `Team "${team.id}" member "${roleId}"`
+    ctx.logger.warn(`${LOG}: %s was refused for Session "%s": %s`, subject, agent.session.id, reason)
     // A restore that already failed left the more specific diagnosis in place;
     // overwriting it would hide the fact that the previous policy was lost. That
     // only applies while its guard is still installed: without one, preserving
@@ -598,19 +620,16 @@ export function apply(ctx: Context, config: Config): void {
   /**
    * Re-install the policy a refused update must not lift.
    *
-   * A previous application that had declared its own native presentation has to
-   * declare it again here, because releasing that application released the
-   * declaration with it. One that merely found the surface already native needs
-   * no declaration, and asking for one would risk the very false conflict the
-   * preparation step exists to avoid.
+   * Executor selection remains owned by the Agent preset, so rollback only
+   * restores this plugin's prompt sections, restrictions, and tools.
    * @param agent - the Session-root Agent.
    * @param previous - the definition that was installed before the refusal.
-   * @param redeclareNative - whether that application owned a native declaration.
+   * @param previousRoleId - the member that definition ran as, when it did.
    */
   const restorePrevious = (
     agent: Agent,
     previous: TeamPreset | undefined,
-    redeclareNative: boolean,
+    previousRoleId?: string,
   ): void => {
     if (previous === undefined) {
       agentRoles.delete(agent)
@@ -618,14 +637,18 @@ export function apply(ctx: Context, config: Config): void {
       return
     }
     try {
-      const options = toolMode(previous.captain) === 'custom' && redeclareNative
-        ? presentationOptions(agent)
-        : {}
+      const resolved = resolveTarget(previous, previousRoleId)
+      if ('missing' in resolved) {
+        throw new Error(`the previously applied member "${resolved.missing}" no longer exists in Team "${previous.id}"`)
+      }
       applications.set(agent, applyTeamToAgent(
-        ctx, agent, previous, providers, () => findTeam(config.teams.get(), previous.id), members, options,
+        ctx, agent, previous, providers, () => findTeam(config.teams.get(), previous.id), members,
+        { target: resolved.target },
       ))
       definitions.set(agent, previous)
-      const role = { teamId: previous.id, roleId: CAPTAIN_ROLE, captain: true }
+      const role = resolved.target.kind === 'captain'
+        ? { teamId: previous.id, roleId: CAPTAIN_ROLE, captain: true }
+        : { teamId: previous.id, roleId: resolved.target.roleId, captain: false }
       agentRoles.set(agent, role)
       void syncRoleSkills(agent, role)
     } catch (error: unknown) {
@@ -651,26 +674,53 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   /**
-   * Apply one Team after its asynchronous preparation.
+   * Apply one Team (or one member of it) after its asynchronous preparation.
    *
    * Nothing of the new application is installed until every check has passed,
    * and the effective wire is read once more after the commit: a strict custom
    * policy is only considered applied when the surface it governs really is the
    * native one, so a declaration that silently lost to another presentation is
    * rolled back instead of being trusted.
+   *
+   * A member target additionally selects that member's configured model route on
+   * the Session. That selection is the last step of a successful commit, not a
+   * preparation step: a refused application must leave the Session's model
+   * exactly as it was. A captain target never selects a route — the captain runs
+   * on whatever model the Session already chose.
    * @param agent - the Session-root Agent.
    * @param team - the definition to apply.
    * @param epoch - identity of this application, so a superseded one stops.
+   * @param roleId - the member to run as, or undefined for the captain.
    */
-  const commit = async (agent: Agent, team: TeamPreset, epoch: number): Promise<void> => {
+  const commit = async (agent: Agent, team: TeamPreset, epoch: number, roleId: string | undefined): Promise<void> => {
     const superseded = (): boolean => disposed || jobs.get(agent)?.epoch !== epoch
+    const resolved = resolveTarget(team, roleId)
+    if ('missing' in resolved) {
+      refuseTeam(agent, team, `the selected member "${resolved.missing}" no longer exists in this Team`, roleId)
+      return
+    }
+    const target = resolved.target
+    const slot = target.kind === 'captain' ? team.captain : target.member
+    // The route a member will run on is part of what the surface must be
+    // inspected against: conditional tools and prompt assembly can depend on the
+    // model selection. It is validated before anything is touched and selected
+    // only after the application is proven.
+    const memberRoute = target.kind === 'member' ? memberRouteOptions(target.member) : undefined
+    if (memberRoute !== undefined) {
+      const unusable = await routeRefusal(ctx, memberRoute)
+      if (superseded()) return
+      if (unusable !== undefined) {
+        refuseTeam(agent, team, unusable, targetRoleId(target))
+        return
+      }
+    }
     // The effective wire is read BEFORE anything of this application exists: an
     // active complete deployment persona must be recognized from its own text,
     // never from a section this plugin already installed.
-    const before = await readWire(agent)
+    const before = await readWire(agent, memberRoute)
     if (superseded()) return
-    let options: TeamApplicationOptions = {}
-    if (team.captain.systemPrompt.trim() === '' && before !== undefined) {
+    let options: TeamApplicationOptions = { target }
+    if (target.kind === 'captain' && team.captain.systemPrompt.trim() === '' && before !== undefined) {
       const baseline = personaBaseline(before.sections)
       if (baseline.kind === 'foreign') {
         refuseTeam(agent, team, `the deployment composes a complete prompt section this plugin cannot re-declare safely `
@@ -681,34 +731,30 @@ export function apply(ctx: Context, config: Config): void {
       // reduce the whole prompt to that one section. Re-declaring its exact text
       // without `complete` keeps the preset's wording and tool set while letting
       // this Team's briefing participate.
-      if (baseline.kind === 'persona') options = { personaFallback: baseline.text }
+      if (baseline.kind === 'persona') options = { target, personaFallback: baseline.text }
     }
     // The tools catalog is every standing preset's union, not what THIS Session
     // composes, so an unreachable allow-listed capability is refused here rather
-    // than silently widened.
-    const missing = capabilityRefusal(agent, team)
+    // than silently widened. A solo member validates only its own slot.
+    const missing = capabilityRefusal(agent, team, target)
     if (missing !== undefined) {
-      refuseTeam(agent, team, missing)
+      refuseTeam(agent, team, missing, targetRoleId(target))
       return
     }
-    if (toolMode(team.captain) === 'custom') {
-      const presentation = await prepareNativePresentation(agent)
+    if (toolMode(slot) === 'custom') {
+      const presentation = await prepareNativePresentation(agent, memberRoute)
       if (superseded()) return
       if (presentation.kind === 'conflict' || presentation.kind === 'unknown') {
-        refuseTeam(agent, team, presentation.reason)
+        refuseTeam(agent, team, presentation.reason, targetRoleId(target))
         return
       }
-      // Only an actual override needs a declaration of its own: a surface that is
-      // already native is left exactly as the deployment composed it, so this can
-      // never be mistaken for a conflict with a same-scope native declaration.
-      if (presentation.kind === 'installable') options = { ...options, ...presentationOptions(agent, presentation.disclosure) }
     }
     // The definition is validated before the running application is released,
     // so a preset this Session cannot take never leaves it without one.
     try {
-      assertTeamApplicable(agent, team)
+      assertSlotApplicable(agent, team, slot)
     } catch (error: unknown) {
-      refuseTeam(agent, team, `application failed validation: ${String(error)}`)
+      refuseTeam(agent, team, `application failed validation: ${String(error)}`, targetRoleId(target))
       return
     }
     if (superseded()) return
@@ -725,7 +771,7 @@ export function apply(ctx: Context, config: Config): void {
       candidate?.dispose()
       applications.delete(agent)
       definitions.delete(agent)
-      if (!disposed) restorePrevious(agent, previous, previousApplication?.presentationNote !== undefined)
+      if (!disposed) restorePrevious(agent, previous, previousApplication?.roleId)
     }
     try {
       // The route is read from the stored Team at spawn time, not captured here:
@@ -737,30 +783,39 @@ export function apply(ctx: Context, config: Config): void {
       candidate = application
       applications.set(agent, application)
       definitions.set(agent, team)
-      if (toolMode(team.captain) === 'custom') {
-        const after = await readWire(agent)
+      if (toolMode(slot) === 'custom') {
+        const after = await readWire(agent, memberRoute)
         if (superseded()) { rollback(); return }
         if (after === undefined || after.tools.includes(RUN_CODE_NAME)) {
           rollback()
           refuseTeam(agent, team, after === undefined
             ? 'the effective tool surface could not be read after the native presentation was installed'
             : 'the effective tool surface still exposes the general purpose PTC transport after the native presentation '
-              + 'was installed, so a strict custom policy cannot govern it')
+              + 'was installed, so a strict custom policy cannot govern it', targetRoleId(target))
           return
         }
       }
       if (superseded()) { rollback(); return }
-      const captainRole = { teamId: team.id, roleId: CAPTAIN_ROLE, captain: true }
-      if (agentRoles.get(agent)?.teamId !== team.id) teamSkills.releaseAgent(agent)
-      agentRoles.set(agent, captainRole)
+      // The application is proven, so the member's own route can become this
+      // Session's selection for its next step. The captain never reaches here:
+      // it follows whatever model the Session already selected.
+      if (memberRoute !== undefined) agent.model.select(memberRoute)
+      const role = target.kind === 'captain'
+        ? { teamId: team.id, roleId: CAPTAIN_ROLE, captain: true }
+        : { teamId: team.id, roleId: target.roleId, captain: false }
+      const previousRole = agentRoles.get(agent)
+      if (previousRole !== undefined && (previousRole.teamId !== team.id || previousRole.roleId !== role.roleId)) {
+        teamSkills.releaseAgent(agent)
+      }
+      agentRoles.set(agent, role)
       // Installed in THIS turn, not awaited as a job: the store was opened once
       // at activation, `syncAgent` therefore registers synchronously before it
-      // returns a promise, and the captain's next request already carries the
+      // returns a promise, and the role's next request already carries the
       // catalog. The promise is only for the warning, so awaiting it would add a
-      // tick to every Team application for no readiness gain. The Team itself is
-      // never refused over a captain assignment: a Session that was already
+      // tick to every application for no readiness gain. The application itself
+      // is never refused over a skill assignment: a Session that was already
       // applied must not be left without its policy.
-      void syncRoleSkills(agent, captainRole)
+      void syncRoleSkills(agent, role)
       quarantines.get(agent)?.dispose()
       quarantines.delete(agent)
       provenUnteamed.delete(agent)
@@ -769,7 +824,7 @@ export function apply(ctx: Context, config: Config): void {
     } catch (error: unknown) {
       rollback()
       if (superseded()) return
-      refuseTeam(agent, team, `application failed: ${String(error)}`)
+      refuseTeam(agent, team, `application failed: ${String(error)}`, targetRoleId(target))
     }
   }
 
@@ -781,11 +836,13 @@ export function apply(ctx: Context, config: Config): void {
    * prepared instead of running on the deployment default.
    * @param agent - the Session-root Agent.
    * @param team - the definition to apply.
+   * @param roleId - the member to run as, or undefined for the captain.
    */
-  const schedule = (agent: Agent, team: TeamPreset): void => {
+  const schedule = (agent: Agent, team: TeamPreset, roleId: string | undefined): void => {
     const epoch = ++nextEpoch
     if (!applications.has(agent)) {
-      quarantine(agent, `Team "${team.id}" is being validated for this Session; tool access is paused until it is applied. ${recovery}`)
+      const subject = roleId === undefined ? `Team "${team.id}"` : `Team "${team.id}" member "${roleId}"`
+      quarantine(agent, `${subject} is being validated for this Session; tool access is paused until it is applied. ${recovery}`)
     }
     // A queued application is not a proven No-team boundary, and a pending first
     // application must never be mistaken for the baseline that exempts a later
@@ -796,7 +853,7 @@ export function apply(ctx: Context, config: Config): void {
     const promise = prior
       .then(async () => {
         if (disposed || jobs.get(agent)?.epoch !== epoch) return
-        await commit(agent, team, epoch)
+        await commit(agent, team, epoch, roleId)
       })
       .catch((error: unknown) => {
         ctx.logger.warn(
@@ -833,7 +890,9 @@ export function apply(ctx: Context, config: Config): void {
    */
   const adopt = (agent: Agent, startingTask: boolean): void => {
     if (disposed) return
-    const selectedId = config.selections.get().find(row => row.sessionId === agent.session.id)?.teamId
+    const selection = config.selections.get().find(row => row.sessionId === agent.session.id)
+    const selectedId = selection?.teamId
+    const selectedRole = selectedRoleId(selection)
     // The preset tools are the discovery path, not a Team capability: a user can
     // ask the captain to adjust "the Team preset" before this Session selects
     // one, and the captain must be able to read the configured Teams and ask
@@ -895,7 +954,10 @@ export function apply(ctx: Context, config: Config): void {
         const proven = provenUnteamed.has(agent) && !pendingApplications.has(agent)
         if (selectedId !== undefined && proven) return
         if (selectedId !== undefined) {
-          quarantine(agent, `Team "${selectedId}" cannot be safely restored into an already-running task; tools are paused until its task boundary. ${recovery}`)
+          const subject = selectedRole === undefined
+            ? `Team "${selectedId}"`
+            : `Team "${selectedId}" member "${selectedRole}"`
+          quarantine(agent, `${subject} cannot be safely restored into an already-running task; tools are paused until its task boundary. ${recovery}`)
         } else if (marked) {
           quarantine(agent, 'This Session ran this task under a Team whose definition cannot be restored here, and the Team '
             + `selection has since been cleared; tools are paused until its task boundary. ${recovery}`)
@@ -934,8 +996,33 @@ export function apply(ctx: Context, config: Config): void {
     // Selecting, editing, or re-applying a Team ends the No-team proof: from here
     // the Session's policy comes from the stored definition, not from a boundary.
     provenUnteamed.delete(agent)
+    // A selection naming a member this Team no longer carries is as invalid as a
+    // selection naming a deleted Team. It is refused rather than silently
+    // falling back to the captain, because that would install a different role
+    // than the one the user sees selected.
+    const resolved = resolveTarget(team, selectedRole)
+    if ('missing' in resolved) {
+      cancelApplication(agent)
+      teamSkills.releaseAgent(agent)
+      agentRoles.delete(agent)
+      current?.dispose()
+      applications.delete(agent)
+      definitions.delete(agent)
+      quarantines.get(agent)?.dispose()
+      quarantines.delete(agent)
+      restoreFailures.delete(agent)
+      quarantine(agent, `Selected member "${resolved.missing}" no longer exists in Team "${team.id}". This is not "No team"; `
+        + `tool access stays denied. ${recovery}`)
+      return
+    }
+    const target = resolved.target
+    // A member's route is the Session's model, so editing it is a real change
+    // for an individual conversation even though a captain-led Team reads member
+    // routes only when it summons one. A captain target has no route at all.
+    const selectedRoute = target.kind === 'member' ? memberRouteOf(target.member) : undefined
     const fingerprint = definitionFingerprint(team)
-    if (current !== undefined && current.teamId === team.id && current.fingerprint === fingerprint) {
+    if (current !== undefined && current.teamId === team.id && current.fingerprint === fingerprint
+      && current.roleId === selectedRole && sameMemberRoute(current.route, selectedRoute)) {
       cancelApplication(agent)
       return
     }
@@ -944,21 +1031,24 @@ export function apply(ctx: Context, config: Config): void {
     // refusal here leaves the running application untouched. The capability
     // check runs first so the operator reads the actionable reason (which names
     // the Session's own reach) instead of the registry's generic one.
-    const unreachable = capabilityRefusal(agent, team)
+    const unreachable = capabilityRefusal(agent, team, target)
     if (unreachable !== undefined) {
       cancelApplication(agent)
-      refuseTeam(agent, team, unreachable)
+      refuseTeam(agent, team, unreachable, target.kind === 'member' ? target.roleId : undefined)
       return
     }
     try {
-      assertTeamApplicable(agent, team)
+      assertSlotApplicable(agent, team, target.kind === 'captain' ? team.captain : target.member)
     } catch (error: unknown) {
       cancelApplication(agent)
-      if (current === undefined) quarantine(agent, `Team "${team.id}" application failed validation; no tools were granted. ${recovery}`)
-      ctx.logger.warn(`${LOG}: Team "%s" was refused for Session "%s": %s`, team.id, agent.session.id, String(error))
+      if (current === undefined) {
+        const subject = target.kind === 'captain' ? `Team "${team.id}"` : `Team "${team.id}" member "${target.roleId}"`
+        quarantine(agent, `${subject} application failed validation; no tools were granted. ${recovery}`)
+      }
+      ctx.logger.warn(`${LOG}: %s was refused for Session "%s": %s`, targetLabel(team, target), agent.session.id, String(error))
       return
     }
-    schedule(agent, team)
+    schedule(agent, team, selectedRole)
   }
 
   /**
@@ -1083,6 +1173,15 @@ export function apply(ctx: Context, config: Config): void {
       return
     }
     const installation = initializeChild(agent, false)
+    if (members.recordFor(agent)?.policy.mode === 'custom') {
+      const presentation = await prepareNativePresentation(agent)
+      if (presentation.kind !== 'already-native') {
+        // Settle any assignment started by initialization before releasing it.
+        await installation
+        refuseMember(agent, presentation.reason)
+        return
+      }
+    }
     // A member must not take its first request on an empty catalog: the host
     // publishes the catalog from a step boundary, so the registration this
     // creation edge started has to exist before the transaction completes. The
@@ -1111,6 +1210,23 @@ export function apply(ctx: Context, config: Config): void {
       const membership = ctx.agentTeams.tryMembership(agent)
       if (membership?.role === 'teammate') await members.bind(agent, { root: membership.root, name: membership.name })
     }
+  })
+  // A blank Session keeps its Agent identity when its Agent preset changes.
+  // The Team fingerprint alone cannot detect the new executor, tool set, or
+  // complete persona. Release the old composition and validate the new one.
+  ctx.on('agent-preset/selected', sessionId => {
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined || !isSessionRoot(agent)) return
+    cancelApplication(agent)
+    applications.get(agent)?.dispose()
+    applications.delete(agent)
+    definitions.delete(agent)
+    teamSkills.releaseAgent(agent)
+    agentRoles.delete(agent)
+    if (selectedTeam(config.teams.get(), config.selections.get(), sessionId) !== undefined) {
+      quarantine(agent, 'Agent preset changed; the selected Team is being validated against its new capabilities.')
+    }
+    reconcile(agent)
   })
   ctx.on('agent/disposed', ({ agent }) => {
     // Releasing the scope removes exactly this Agent's discovery; content the

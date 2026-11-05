@@ -1,14 +1,19 @@
 /**
  * Apply one Team preset to one live Session.
  *
- * The captain's system prompt shadows the deployment persona for that Session,
- * the captain's independent tool mode scopes the Session's visible global tools,
- * and the Session gains `spawn_team_member`, which applies the selected member's
- * own persona, route, reasoning effort, and tool mode. The Session keeps the
- * model it already selected: a captain never changes the Session's route. A
- * member's persona and tool mode belong to the definition the Team task started
- * with; its route does not, so a corrected route reaches the next member the
- * task summons.
+ * A captain-led Session takes the captain's system prompt as its persona, the
+ * captain's independent tool mode as its tool scope, and gains
+ * `spawn_team_member`, which applies the selected member's own persona, route,
+ * reasoning effort, and tool mode. Such a Session keeps the model it already
+ * selected: a captain never changes the Session's route. A member's persona and
+ * tool mode belong to the definition the Team task started with; its route does
+ * not, so a corrected route reaches the next member the task summons.
+ *
+ * A Session can also talk to ONE member directly. That application installs the
+ * member's role card as the deployment persona, the member's own tool policy,
+ * and no captain briefing and no member tool: the Session is the member, not a
+ * Team Lead. Selecting that member's model route is a separate Host step, so
+ * this module never changes any Session model by itself.
  * @module dsh-agent-team-presets/application
  */
 
@@ -21,13 +26,15 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { IMPLICIT_TOOLS, captainBriefing, definitionFingerprint, findMember, memberBriefing, memberTargets, memberTeamDivision, toolMode } from './presets.ts'
+import { IMPLICIT_TOOLS, captainBriefing, definitionFingerprint, findMember, memberBriefing, memberRouteOf, memberTargets, memberTeamDivision, soloMemberBriefing, toolMode } from './presets.ts'
+import type { ConfiguredMemberRoute } from './presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from './types.ts'
 import type { MemberRuntime } from './member-runtime.ts'
 import { depthRefusal, routeRefusal } from './delegation.ts'
 import { memberProviderFor } from './member-identity.ts'
 import { guardPolicy, inheritedFilter, isOwnLayerTool, policyOf } from './tool-policy.ts'
 import { SPAWN_TEAM_MEMBER_DESCRIPTION } from './tool-descriptions.ts'
+import { prepareNativePresentation } from './presentation.ts'
 
 /** The route this plugin actually installed on one created member. */
 const MEMBER_ROUTE_SCHEMA = {
@@ -58,8 +65,21 @@ const SPAWN_VALUE_SCHEMA = {
 export interface TeamApplication {
   /** Identity of the applied Team preset. */
   readonly teamId: string
+  /**
+   * Stable identity of the member this Session runs as, or undefined when the
+   * Team's captain leads it. Two applications of one Team differ when this
+   * differs, so the Host compares it with the stored selection as well as the
+   * definition fingerprint.
+   */
+  readonly roleId?: string
   /** Fingerprint of the applied definition, so an unchanged one is not re-applied. */
   readonly fingerprint: string
+  /**
+   * The member route this application installed as the Session model, when it
+   * runs as a member. A stored route change is a different application, so the
+   * Host compares it with the selection as well as the definition fingerprint.
+   */
+  readonly route?: ConfiguredMemberRoute
   /** Disclosure of the tool presentation this Session effectively runs with, when it was overridden. */
   readonly presentationNote?: string
   /** Release every registration and restore the Session's own composition. */
@@ -87,8 +107,29 @@ export interface MemberProviders {
   readonly forkError?: string | undefined
 }
 
+/**
+ * Which configured role one Session runs as.
+ *
+ * `captain` is the original Team application: the captain leads, may summon
+ * members, and never changes the Session's model. `member` is individual chat:
+ * that member's role card and tool policy are installed instead, and the Host
+ * selects the member's configured route separately.
+ */
+export type TeamApplicationTarget =
+  | { readonly kind: 'captain' }
+  | {
+    /** The configured member slot the Session runs as. */
+    readonly kind: 'member'
+    /** The member slot, resolved from the Team definition being applied. */
+    readonly member: TeamAgentPreset
+    /** Stable role identity of that member. */
+    readonly roleId: string
+  }
+
 /** Host-side facts one Team application needs beyond the preset itself. */
 export interface TeamApplicationOptions {
+  /** Which role the Session runs as; defaults to the captain. */
+  readonly target?: TeamApplicationTarget
   /**
    * The deployment persona text an active complete preset supplied, kept
    * visible beside this Team's briefing when the captain states no prompt.
@@ -124,51 +165,75 @@ interface RouteOptions {
 }
 
 /**
- * Build the child route of one configured agent slot.
- * @param preset - the configured captain or member.
- * @returns the child Agent options, or undefined without a configured route.
+ * Build the route one configured member runs on.
+ *
+ * Shared with the Host so the Session model it selects and the route a summoned
+ * child receives are derived by the same rule: both route ids must be non-empty,
+ * and an empty reasoning effort keeps the adapter default.
+ * @param preset - the configured member.
+ * @returns the route, or undefined when the member inherits the Session route.
  */
-function routeOptions(preset: TeamAgentPreset): RouteOptions | undefined {
-  if (preset.provider === '' || preset.model === '') return undefined
+export function memberRouteOptions(preset: TeamAgentPreset): RouteOptions | undefined {
+  const route = memberRouteOf(preset)
+  if (route === undefined) return undefined
   return {
-    provider: preset.provider,
-    model: preset.model,
-    ...preset.reasoningEffort === '' ? {} : { reasoningEffort: ReasoningEffortId(preset.reasoningEffort) },
+    provider: route.provider,
+    model: route.model,
+    ...route.reasoningEffort === '' ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) },
   }
 }
 
 /**
- * Register the captain's tool scope on one Session.
+ * Register one slot's tool scope on one Session.
  * Invalid tool names reject application instead of granting unrestricted access.
  * @param agent - the live Session agent.
- * @param captain - configured policy and allow-list; custom-empty denies every global tool.
+ * @param team - the Team whose policy namespace the slot belongs to.
+ * @param slot - configured policy and allow-list; custom-empty denies every global tool.
  * @returns the restriction disposer, or undefined for the default-all policy.
  */
-function restrictCaptainTools(agent: Agent, captain: TeamCaptainPreset): (() => void) | undefined {
-  if (toolMode(captain) === 'all') return undefined
-  const filter = inheritedFilter(agent, policyOf('captain', captain))
+function restrictSlotTools(
+  agent: Agent,
+  team: TeamPreset,
+  slot: TeamAgentPreset | TeamCaptainPreset,
+): (() => void) | undefined {
+  if (toolMode(slot) === 'all') return undefined
+  const filter = inheritedFilter(agent, policyOf(team.id, slot))
   return filter === undefined ? undefined : agent.ctx.tools.restrict(filter)
 }
 
 /**
- * Reject a Team this Session cannot apply, before any registration is touched.
+ * Reject one slot this Session cannot apply, before any registration is touched.
  *
  * `tools.restrict` owns the authority on which global names an allow-list may
  * carry, and the probe applies and lifts it so the real application still
- * registers exactly one restriction. Every other registration a Team needs —
- * the two prompt sections and the member tool — uses names and orders fixed by
- * this plugin, so a captain allow-list naming an unknown tool is the failure an
- * adoption can actually hit. Callers check before releasing a running
- * application, so a refused preset never leaves a Session without one.
+ * registers exactly one restriction. Every other registration a slot needs
+ * uses names and orders fixed by this plugin, so an allow-list naming an
+ * unknown tool is the failure an adoption can actually hit. Callers check
+ * before releasing a running application, so a refused preset never leaves a
+ * Session without one.
+ * @param agent - the live Session agent about to take the Team.
+ * @param team - the Team preset about to be applied.
+ * @param slot - the captain or member whose policy is validated.
+ * @throws when the slot's custom allow-list names a tool this Session cannot restrict.
+ */
+export function assertSlotApplicable(
+  agent: Agent,
+  team: TeamPreset,
+  slot: TeamAgentPreset | TeamCaptainPreset,
+): void {
+  if (toolMode(slot) === 'all') return
+  const filter = inheritedFilter(agent, policyOf(team.id, slot))
+  if (filter !== undefined) agent.ctx.tools.restrict(filter)()
+}
+
+/**
+ * Reject a captain-led Team this Session cannot apply.
  * @param agent - the live Session agent about to take the Team.
  * @param team - the Team preset about to be applied.
  * @throws when the captain's custom allow-list names a tool this Session cannot restrict.
  */
 export function assertTeamApplicable(agent: Agent, team: TeamPreset): void {
-  const { captain } = team
-  if (toolMode(captain) === 'all') return
-  const filter = inheritedFilter(agent, policyOf(team.id, captain))
-  if (filter !== undefined) agent.ctx.tools.restrict(filter)()
+  assertSlotApplicable(agent, team, team.captain)
 }
 
 /**
@@ -181,14 +246,22 @@ export function assertTeamApplicable(agent: Agent, team: TeamPreset): void {
  * trimmed, and the tool is never added just because the catalog lists it.
  * @param agent - the live Session agent about to take the Team.
  * @param team - the Team preset about to be applied.
+ * @param target - the role being applied; a solo member validates only its own
+ *   slot, because no captain or sibling is installed into that Session.
  * @returns the refusal text, or undefined when every named capability is reachable.
  */
-export function capabilityRefusal(agent: Agent, team: TeamPreset): string | undefined {
+export function capabilityRefusal(
+  agent: Agent,
+  team: TeamPreset,
+  target?: TeamApplicationTarget,
+): string | undefined {
   const missing = new Map<string, string[]>()
-  const slots: Array<readonly [string, TeamAgentPreset | TeamCaptainPreset]> = [
-    ['captain', team.captain],
-    ...team.members.map((member, index) => [`member "${member.name.trim() === '' ? `member-${index + 1}` : member.name.trim()}"`, member] as const),
-  ]
+  const slots: Array<readonly [string, TeamAgentPreset | TeamCaptainPreset]> = target?.kind === 'member'
+    ? [[`member "${target.member.name.trim() === '' ? target.roleId : target.member.name.trim()}"`, target.member]]
+    : [
+      ['captain', team.captain],
+      ...team.members.map((member, index) => [`member "${member.name.trim() === '' ? `member-${index + 1}` : member.name.trim()}"`, member] as const),
+    ]
   for (const [label, slot] of slots) {
     if (toolMode(slot) !== 'custom') continue
     for (const name of slot.tools) {
@@ -204,7 +277,8 @@ export function capabilityRefusal(agent: Agent, team: TeamPreset): string | unde
   }
   if (missing.size === 0) return undefined
   const detail = [...missing].map(([label, names]) => `${label}: ${names.join(', ')}`).join('; ')
-  return `Team "${team.id}" names capabilities this Session cannot reach (${detail}). The tools catalog lists the union `
+  const subject = target?.kind === 'member' ? `Team "${team.id}" member "${target.roleId}"` : `Team "${team.id}"`
+  return `${subject} names capabilities this Session cannot reach (${detail}). The tools catalog lists the union `
     + 'of every Agent preset, not what this Session composes: select an Agent preset that provides those tools, or '
     + 'remove them from the allow-list.'
 }
@@ -317,6 +391,10 @@ function registerMemberTool(
         throw new Error(`unknown Team member "${args.member}"; available members: ${targets.map(entry => entry.target).join(', ') || '(none)'}`)
       }
       const { member, target } = resolved
+      if (toolMode(member) === 'custom') {
+        const presentation = await prepareNativePresentation(caller)
+        if (presentation.kind !== 'already-native') throw new Error(presentation.reason)
+      }
       // No runtime means this Session was composed outside the plugin's
       // activation; a member it created could never be re-scoped, so refuse.
       if (members === undefined) {
@@ -349,7 +427,7 @@ function registerMemberTool(
           // during this task applies to the next member it summons. It is then
           // verified against the live registry before any durable intent, so an
           // unusable route cannot fail inside the member's first turn.
-          const route = routeOptions(routedMember(member, stored()))
+          const route = memberRouteOptions(routedMember(member, stored()))
           const unusableRoute = await routeRefusal(ctx, route)
           if (unusableRoute !== undefined) throw new Error(unusableRoute)
           // Settings can change while the route check awaits, so the depth cap is
@@ -430,7 +508,10 @@ function registerMemberTool(
  * @param members - the durable member runtime that freezes each summoned
  *   member's configuration before creation; without one the member tool refuses
  *   rather than creating a member nothing could re-scope.
- * @returns the applied Team, whose `dispose` releases every registration.
+ * @param options - the role to run as (captain by default), the deployment
+ *   persona fallback, and the prepared presentation a strict policy needs.
+ * @returns the applied Team (and member role, when one was installed), whose
+ *   `dispose` releases every registration.
  */
 export function applyTeamToAgent(
   ctx: Context,
@@ -445,13 +526,20 @@ export function applyTeamToAgent(
   const register = (disposer: (() => unknown) | undefined): void => {
     if (disposer !== undefined) disposers.push(disposer)
   }
+  const target = options.target ?? { kind: 'captain' as const }
+  const slot = target.kind === 'captain' ? team.captain : target.member
+  const route = target.kind === 'member' ? memberRouteOf(target.member) : undefined
   try {
-    const { captain } = team
-    if (captain.systemPrompt.trim() !== '') {
+    // A captain-led Session reads the captain's own prompt. A solo member reads
+    // a complete role card, which always names the member and the Team, so a
+    // member slot with no standing prompt still gets an identity instead of the
+    // deployment persona it was never meant to keep.
+    const persona = target.kind === 'captain' ? team.captain.systemPrompt : soloMemberBriefing(team, target.member)
+    if (persona.trim() !== '') {
       register(agent.ctx.systemPrompt.section({
         name: PERSONA_PREFIX_SECTION,
         order: agent.ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
-        text: captain.systemPrompt,
+        text: persona,
       }))
     } else if (options.personaFallback !== undefined && options.personaFallback.trim() !== '') {
       // The deployment's own complete persona (the official `minimal` preset)
@@ -466,26 +554,37 @@ export function applyTeamToAgent(
         text: options.personaFallback,
       }))
     }
-    const briefing = captainBriefing(team)
-    if (briefing !== '') {
-      register(agent.ctx.systemPrompt.section({
-        name: 'agent-team-presets:briefing',
-        order: agent.ctx.systemPrompt.getSectionOrder('TEAM_POLICY'),
-        text: briefing,
-      }))
+    // The captain's briefing names every summonable target. A solo member has no
+    // roster and no summon tool, so installing it would describe capabilities
+    // this Session does not have.
+    if (target.kind === 'captain') {
+      const briefing = captainBriefing(team)
+      if (briefing !== '') {
+        register(agent.ctx.systemPrompt.section({
+          name: 'agent-team-presets:briefing',
+          order: agent.ctx.systemPrompt.getSectionOrder('TEAM_POLICY'),
+          text: briefing,
+        }))
+      }
     }
-    register(guardPolicy(agent, policyOf(team.id, captain), options.presentation === undefined
-      ? {}
-      : { presentation: 'caller' }))
+    register(guardPolicy(
+      agent,
+      policyOf(team.id, slot),
+      target.kind === 'member'
+        ? { role: 'solo' }
+        : options.presentation === undefined ? {} : { presentation: 'caller' },
+    ))
     if (options.presentation !== undefined) register(options.presentation.install())
-    register(restrictCaptainTools(agent, captain))
-    register(registerMemberTool(ctx, agent, team, providers, stored, members))
+    register(restrictSlotTools(agent, team, slot))
+    if (target.kind === 'captain') register(registerMemberTool(ctx, agent, team, providers, stored, members))
   } catch (error: unknown) {
     for (const dispose of disposers.reverse()) void dispose()
     throw error
   }
   return {
     teamId: team.id,
+    ...target.kind === 'member' ? { roleId: target.roleId } : {},
+    ...route === undefined ? {} : { route },
     fingerprint: definitionFingerprint(team),
     ...options.presentation?.disclosure === undefined ? {} : { presentationNote: options.presentation.disclosure },
     dispose() {

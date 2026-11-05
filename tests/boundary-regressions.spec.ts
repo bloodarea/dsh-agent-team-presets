@@ -33,6 +33,8 @@ import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type { PtcRunRequest, PtcRunSpec, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import * as Persona from '@deepseek-ai/dsh-persona'
 import * as Presentation from '@deepseek-ai/dsh-agent-tool-presentation'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
 import { apply, inject } from '../src/index.ts'
 import { MEMBER_FRESH_PROVIDER } from '../src/member-identity.ts'
 import { slot, team } from './fixtures/team-presets.ts'
@@ -43,6 +45,7 @@ import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
 import { settlePlugin } from './fixtures/plugin-harness.ts'
 import type { TeamPreset } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -86,7 +89,7 @@ function warnings(spy: { mock: { calls: readonly unknown[][] } }): string {
 
 /** Execute one tool as one Agent. */
 async function call(ctx: Context, agent: Agent, name: string, args: object = {}) {
-  return ctx.tools.execute({
+  return executeTool(ctx, {
     callId: ToolCallId(crypto.randomUUID()),
     name,
     arguments: args,
@@ -223,6 +226,13 @@ describe('durable member identity', () => {
     expect((descriptor?.data as { provider?: string } | undefined)?.provider).toBe(MEMBER_FRESH_PROVIDER)
     // The Host's own roster row records the same backend.
     expect(row?.provider).toBe(MEMBER_FRESH_PROVIDER)
+    // Drain the held member inside the case: draining it delivers its settlement
+    // notice to the Lead, and a Lead turn woken while the context is being
+    // disposed can never finish. Let that turn settle before teardown.
+    h.release()
+    await h.ctx.subagents.drainChildren(h.root, [row!.id])
+    await vi.waitFor(() => expect(h.lead.requests.length).toBeGreaterThan(0))
+    await h.root.whenIdle()
   }, 20000)
 
   it('vetoes a marked member whose snapshot was lost instead of resuming it on the Lead route', async () => {
@@ -467,7 +477,9 @@ async function presentationStack(
     preset.ctx.systemPrompt.section({ name: 'third-party:complete', order: 0, text: 'FOREIGN_COMPLETE', complete: true })
   }
   bindScopeParent(agent, presetKey)
-  if (exact) agent.ctx.tools.presentAs(mode)
+  // rc.1 selects a presentation by mounting the executor plugin at that scope;
+  // the exact-Agent case is the Agent's own scope declaring one.
+  if (exact) await agent.ctx.plugin(mode === 'native' ? NativeToolExecutor : PtcToolExecutor)
   return { ctx, agent, bodies }
 }
 
@@ -495,17 +507,29 @@ async function applyTeam(h: { ctx: Context; agent: Agent }, definition: TeamPres
 }
 
 describe('strict policy presentation', () => {
-  it('shadows a PTC preset presentation with native calling and discloses it', async () => {
+  it('refuses a custom policy on a PTC surface and preserves the deployment executor', async () => {
     const h = await presentationStack(await base(), 'ptc', false)
     const definition = team([reviewer()], { toolMode: 'custom', tools: ['read'], systemPrompt: 'CAPTAIN' })
+    const warn = vi.spyOn(h.ctx.logger, 'warn')
     const fiber = await applyTeam(h, definition)
+    // 0.2.2-rc.1 has no native-presentation fold: a custom allow-list cannot
+    // shadow a PTC deployment, so the Team is refused and the deployment's
+    // executor is left exactly as it was.
+    expect(h.ctx.tools.get('spawn_team_member', h.agent)).toBeUndefined()
     const surface = await wire(h.agent)
-    expect(surface.tools).not.toContain('run_code')
-    expect(surface.tools).toContain('read')
-    expect(surface.tools).not.toContain('write')
-    expect((await call(h.ctx, h.agent, 'read')).isError).toBe(false)
-    expect((await call(h.ctx, h.agent, 'write')).isError).toBe(true)
-    expect(h.bodies).toEqual(['read'])
+    expect(surface.tools).toContain('run_code')
+    expect(surface.sections.map(section => section.text)).not.toContain('CAPTAIN')
+    expect(warnings(warn)).toContain('native Agent preset')
+    // The refusal quarantines the Session: the one callable name is denied with
+    // that actionable reason, and every other name is refused by the PTC
+    // executor before any guard. Neither path runs a tool body.
+    const denied = await call(h.ctx, h.agent, 'run_code', { code: 'return 1', description: 'probe' })
+    expect(denied.isError).toBe(true)
+    expect(resultText(denied)).toContain('native Agent preset')
+    const unlisted = await call(h.ctx, h.agent, 'read')
+    expect(unlisted.isError).toBe(true)
+    expect(resultText(unlisted)).toContain('only `run_code` is callable directly')
+    expect(h.bodies).toEqual([])
     await fiber.dispose()
   }, 20000)
 

@@ -195,6 +195,14 @@ export interface TeamSelectionRecordView {
     readonly sessionId: string;
     /** Selected Team identity. */
     readonly teamId: string;
+    /**
+     * Stable identity of the member this Session talks to individually.
+     *
+     * Absent means the Team's captain leads the Session, exactly as a selection
+     * always did. A stored empty string is the same captain-led meaning: the Host
+     * schema can project one for a record written before a role existed.
+     */
+    readonly roleId?: string;
 }
 /**
  * How one restore of the shipped default presets resolved.
@@ -641,6 +649,10 @@ export declare class TeamPresetsController {
     /**
      * Apply one Team to a Session, or clear its Team.
      *
+     * A captain-led selection: any member the Session was talking to is cleared
+     * with the record, because the captain always leads and never inherits a
+     * member's route.
+     *
      * The write goes through the Host's own `settings.mutate` with the revision
      * the describe mirror holds, which is what makes a refusal reportable: the
      * shared form's `mutate` answers only a boolean, so a refused selection used
@@ -659,9 +671,37 @@ export declare class TeamPresetsController {
      */
     selectTeam(sessionId: string, teamId: string | undefined): Promise<void>;
     /**
+     * Point one Session at a single member of a Team.
+     *
+     * The same fence, retry, and failure path as {@link selectTeam}, with the
+     * member's stable role identity carried in the stored record: the Host then
+     * injects that member's own configuration and model route, and this Session
+     * talks to the member instead of being led by the captain. Nothing is
+     * validated here — the composer only offers identities the stored Team still
+     * holds, and a role that disappears later is exactly the stale-selection case
+     * the missing notice already reports.
+     * @param sessionId - the Session whose selection changes.
+     * @param teamId - the Team the member belongs to.
+     * @param roleId - the member's stable role identity.
+     * @returns once the write settled; the outcome is published on {@link store}.
+     */
+    selectMember(sessionId: string, teamId: string, roleId: string): Promise<void>;
+    /**
+     * Write one Session selection, captain-led or member-scoped.
+     *
+     * The fence, the single retry, and the failure report are identical for both
+     * forms; only the record the write carries differs.
+     * @param sessionId - the Session whose selection changes.
+     * @param teamId - the selected Team identity; undefined clears the selection.
+     * @param roleId - the member to talk to individually; undefined keeps the captain leading.
+     * @returns once the write settled; the outcome is published on {@link store}.
+     */
+    private applySelection;
+    /**
      * Write one selection under one revision fence.
      * @param sessionId - the Session whose Team changes.
      * @param teamId - the selected Team identity; undefined clears the selection.
+     * @param roleId - the member to talk to individually; undefined keeps the captain leading.
      * @param revision - the revision the write is fenced on.
      * @returns the outcome, with the Host's own refusal text when it refused.
      */
@@ -720,6 +760,8 @@ export interface TeamPresetsInjected {
     save: () => Promise<void>;
     discard: () => void;
     selectTeam: (sessionId: string, teamId: string | undefined) => Promise<void>;
+    /** Apply one Team and talk to one of its members individually. */
+    selectMember: (sessionId: string, teamId: string, roleId: string) => Promise<void>;
     loadCatalogue: () => void;
     /** Re-read both catalogues from the Host, discarding anything already held. */
     refreshCatalogue: () => void;

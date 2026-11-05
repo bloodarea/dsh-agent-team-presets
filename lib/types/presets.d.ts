@@ -99,13 +99,68 @@ export declare function findTeam(teams: readonly TeamPreset[], teamId: string | 
  */
 export declare function selectedTeam(teams: readonly TeamPreset[], selections: readonly TeamSelectionRecord[], sessionId: string): TeamPreset | undefined;
 /**
+ * Read the member role one Session selection names.
+ *
+ * An empty stored value is the captain-led meaning, exactly like an absent one:
+ * the settings schema can project an empty string for a record written before a
+ * role existed, and that must never be treated as a member identity.
+ * @param selection - the Session's stored selection, when it has one.
+ * @returns the member role identity, or undefined for a captain-led selection.
+ */
+export declare function selectedRoleId(selection: TeamSelectionRecord | undefined): string | undefined;
+/**
+ * One member's configured route, as the display and comparison path reads it.
+ *
+ * The Host selects a route only when BOTH ids are present; a half-configured
+ * pair therefore inherits the Session route, exactly like an absent one.
+ */
+export interface ConfiguredMemberRoute {
+    /** LLM provider route id. */
+    readonly provider: string;
+    /** Provider-owned model id. */
+    readonly model: string;
+    /** Adapter-owned reasoning effort; empty keeps the model default. */
+    readonly reasoningEffort: string;
+}
+/**
+ * Read the route one member is configured to run on.
+ * @param member - the configured member slot.
+ * @returns the route, or undefined when the member inherits the Session route.
+ */
+export declare function memberRouteOf(member: TeamAgentPreset): ConfiguredMemberRoute | undefined;
+/**
+ * Compare two configured member routes, treating an empty effort as the default.
+ * @param left - one route, or undefined for the Session route.
+ * @param right - the other route, or undefined for the Session route.
+ * @returns whether both describe the same route.
+ */
+export declare function sameMemberRoute(left: ConfiguredMemberRoute | undefined, right: ConfiguredMemberRoute | undefined): boolean;
+/**
+ * Locate one member slot by its stable identity.
+ * @param team - the Team preset to search.
+ * @param roleId - the member's stable identity.
+ * @returns the matching member, or undefined when the slot no longer exists.
+ */
+export declare function findMemberById(team: TeamPreset | undefined, roleId: string | undefined): TeamAgentPreset | undefined;
+/**
+ * Resolve the member a Session talks to individually.
+ * @param teams - every configured Team preset.
+ * @param selections - every Session selection record.
+ * @param sessionId - the Session identity to resolve.
+ * @returns the selected member, or undefined when the selection is captain-led
+ *   or the member no longer exists.
+ */
+export declare function selectedMember(teams: readonly TeamPreset[], selections: readonly TeamSelectionRecord[], sessionId: string): TeamAgentPreset | undefined;
+/**
  * Replace the current Team selection of one Session.
  * @param selections - the current selection records.
  * @param sessionId - the Session whose selection changes.
  * @param teamId - the selected Team identity; undefined clears the selection.
+ * @param roleId - the member to talk to individually; undefined keeps the
+ *   captain leading the Session.
  * @returns a new selection list, with the Session's record updated or removed.
  */
-export declare function withSelection(selections: readonly TeamSelectionRecord[], sessionId: string, teamId: string | undefined): TeamSelectionRecord[];
+export declare function withSelection(selections: readonly TeamSelectionRecord[], sessionId: string, teamId: string | undefined, roleId?: string): TeamSelectionRecord[];
 /**
  * Build the briefing the captain reads for the Team it leads.
  *
@@ -128,6 +183,20 @@ export declare function captainBriefing(team: TeamPreset): string;
  * @returns the persona text for the summoned member; it always names the Team it joined.
  */
 export declare function memberBriefing(team: TeamPreset, member: TeamAgentPreset, target: string): string;
+/**
+ * Build the role card one member reads when the user talks to it directly.
+ *
+ * Individual chat turns the Session itself into that member: there is no Team
+ * Lead above it, no captain briefing, and no summon tool. The card therefore
+ * carries the member's identity, its role description, and its own standing
+ * prompt, then says plainly that this is a direct conversation — a model that
+ * was told it belongs to a Team would otherwise try to delegate or report to a
+ * lead that does not exist in this Session.
+ * @param team - the Team preset that owns the member.
+ * @param member - the configured member the Session now runs as.
+ * @returns the persona text for the Session; empty only for a completely empty slot.
+ */
+export declare function soloMemberBriefing(team: TeamPreset, member: TeamAgentPreset): string;
 /**
  * Build the team-context section one summoned member reads besides its persona.
  *

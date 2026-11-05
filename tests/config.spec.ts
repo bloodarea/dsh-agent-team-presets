@@ -129,3 +129,24 @@ describe('legacy captain routes', () => {
     expect(withoutCaptainRoute(empty!).captain.toolMode).toBe('all')
   })
 })
+
+describe('Session selection role', () => {
+  it('round-trips a member role and keeps a captain-led record role-free', () => {
+    const parsed = Config({
+      teams: [],
+      selections: [
+        { sessionId: 's1', teamId: 'team-1' },
+        { sessionId: 's2', teamId: 'team-1', roleId: 'role-1' },
+      ],
+    })
+    expect(parsed.selections.get()).toEqual([
+      { sessionId: 's1', teamId: 'team-1' },
+      { sessionId: 's2', teamId: 'team-1', roleId: 'role-1' },
+    ])
+  })
+
+  it('accepts a hand-written empty role and leaves the captain-led meaning intact', () => {
+    const parsed = Config({ teams: [], selections: [{ sessionId: 's1', teamId: 'team-1', roleId: '' }] })
+    expect(parsed.selections.get()[0]?.roleId).toBe('')
+  })
+})

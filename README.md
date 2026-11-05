@@ -6,9 +6,16 @@
 
 English | [中文](<README.zh.md>)
 
-> **Community plugin v0.1.8** · [Release](https://github.com/bloodarea/dsh-agent-team-presets/releases/tag/v0.1.8)
+> **Community plugin v0.1.9** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.1.9)
 >
-> Requires a compatible DeepSeek Harness deployment with Agent Teams enabled. This version supports DSH rc.2 and 0.2.1-rc.2 APIs; see [Requirements](#requirements). Prebuilt artifacts are included, so installation does not require a source build.
+> This release targets **DeepSeek Harness 0.2.2-rc.1** and adds **individual member chat**: hover a Team in the composer, then select one member to run the Session as that member with its own role card, tools, Team Skills, and model route. It also moves member routing to `agent.model.select()` and per-step tool admission. Requires Agent Teams; keep 0.1.8 on older hosts. Prebuilt artifacts are included.
+
+### What's new in 0.1.9
+
+- **Talk to one member directly.** The composer's Team picker now shows a member panel on hover. Selecting a member injects its role card, tool policy, Team Skills, and model route into the current Session; selecting the captain keeps the Session model unchanged.
+- **DeepSeek Harness 0.2.2-rc.1.** Member routes are recorded through `agent.model.select()` and tool admission is evaluated per step. The plugin refuses an unusable member route before applying anything instead of falling back to the captain.
+- **Custom tool policies are native-only.** On PTC presets the plugin preserves the deployment's executor and explicitly refuses custom allow-lists; PTC still works with the all-tools mode.
+- **Built-in troubleshooting skill.** The global `agent-team-presets-troubleshooting` skill explains Team application, member creation, route evidence, Team Skill visibility, and install/upgrade failures.
 
 <a id="project-introduction"></a>
 ## Overview
@@ -42,13 +49,15 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 
 - **Reusable Teams:** create, duplicate, edit, select, and delete named presets.
 - **Per-member model routes:** assign models and reasoning effort to individual roles without changing the captain's model.
+- **Individual member chat:** hover a Team in the composer to inspect its captain and members; select one member to inject that member's role card, tool policy, Team Skills, and model route into the current Session.
 - **Independent tool policies:** choose all available tools or a custom allow-list for the captain and each member.
 - **Nine built-in presets across two series:** three software development scale teams (Lightweight, Standard, Full-Stack) and six specialized work-mode teams (Discovery, Planning, Workflow, Engineering, Security Audit, Research).
 - **Display metadata:** attach summary, tags, use cases, quick prompts (suggested tasks), and notes per Team. Strictly presentation-only: never injected into the runtime LLM context, saving context tokens.
 - **Local categories and search:** organize presets into custom categories via a dedicated category manager; instantly search over name, summary, tags, and use cases in both Settings and the Composer picker.
-- **Private Team Skill library:** import skill folders or ZIP archives into a plugin-owned store (`~/.dsh/team-skills`), completely isolated from global host skills.
+- **Private Team Skill library:** import skill folders or ZIP archives into a plugin-owned store (`~/.dsh/agent-team-presets/team-skills`), completely isolated from global host skills.
 - **Per-agent skill isolation:** a 3-column assignment grid on member pages assigns skills to specific roles. Assigned skills are registered **strictly in that Agent's scope** when summoned—never leaked globally.
 - **Official built-in skills & local overrides:** ships two delivery skills (`github-repository-presentation`, `git-release-hygiene`) and two method skills (`grilling`, `research`), materialized into the private library and pre-bound to engineering, discovery, and research roles. Create local editable overrides and one-click restore them to the built-in copy (`恢复为插件内置版本`).
+- **Plugin-level troubleshooting skill:** installing the plugin registers the global runtime skill `agent-team-presets-troubleshooting` (not a Team Skill, not per-Agent isolated). It covers Team application, member creation, tool-policy refusals, model-route evidence, Team Skill visibility, and install/upgrade failures.
 - **Guarded deletion with blocker modal:** deleting a skill bound to any role, in use by an active member, or required as a dependency is refused, with a confirmation modal detailing every blocking holder.
 - **Dependency verification & MCP boundaries:** checks declared CLI executables against host `PATH` (flags found/missing and refuses assignment when absent) and reports declared MCP servers (declarative display; never auto-connected or hard-blocking).
 - **Agent-facing tools:** root sessions provide `list_team_skills`, `assign_team_skill`, `unassign_team_skill`, and `remove_team_skill` alongside `get_team_preset` and `update_team_preset`.
@@ -78,15 +87,33 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 <a id="screenshots"></a>
 ## Screenshots
 
-The screenshots illustrate the v0.1.8 settings interface, Team Skill management, and composer workflow. Example provider and model names depend on your deployment.
+The first screenshots show the 0.1.9 composer with individual member chat. The rest illustrate the settings interface, Team Skill management, and the earlier composer flow. Every provider, model, Team, and member name below is placeholder data from an isolated demo profile, not a real deployment.
 
-**Manage Teams: tabs, search, source and series filters**
+**Browse and filter Teams in the composer**
+
+![Composer Team picker](<docs/shots/0.2-composer-team-picker.png>)
+
+**Hover a Team to open its member panel: captain, members, model route, and description**
+
+![Composer Team picker with the member panel](<docs/shots/0.2-composer-member-panel.png>)
+
+Hovering a row never changes the selection. The captain row carries the `captain` badge and `session model`; each member row shows its own provider and model, or `session model` when it follows the Session.
+
+**Click a member to talk to it alone: the trigger names it and the Session model follows its route**
+
+![Talking to one member in the composer](<docs/shots/0.2-composer-member-selected.png>)
+
+The member's role card, tool policy, Team Skills, and model route are injected into this Session. The Team trigger reads `Team · member`, and the model control switches to the member's configured route — `Example Fast` here.
+
+**Click the captain to select the Team normally: the Session model is left alone**
+
+![Selecting a captain in the composer](<docs/shots/0.2-composer-captain-selected.png>)
+
+The captain always follows the Session, so selecting it changes the Team and the role card but never the model. The chip above keeps `Example Fast` from the previous member selection.
+
+**Manage Teams: tabs, search, source and series filters (settings layout carried over from v0.1.8)**
 
 ![Team list in Settings](<docs/shots/teams-list.png>)
-
-**Choose a Team in the composer with search and source filters**
-
-![Composer Team picker](<docs/shots/composer-picker.png>)
 
 **Private Team Skill library with origin badges and actions**
 
@@ -148,12 +175,13 @@ The screenshots illustrate the v0.1.8 settings interface, Team Skill management,
 <a id="requirements"></a>
 ## Requirements
 
-- **DeepSeek Harness with the required rc.2 APIs.** Supported versions: `>=0.2.0-rc.2 <0.3.0`. The plugin manager enforces the declared `engines.dsh` range and refuses to install or activate the plugin outside it; the `@deepseek-ai/dsh-*` peer ranges serve package managers and are ignored by that check. This release was verified against **`0.2.1-rc.2`**; `0.2.0-rc.2` was not re-run for 0.1.8. See [package.json](<package.json>).
+- **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`.** Verified against **`0.2.2-rc.1`**. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
+- **Custom tool allow-lists require a native Agent preset (standard or cordis).** This Host cannot restore an inherited executor after a temporary override, so the plugin preserves the deployment's executor and explicitly refuses custom policies on PTC. PTC remains available with the all-tools mode. Select a native Agent preset before using custom policies.
 - **Agent Teams enabled in the target profile.** The standard integration is `@deepseek-ai/dsh-experimental-agent-team-profile`, which supplies the Team service, tools, and Web roster. This plugin configures and manages Teams; it does not replace that subsystem.
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.1.8`) and the Harness version (`0.2.1-rc.2`, for example) are separate version lines.
+The plugin version (`0.1.9`) and the Harness version (`0.2.2-rc.1`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -163,13 +191,15 @@ The plugin version (`0.1.8`) and the Harness version (`0.2.1-rc.2`, for example)
 Open **Global panels → Plugins → Add plugin**, paste the line below into **Package name or address**, and click **Install**:
 
 ```text
-dsh-agent-team-presets@0.1.8
+github:bloodarea/dsh-agent-team-presets#v0.1.9
 ```
 
 <!-- release-version: keep in sync with package.json version -->
 
+0.1.9 is currently distributed from the GitHub tag. npm still publishes 0.1.8; use the npm channel below once 0.1.9 is published there.
+
 - **Registry** selects which npm source the download comes from. **Default registry** uses pnpm's own configuration. Pick **Official npm registry** to bypass a mirror, or **Custom address** for an internal or cloud mirror.
-- `@0.1.8` pins the version; omit it to install the latest published package.
+- `#v0.1.9` pins the GitHub tag; `@0.1.9` works on npm after the next npm publish. Omit the pin to install the latest published package.
 - The field accepts package names, `name@version`, `github:owner/repo`, tarball URLs, or absolute filesystem paths.
 - This package declares `dsh.bundle`, so the plugin manager automatically registers it as a profile bundle layer; do not add a loader entry by hand.
 - Once installed, reinstalling the same package identity is blocked. To switch sources (e.g. from GitHub to npm), uninstall first, then install the new spec.
@@ -189,15 +219,15 @@ Replace `<profile>` with your active profile (e.g. `web` or `desktop`):
 dsh plugin --profile web add github:bloodarea/dsh-agent-team-presets
 ```
 
-To pin the v0.1.8 release tag:
+To pin the v0.1.9 release tag:
 
 ```sh
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.8
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.9
 ```
 
 ### npm release channel
 
-GitHub and [npm](https://www.npmjs.com/package/dsh-agent-team-presets) are separate release channels. Verify the published version on npm before installing:
+GitHub and [npm](https://www.npmjs.com/package/dsh-agent-team-presets) are separate release channels. npm currently publishes 0.1.8; 0.1.9 is available from the GitHub tag until the npm publish follows. Verify the published version before installing:
 
 ```sh
 npm view dsh-agent-team-presets version
@@ -206,7 +236,7 @@ dsh plugin --profile <profile> add dsh-agent-team-presets
 
 ### Verify and upgrade safely
 
-After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.1.8`, and a running component.
+After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.1.9`, and a running component.
 
 - Back up profile settings, Team definitions, and Session selections before upgrading.
 - When migrating from a development link, remove `@deepseek-ai/dsh-experimental-agent-team-presets` first before enabling the community package.
@@ -231,6 +261,15 @@ Example prompt for a Team with execution and review roles:
 A preset role is a template. Summoning creates an instance with a unique target such as `executor` or `executor-2`. Use `send_message` with the returned target to continue working with an existing instance rather than spawning a new one.
 
 Selecting **No team** disarms the Team application once the captain and teammates become idle, restoring standard session contributions without changing the active model.
+
+### Talk to one member directly
+
+Hover a Team row in the composer picker to open its member panel. The captain is listed first with the **Session model** route; every member follows with its configured provider · model and role description.
+
+- Selecting the **captain** applies the Team normally: the captain leads, may summon members, and keeps the model the Session already selected.
+- Selecting a **member** starts an individual conversation with that member. Its role card (name, role description, and standing system prompt) becomes the Session persona, its tool policy and assigned Team Skills apply, and the captain briefing plus `spawn_team_member` are **not** installed. The Session model switches to that member's configured provider/model and reasoning effort. A member with no configured route keeps the Session's current model.
+- Switching back to the captain does not restore an earlier model: the captain always follows whatever model the Session currently has selected.
+- Role and model changes wait for a running task to reach its boundary, exactly like a Team change. A selection naming a member that no longer exists is refused and the Session stays locked rather than silently falling back to the captain.
 
 ### Fields
 
@@ -306,7 +345,7 @@ Each Team preset supports rich metadata:
 
 Traditional skills in Harness are typically registered into the global environment, exposing every skill to every agent. This plugin introduces a **Private Team Skill subsystem**:
 
-1. **Private library:** Skills live in a plugin-managed directory (`~/.dsh/team-skills` or storage domain), isolated from host and profile skills.
+1. **Private library:** Skills live in a plugin-managed directory (`~/.dsh/agent-team-presets/team-skills` or storage domain), isolated from host and profile skills.
 2. **Per-Agent registration:** When a Team member is summoned, its assigned skills are registered **exclusively inside that member's Agent scope**. Other members and the captain cannot see or invoke them unless explicitly assigned.
 3. **Official built-in skills:** four shipped skills: delivery (`github-repository-presentation`, `git-release-hygiene`) and method (`grilling` — clarify before acting; `research` — primary sources only). Default bindings: engineering `executor`/`repository-specialist` receive the delivery skills; the Discovery captain receives `grilling`, its `technical-scout`/`product-scout` and the Research `evidence-scout` receive `research`.
 4. **Local overrides & one-click restore:** Built-in skills are read-only by default. Users can create an editable local copy ("本地副本"). If the built-in skill updates in a new plugin version, an `updateAvailable` status is displayed, and users can restore to the built-in copy (`恢复为插件内置版本`) with one click.
@@ -393,6 +432,10 @@ Configuration for "agent-team-presets" is overridden by a home patch or command-
 
 Check profile patches, `$DSH_HOME/cordis.patch.yml`, and `--patch` overlays for duplicate hand-written `agent-team-presets` declarations. Remove duplicate declarations while preserving Host-managed settings rows.
 
+### Built-in troubleshooting skill
+
+The plugin registers `agent-team-presets-troubleshooting` on the global skill layer as soon as the profile composes the skill service. It is a host-level skill, not part of the private Team Skill library and not isolated per Agent: every Session can load it with the `skill` tool. Use it when a Team does not apply, a member cannot be summoned, a tool is refused, a member's model route is questioned, a Team Skill is invisible, or an install/upgrade behaves unexpectedly. The guide also states the evidence order: `configuredRoute`, `model/selection`, `request/header.config`, and the member snapshot `route` outrank `subagent/descriptor` or roster display values.
+
 ### Common issues
 
 | Symptom | What to check |
@@ -401,7 +444,8 @@ Check profile patches, `$DSH_HOME/cordis.patch.yml`, and `--patch` overlays for 
 | Skill deletion button is disabled | The skill is protected: inspect the blocker list in the modal (bound roles or dependencies must be unassigned first). |
 | Skill assignment refused (`dependency-missing`) | A required executable declared by the skill is absent from host `PATH`. Note that declared MCP servers are reported for visibility and do not block assignment; ensure MCP servers are configured in your profile. |
 | Member creation refused | Check storage domain availability, subagent execution backend (`spawn`/`fork`), model quota, and concurrency limits. |
-| Model route display mismatch | In Harness rc.2, `list_agents.model` reports fallback metadata. Verify actual routing via `spawn_team_member`'s `configuredRoute` or session `request/header` logs. |
+| Model route display mismatch | `list_agents.model` can return an inherited or fallback model even when the member actually runs on its configured route. Verify actual routing via `spawn_team_member`'s `configuredRoute`, `model/selection`, the first `request/header.config`, and the member snapshot `route`. |
+| A selected member's route is unusable | The Host refuses the application and keeps the Session's previous composition and model instead of falling back to the captain. Correct that member's provider/model (and reasoning effort) in **Settings → Agent team presets**, then reselect it. The composer reports missing members but does not display a Host refusal; check the member route and the deployment's provider catalogue. |
 
 <a id="understand-the-implementation"></a>
 ## How it works
@@ -409,9 +453,9 @@ Check profile patches, `$DSH_HOME/cordis.patch.yml`, and `--patch` overlays for 
 The plugin integrates via Cordis and Harness lifecycle extension points without patching host source code:
 
 1. **Profile configuration:** Stores Team presets, display metadata, local categories, and active session selections.
-2. **Session application:** Installs captain persona, tool policy, and `spawn_team_member` at Agent scope.
+2. **Session application:** Installs the captain persona, tool policy, and `spawn_team_member` at Agent scope. Selecting one member instead installs that member's role card and tool policy, omits the captain briefing and member tool, and selects the member's configured model route on the Session.
 3. **Member creation & skill scoping:** Validates route and delegation limits, persists an instance snapshot, and launches the subagent. The serial `agent/created` hook injects model selection, persona, tool filters, and **assigned Team Skills strictly into that member's Agent scope**.
-4. **Private skill manager:** Encapsulates skill storage (`~/.dsh/team-skills`), crash-recovery journaling, dependency resolution, and guarded deletion.
+4. **Private skill manager:** Encapsulates skill storage (`~/.dsh/agent-team-presets/team-skills`), crash-recovery journaling, dependency resolution, and guarded deletion.
 
 ### Source navigation
 

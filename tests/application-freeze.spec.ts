@@ -27,6 +27,7 @@ import { memberRecord, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -318,7 +319,7 @@ async function flush(): Promise<void> {
 
 /** Execute the member tool as one captain. */
 async function callMemberTool(ctx: Context, agent: Agent, args: object) {
-  return await ctx.tools.execute({
+  return await executeTool(ctx, {
     callId: ToolCallId('spawn-member'),
     name: 'spawn_team_member',
     arguments: args,
@@ -329,7 +330,7 @@ async function callMemberTool(ctx: Context, agent: Agent, args: object) {
 
 /** Execute one preset tool as one captain and read its canonical payload. */
 async function callPresetTool(ctx: Context, agent: Agent, name: string, args: object) {
-  const result = await ctx.tools.execute({
+  const result = await executeTool(ctx, {
     callId: ToolCallId(name),
     name,
     arguments: args,
@@ -629,13 +630,13 @@ describe('the captain tool scope a Team applies', () => {
     const h = await setup({ teams: [definition('A', 'alpha')], selections: SELECTED })
     const captain = await h.create('s1')
 
-    const denied = await h.ctx.tools.execute({
+    const denied = await executeTool(h.ctx, {
       callId: ToolCallId('denied'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal,
     })
     expect(denied.isError).toBe(true)
     expect(resultText(denied)).toContain(DENIED_TOOL)
 
-    const allowed = await h.ctx.tools.execute({
+    const allowed = await executeTool(h.ctx, {
       callId: ToolCallId('allowed'), name: ALLOWED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal,
     })
     expect(allowed.isError).toBe(false)
@@ -650,7 +651,7 @@ describe('the captain tool scope a Team applies', () => {
     expect(warn.mock.calls.map(call => String(call[0])).join('\n')).toContain('was refused')
     expect(h.ctx.tools.get('spawn_team_member', captain)).toBeDefined()
     expect((await applied(h.ctx, captain)).persona).toBe('Captain prompt A')
-    const denied = await h.ctx.tools.execute({
+    const denied = await executeTool(h.ctx, {
       callId: ToolCallId('invalid-update-denied'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal,
     })
     expect(denied.isError).toBe(true)
@@ -670,7 +671,7 @@ describe('application lifecycle across status edges', () => {
     const captain = await h.create('s1')
     h.wake(captain)
     h.selections([])
-    const call = () => h.ctx.tools.execute({ callId: ToolCallId('deselect'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
+    const call = () => executeTool(h.ctx, { callId: ToolCallId('deselect'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
     expect((await call()).isError).toBe(true)
     expect(h.ctx.tools.get('get_team_preset', captain)).toBeDefined()
     await h.release()
@@ -684,7 +685,7 @@ describe('application lifecycle across status edges', () => {
   it('quarantines a first invalid application instead of exposing default tools', async () => {
     const h = await setup({ teams: [invalidDefinition('A', 'alpha')], selections: SELECTED })
     const captain = await h.create('s1')
-    const denied = await h.ctx.tools.execute({ callId: ToolCallId('initial-invalid'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
+    const denied = await executeTool(h.ctx, { callId: ToolCallId('initial-invalid'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
     expect(denied.isError).toBe(true)
     // The refusal is the actionable one: the allow-list names a capability this
     // Session cannot reach, and that reason is what the quarantined Session reads.
@@ -693,7 +694,7 @@ describe('application lifecycle across status edges', () => {
     // The quarantine is only released once the replacement application's
     // queued job has installed its tool scope.
     await settlePlugin()
-    const allowed = await h.ctx.tools.execute({ callId: ToolCallId('recovered'), name: ALLOWED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
+    const allowed = await executeTool(h.ctx, { callId: ToolCallId('recovered'), name: ALLOWED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
     expect(allowed.isError).toBe(false)
   })
 
@@ -702,8 +703,11 @@ describe('application lifecycle across status edges', () => {
     const captain = await h.create('s1')
     const register = vi.spyOn(captain.ctx.tools, 'register').mockImplementationOnce(() => { throw new Error('partial registration failure') })
     h.teams([definition('B', 'beta')])
+    // The application is queued in 0.2.2: the failing registration only happens
+    // once that job runs, so the mock must stay armed until it does.
+    await settlePlugin()
     register.mockRestore()
-    const denied = await h.ctx.tools.execute({ callId: ToolCallId('partial-denied'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
+    const denied = await executeTool(h.ctx, { callId: ToolCallId('partial-denied'), name: DENIED_TOOL, arguments: {}, agent: captain, signal: new AbortController().signal })
     expect(denied.isError).toBe(true)
     expect((await applied(h.ctx, captain)).persona).toBe('Captain prompt A')
   })
@@ -717,7 +721,7 @@ describe('application lifecycle across status edges', () => {
     h.teams([widened])
     await h.fiber.dispose()
     const restarted = await h.ctx.plugin(Object.assign((inner: Context) => { apply(inner, h.config) }, { inject }))
-    const execute = (name: string) => h.ctx.tools.execute({ callId: ToolCallId('busy-reload'), name, arguments: {}, agent: captain, signal: new AbortController().signal })
+    const execute = (name: string) => executeTool(h.ctx, { callId: ToolCallId('busy-reload'), name, arguments: {}, agent: captain, signal: new AbortController().signal })
     expect((await execute(DENIED_TOOL)).isError).toBe(true)
     expect((await execute(ALLOWED_TOOL)).isError).toBe(true)
     await h.release()
@@ -841,12 +845,12 @@ describe('application lifecycle across status edges', () => {
     // activation that already installed root registrations must not throw here,
     // because those registrations live on `agent.ctx` and would leak.
     const fiber = await ctx.plugin(Object.assign((inner: Context) => { apply(inner, config) }, { inject }))
-    const denied = await ctx.tools.execute({
+    const denied = await executeTool(ctx, {
       callId: ToolCallId('child-quarantined'), name: DENIED_TOOL, arguments: {}, agent: child,
       signal: new AbortController().signal,
     })
     expect(denied.isError).toBe(true)
-    expect((await ctx.tools.execute({
+    expect((await executeTool(ctx, {
       callId: ToolCallId('root-allowed'), name: ALLOWED_TOOL, arguments: {}, agent: root,
       signal: new AbortController().signal,
     })).isError).toBe(false)

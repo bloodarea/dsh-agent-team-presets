@@ -1,5 +1,6 @@
 /** The model-facing Team preset tools: registration, authority, the no-selection path, and hot reload. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { executeTool } from './fixtures/execute-tool.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -168,7 +169,7 @@ async function setup(options: {
 
 /** Execute one tool call against a caller outside any model turn. */
 async function call(ctx: Context, agent: Agent, name: string, args: object) {
-  return await ctx.tools.execute({
+  return await executeTool(ctx, {
     callId: ToolCallId(`${name}-call`), name, arguments: args, agent, signal: new AbortController().signal,
   })
 }
@@ -337,7 +338,9 @@ describe('update_team_preset writes', () => {
     expect(value.status).toBe('updated')
     expect(value.changed).toEqual(['team.description'])
     expect(value.revision).toBe(1)
-    expect(await captainPrompt(h.ctx, h.agent)).toContain('release reviews with a written verdict')
+    await vi.waitFor(async () => {
+      expect(await captainPrompt(h.ctx, h.agent)).toContain('release reviews with a written verdict')
+    })
   })
 
   it('edits the captain prompt and one member, keeping every other field', async () => {
@@ -361,9 +364,11 @@ describe('update_team_preset writes', () => {
     expect(written?.description).toBe('release reviews')
     const value = JSON.parse(h.results[0]?.text ?? '{}') as { changed: string[] }
     expect(value.changed).toEqual(['captain.systemPrompt', 'member:reviewer.description', 'member:reviewer.systemPrompt'])
-    const prompt = await captainPrompt(h.ctx, h.agent)
-    expect(prompt).toContain('You lead the release review.')
-    expect(prompt).toContain('checks diffs against the release notes')
+    await vi.waitFor(async () => {
+      const prompt = await captainPrompt(h.ctx, h.agent)
+      expect(prompt).toContain('You lead the release review.')
+      expect(prompt).toContain('checks diffs against the release notes')
+    })
   })
 
   it('reports an unchanged preset without writing', async () => {

@@ -75,6 +75,17 @@ export type TeamSelectionRecord = {
     sessionId: string;
     /** Selected Team identity. */
     teamId: string;
+    /**
+     * Stable identity of the member this Session talks to individually.
+     *
+     * Absent means the Team's captain leads the Session, exactly as a Team
+     * selection always did. When present it names one member slot of {@link teamId}:
+     * that member's persona, tool policy, Team Skills, and configured model route
+     * are injected into this Session, and the Session stops being a Team Lead.
+     * The captain never changes the Session's model, so a selection naming the
+     * captain is stored as no role at all.
+     */
+    roleId?: string;
 };
 /** The user-owned Team preset section this plugin projects to the browser. */
 export type TeamPresetsSection = {

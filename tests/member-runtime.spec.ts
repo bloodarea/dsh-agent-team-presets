@@ -11,6 +11,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
+import { executeTool } from './fixtures/execute-tool.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -215,7 +216,7 @@ describe('claiming one child', () => {
     expect(persona).toBe('UNIQUE_MEMBER_RULES')
     expect(assembly.sections.some(section => section.text === 'TEAM_SECTION')).toBe(true)
     // The strict guard denies a tool the frozen policy does not name.
-    const denied = await h.ctx.tools.execute({
+    const denied = await executeTool(h.ctx, {
       callId: ToolCallId('denied'), name: 'write', arguments: {}, agent: h.child, signal: new AbortController().signal,
     })
     expect(denied.isError).toBe(true)
@@ -234,7 +235,7 @@ describe('claiming one child', () => {
     const assembly = await h.ctx.systemPrompt.assemble(assembleContextFor(h.child))
     expect(assembly.sections.find(section => section.name === 'deployment:persona-prefix')?.text).not.toBe('UNIQUE_MEMBER_RULES')
     expect(assembly.sections.some(section => section.text === 'TEAM_SECTION')).toBe(false)
-    const allowed = await h.ctx.tools.execute({
+    const allowed = await executeTool(h.ctx, {
       callId: ToolCallId('still-allowed'), name: 'write', arguments: {}, agent: h.child, signal: new AbortController().signal,
     })
     expect(allowed.isError).toBe(false)

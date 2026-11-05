@@ -9,6 +9,7 @@ import { ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
@@ -28,6 +29,7 @@ import { MockAdapter, textResponse, toolCallResponse } from './fixtures/mock-ada
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import { team, slot } from './fixtures/team-presets.ts'
 import { FixtureSessionQuery } from './fixtures/session-query.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -41,7 +43,7 @@ afterEach(async () => {
   }
 })
 async function call(ctx: Context, agent: Agent, name: string, args: object = {}) {
-  return ctx.tools.execute({ callId: ToolCallId(crypto.randomUUID()), name, arguments: args, agent, signal: new AbortController().signal })
+  return executeTool(ctx, { callId: ToolCallId(crypto.randomUUID()), name, arguments: args, agent, signal: new AbortController().signal })
 }
 async function base(script?: ConstructorParameters<typeof MockAdapter>[0], options: { workingDirectory?: boolean } = {}) {
   const ctx = new Context()
@@ -151,7 +153,9 @@ describe('strict capability execution', () => {
     for (const name of ['spawn_teammate', 'own_write', 'subagent_alias']) handle.agent.ctx.tools.register({
       name, description: name, parameters: {}, output: { schema: { type: 'string' }, render: () => [] }, execute: body,
     })
-    handle.agent.ctx.tools.presentAs('native') // Existing exact-Agent presentation is valid.
+    // Existing exact-Agent presentation is valid: rc.1 selects it by mounting
+    // the executor plugin on the Agent's own scope (the removed `presentAs`).
+    await handle.agent.ctx.plugin(NativeToolExecutor)
     handle.agent.ctx.on('tools/pre-execute', async () => ({ kind: 'allow' }))
     const application = applyTeamToAgent(ctx, handle.agent, team([], { toolMode: 'custom', tools: [] }), { fresh: 'spawn', fork: 'fork' })
     expect((await call(ctx, handle.agent, 'spawn_teammate')).isError).toBe(true)

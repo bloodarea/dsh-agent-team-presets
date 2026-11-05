@@ -1,5 +1,6 @@
 /* See TeamSkillsView: sizes here are totals, so the popover subtree is border-box. */
 .popover, .popover *, .popover *::before, .popover *::after { box-sizing: border-box; }
+.dock, .dock *, .dock *::before, .dock *::after { box-sizing: border-box; }
 
 /* The composer tool row's Team chip, matching the sibling permission and
  * model triggers. Colors resolve through `--dsw-alias-*` tokens only. */
@@ -23,6 +24,12 @@
   line-height: 20px;
   font-weight: 500;
   cursor: pointer;
+}
+
+/* A solo member names the Team and the member, so the chip needs room for both
+ * labels; the Team-only chip keeps its original width. */
+.triggerMember {
+  max-width: 240px;
 }
 
 .trigger:hover:not(:disabled) {
@@ -55,8 +62,9 @@
   white-space: nowrap;
 }
 
-/* The applied Team's configured captain color; the value is per-Team data, so it
- * arrives as an inline custom property. */
+/* The applied Team's configured captain color, or the active member's own
+ * accent; the value is per-Team data, so it arrives as an inline custom
+ * property. */
 .accentDot {
   flex: 0 0 auto;
   width: 8px;
@@ -78,16 +86,28 @@
   line-height: 17px;
 }
 
+/* The picker dock: the popover, plus the member panel that opens beside it.
+ * The dock is anchored bottom-left of the trigger and the popover keeps its
+ * own width inside it, so the panel can be positioned from the picker's real
+ * edge rather than from a guessed offset. */
+.dock {
+  position: absolute;
+  bottom: 40px;
+  left: 0;
+  width: min(360px, calc(100vw - 76px));
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+}
+
 /* The picker popover, following the v0.1.6 prototype: a pinned "no team"
  * option, a search field, source chips, and one row per Team. */
 .popover {
   /* The host does not guarantee a global border-box rule, so the popover states
    * it: without it the search field's width:100% overflows by its own padding. */
   box-sizing: border-box;
-  position: absolute;
-  bottom: 40px;
-  left: 0;
-  width: min(360px, calc(100vw - 76px));
+  position: relative;
+  width: 100%;
   /* Same material as the permission menu, made opaque on purpose: a desktop
    * compositor can skip backdrop filtering, and a translucent fill would then
    * let conversation text show through the list. The solid layer is the first
@@ -98,10 +118,188 @@
   border-radius: 13px;
   box-shadow: var(--dsw-elevation-prominent);
   padding: 12px;
-  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* The member panel: the captain row, then the roster, opened to the right of
+ * the picker. `.memberPanelLeft` is the flip the layout effect decides on when
+ * the right edge would leave the viewport. */
+.memberPanel {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 8px);
+  width: 320px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--dsw-alias-bg-layer-3);
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 13px;
+  box-shadow: var(--dsw-elevation-prominent);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memberPanelLeft {
+  left: auto;
+  right: calc(100% + 8px);
+}
+
+/* Neither side of the picker has room: the panel overlays it from above,
+ * exactly as the narrow-viewport fallback below does. */
+.memberPanelOverlay {
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: auto;
+  max-height: 46vh;
+}
+
+/* A narrow composer cannot afford two columns: the panel becomes an overlay
+ * above the picker instead of a side panel that would be pushed off-screen. */
+@media (max-width: 720px) {
+  .memberPanel,
+  .memberPanelLeft,
+  .memberPanelOverlay {
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: auto;
+    max-height: 46vh;
+  }
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 4px;
+}
+
+.panelTitle {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--dsw-alias-label-primary);
+}
+
+.panelTeam {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.panelSection {
+  padding: 6px 4px 2px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.panelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.panelRow:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.panelRow:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.panelRow:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.panelRowActive {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.panelRowHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.panelDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-dimmed);
+  /* The per-member accent is applied inline; this is the neutral default. */
+}
+
+.panelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.panelBadge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.panelRoute {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelDesc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.panelEmpty {
+  padding: 6px 8px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.panelHint {
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--dsw-alias-border-l3);
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .popHead {

@@ -16,6 +16,7 @@ import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
 import TeamPresetsToolCatalog from '../src/tool-catalog.ts'
 import { routedCaptain, team } from './fixtures/team-presets.ts'
 import type { TeamPreset, TeamSelectionRecord } from '../src/types.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 
@@ -331,7 +332,7 @@ describe('Team preset reconciliation', () => {
     const claim = vi.spyOn(MemberRuntime.prototype, 'claim')
       .mockReturnValue({ kind: 'invalid', reason: 'store opening' })
     const fiber = await mount(h.ctx, h.config)
-    const call = () => h.ctx.tools.execute({ callId: ToolCallId('child'), name: 'plain_tool', arguments: {},
+    const call = () => executeTool(h.ctx, { callId: ToolCallId('child'), name: 'plain_tool', arguments: {},
       agent: child.agent, signal: new AbortController().signal })
     expect((await call()).isError).toBe(true)
     if (intact) claim.mockReturnValue({ kind: 'installed', record: {
@@ -412,7 +413,7 @@ describe('Team preset reconciliation', () => {
     // A Session that selected no Team keeps every ordinary tool: no guard and no
     await settle()
     // restriction is installed, so the plugin never narrows normal operation.
-    const result = await ctx.tools.execute({
+    const result = await executeTool(ctx, {
       callId: ToolCallId('plain'), name: 'plain_tool', arguments: {}, agent: handle.agent,
       signal: new AbortController().signal,
     })
@@ -436,7 +437,7 @@ describe('Team preset reconciliation', () => {
     const plain = await createAgent(h.ctx, 's2')
     const fiber = await mount(h.ctx, h.config)
     await settle()
-    const call = (agent: Agent) => h.ctx.tools.execute({ callId: ToolCallId('ordinary'), name: 'plain_tool', arguments: {}, agent, signal: new AbortController().signal })
+    const call = (agent: Agent) => executeTool(h.ctx, { callId: ToolCallId('ordinary'), name: 'plain_tool', arguments: {}, agent, signal: new AbortController().signal })
     expect((await call(chosen.agent)).isError).toBe(true)
     expect((await call(plain.agent)).isError).toBe(false)
     h.selectionsRef.set([])
@@ -461,7 +462,7 @@ describe('Team preset reconciliation', () => {
     const handle = await createAgent(ctx, 's1')
     const fiber = await mount(ctx, config)
     await settle()
-    const result = await ctx.tools.execute({
+    const result = await executeTool(ctx, {
       callId: ToolCallId('stale'), name: 'plain_tool', arguments: {}, agent: handle.agent,
       signal: new AbortController().signal,
     })
@@ -472,7 +473,7 @@ describe('Team preset reconciliation', () => {
     selectionsRef.set([])
     ctx.emit('loader/volatile-update', COMMITTED)
     await settle()
-    expect((await ctx.tools.execute({ callId: ToolCallId('recovered'), name: 'plain_tool', arguments: {}, agent: handle.agent, signal: new AbortController().signal })).isError).toBe(false)
+    expect((await executeTool(ctx, { callId: ToolCallId('recovered'), name: 'plain_tool', arguments: {}, agent: handle.agent, signal: new AbortController().signal })).isError).toBe(false)
     expect(ctx.tools.get('get_team_preset', handle.agent)).toBeDefined()
     await fiber.dispose()
     await handle.dispose()

@@ -168,19 +168,107 @@ export function selectedTeam(
 }
 
 /**
+ * Read the member role one Session selection names.
+ *
+ * An empty stored value is the captain-led meaning, exactly like an absent one:
+ * the settings schema can project an empty string for a record written before a
+ * role existed, and that must never be treated as a member identity.
+ * @param selection - the Session's stored selection, when it has one.
+ * @returns the member role identity, or undefined for a captain-led selection.
+ */
+export function selectedRoleId(selection: TeamSelectionRecord | undefined): string | undefined {
+  const roleId = selection?.roleId
+  return roleId === undefined || roleId.trim() === '' ? undefined : roleId
+}
+
+/**
+ * One member's configured route, as the display and comparison path reads it.
+ *
+ * The Host selects a route only when BOTH ids are present; a half-configured
+ * pair therefore inherits the Session route, exactly like an absent one.
+ */
+export interface ConfiguredMemberRoute {
+  /** LLM provider route id. */
+  readonly provider: string
+  /** Provider-owned model id. */
+  readonly model: string
+  /** Adapter-owned reasoning effort; empty keeps the model default. */
+  readonly reasoningEffort: string
+}
+
+/**
+ * Read the route one member is configured to run on.
+ * @param member - the configured member slot.
+ * @returns the route, or undefined when the member inherits the Session route.
+ */
+export function memberRouteOf(member: TeamAgentPreset): ConfiguredMemberRoute | undefined {
+  if (member.provider.trim() === '' || member.model.trim() === '') return undefined
+  return { provider: member.provider, model: member.model, reasoningEffort: member.reasoningEffort }
+}
+
+/**
+ * Compare two configured member routes, treating an empty effort as the default.
+ * @param left - one route, or undefined for the Session route.
+ * @param right - the other route, or undefined for the Session route.
+ * @returns whether both describe the same route.
+ */
+export function sameMemberRoute(
+  left: ConfiguredMemberRoute | undefined,
+  right: ConfiguredMemberRoute | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right
+  return left.provider === right.provider && left.model === right.model
+    && (left.reasoningEffort.trim() === '' ? '' : left.reasoningEffort)
+      === (right.reasoningEffort.trim() === '' ? '' : right.reasoningEffort)
+}
+
+/**
+ * Locate one member slot by its stable identity.
+ * @param team - the Team preset to search.
+ * @param roleId - the member's stable identity.
+ * @returns the matching member, or undefined when the slot no longer exists.
+ */
+export function findMemberById(team: TeamPreset | undefined, roleId: string | undefined): TeamAgentPreset | undefined {
+  if (team === undefined || roleId === undefined) return undefined
+  return team.members.find(member => member.id === roleId)
+}
+
+/**
+ * Resolve the member a Session talks to individually.
+ * @param teams - every configured Team preset.
+ * @param selections - every Session selection record.
+ * @param sessionId - the Session identity to resolve.
+ * @returns the selected member, or undefined when the selection is captain-led
+ *   or the member no longer exists.
+ */
+export function selectedMember(
+  teams: readonly TeamPreset[],
+  selections: readonly TeamSelectionRecord[],
+  sessionId: string,
+): TeamAgentPreset | undefined {
+  const selection = selections.find(record => record.sessionId === sessionId)
+  return findMemberById(findTeam(teams, selection?.teamId), selectedRoleId(selection))
+}
+
+/**
  * Replace the current Team selection of one Session.
  * @param selections - the current selection records.
  * @param sessionId - the Session whose selection changes.
  * @param teamId - the selected Team identity; undefined clears the selection.
+ * @param roleId - the member to talk to individually; undefined keeps the
+ *   captain leading the Session.
  * @returns a new selection list, with the Session's record updated or removed.
  */
 export function withSelection(
   selections: readonly TeamSelectionRecord[],
   sessionId: string,
   teamId: string | undefined,
+  roleId?: string,
 ): TeamSelectionRecord[] {
   const rest = selections.filter(record => record.sessionId !== sessionId)
-  return teamId === undefined ? rest : [...rest, { sessionId, teamId }]
+  if (teamId === undefined) return rest
+  const role = roleId === undefined || roleId.trim() === '' ? undefined : roleId
+  return [...rest, { sessionId, teamId, ...role === undefined ? {} : { roleId: role } }]
 }
 
 /**
@@ -254,6 +342,36 @@ export function memberBriefing(team: TeamPreset, member: TeamAgentPreset, target
   return [joined, role === '' ? '' : `Your role: ${role}`, member.systemPrompt.trim()]
     .filter(part => part !== '')
     .join('\n\n')
+}
+
+/**
+ * Build the role card one member reads when the user talks to it directly.
+ *
+ * Individual chat turns the Session itself into that member: there is no Team
+ * Lead above it, no captain briefing, and no summon tool. The card therefore
+ * carries the member's identity, its role description, and its own standing
+ * prompt, then says plainly that this is a direct conversation — a model that
+ * was told it belongs to a Team would otherwise try to delegate or report to a
+ * lead that does not exist in this Session.
+ * @param team - the Team preset that owns the member.
+ * @param member - the configured member the Session now runs as.
+ * @returns the persona text for the Session; empty only for a completely empty slot.
+ */
+export function soloMemberBriefing(team: TeamPreset, member: TeamAgentPreset): string {
+  const label = member.name.trim()
+  const named = label === '' ? 'a member' : `"${label}"`
+  const description = team.description.trim()
+  const joined = description === ''
+    ? `You are ${named} on the Agent Team "${teamLabel(team)}".`
+    : `You are ${named} on the Agent Team "${teamLabel(team)}": ${description}`
+  const role = member.description.trim()
+  return [
+    joined,
+    role === '' ? '' : `Your role: ${role}`,
+    member.systemPrompt.trim(),
+    'The user is talking with you directly in this Session. You are not the Team Lead and there is no Team '
+      + 'delegation available here: answer as this role yourself instead of summoning or reporting to a lead.',
+  ].filter(part => part !== '').join('\n\n')
 }
 
 /**

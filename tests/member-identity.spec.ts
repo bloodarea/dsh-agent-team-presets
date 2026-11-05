@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Subagents from '@deepseek-ai/dsh-subagent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
@@ -88,6 +89,9 @@ async function harness(configured: { fresh: string; fork: string }): Promise<Har
   const ctx = new Context()
   provideWorkingDirectoryFixture(ctx)
   contexts.push(ctx)
+  // rc.1's Subagents injects `sessionProjections`; without it the plugin stays
+  // pending and `ctx.subagents` is undefined.
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(Subagents, { maxDepth: 2 })
   const transitions: Transition[] = []
   const registry = registerMemberProviders(ctx, configured, (context, state, reason) => {
@@ -122,6 +126,7 @@ describe('member execution aliases follow the provider registry', () => {
     const ctx = new Context()
     provideWorkingDirectoryFixture(ctx)
     contexts.push(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(Subagents, { maxDepth: 2 })
     const upstreamFresh = provider('spawn')
     const upstreamFork = provider('fork', { inheritsParentContext: false })

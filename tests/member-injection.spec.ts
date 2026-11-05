@@ -14,18 +14,23 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { executeTool } from './fixtures/execute-tool.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { settlePlugin, waitForTeamApplication } from './fixtures/plugin-harness.ts'
-import { ReasoningEffortId, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { bindScopeParent, createScope } from '@deepseek-ai/dsh-scope'
+import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native'
+import { readWire } from '../src/presentation.ts'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -54,7 +59,7 @@ afterEach(async () => {
 
 /** Execute one tool as one Agent. */
 async function call(ctx: Context, agent: Agent, name: string, args: object = {}) {
-  return ctx.tools.execute({
+  return executeTool(ctx, {
     callId: ToolCallId(crypto.randomUUID()),
     name,
     arguments: args,
@@ -132,6 +137,7 @@ async function stack(options: {
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(Subagents)
   await ctx.plugin(Spawn, { providerName: 'spawn' })
+  await ctx.plugin(Fork, { providerName: 'fork' })
   await ctx.plugin(TeamService)
 
   // The Session's own route declares only "high", and every member route
@@ -216,7 +222,7 @@ function memberRequests(member: MockAdapter, childId: string): GenerateOptions[]
 }
 
 describe('a preset-managed member receives its frozen configuration before its first request', () => {
-  it('runs on the member route with its own persona, team context, and restricted tools', async () => {
+  it.each(['fresh', 'fork'] as const)('runs a %s member on its own route, persona, context, and restricted tools', async context => {
     const h = await stack({
       members: [routedMember('member-route', 'member-model', 'max')],
       memberScript: () => textResponse('member done'),
@@ -230,7 +236,9 @@ describe('a preset-managed member receives its frozen configuration before its f
       denied.push(write.isError === true)
     })
 
-    const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
+    // A fork inherits a recorded Lead choice, which the member must supersede.
+    h.root.model.select({ provider: 'mock', model: 'lead-model', reasoningEffort: ReasoningEffortId('high') })
+    const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK', context })
     expect(spawn.isError, resultText(spawn)).toBe(false)
     const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')
     expect(row?.id).toBeDefined()
@@ -294,6 +302,41 @@ describe('a preset-managed member receives its frozen configuration before its f
     expect(memberRequests(h.member, row!.id)[0]!.model).toBe('member-model')
     expect(row?.model).not.toBe('member-model')
   }, 20_000)
+})
+
+describe('same-Agent preset switching', () => {
+  it('revalidates an unchanged Team after native to PTC to native scope changes', async () => {
+    const h = await stack({ members: [], captainTools: ['read'] })
+    const nativeKey = {}
+    const ptcKey = {}
+    await h.ctx.plugin(Object.assign((owner: Context) => {
+      const native = createScope(owner, nativeKey)
+      const ptc = createScope(owner, ptcKey)
+      native.ctx.tools.setExecutor(new NativeToolExecutor(native.ctx))
+      ptc.ctx.tools.setExecutor({
+        describe: () => ({ schemas: [{ name: 'run_code', description: 'program', parameters: {} }] }),
+        execute: async () => ({ results: [], additionalContexts: [], concluded: false }),
+      })
+    }, { inject: ['tools', 'systemPrompt'] }))
+    const binding = bindScopeParent(h.root, nativeKey)
+    expect((await readWire(h.root))?.tools).toContain('read')
+    binding.rebind(ptcKey)
+    h.ctx.emit('agent-preset/selected', h.root.id, 'ptc')
+    await settlePlugin()
+    expect(h.ctx.tools.get('spawn_team_member', h.root)).toBeUndefined()
+    // A refused Team has not poisoned the preset's executor selection.
+    expect((await readWire(h.root))?.tools).toEqual(['run_code'])
+    binding.rebind(nativeKey)
+    h.ctx.emit('agent-preset/selected', h.root.id, 'standard')
+    await waitForTeamApplication(h.ctx, h.root)
+    expect((await call(h.ctx, h.root, 'read')).isError).toBe(false)
+    expect((await call(h.ctx, h.root, 'write')).isError).toBe(true)
+    h.root.followup(createUserMessage({ content: [{ type: 'text', text: 'FIRST_REQUEST_AFTER_SWITCH' }], source: { kind: 'user' } }))
+    await h.root.whenIdle()
+    expect(h.lead.requests.at(-1)?.tools?.map(tool => tool.name)).toContain('read')
+    expect(h.lead.requests.at(-1)?.tools?.map(tool => tool.name)).not.toContain('write')
+    expect(h.lead.requests.at(-1)?.tools?.map(tool => tool.name)).not.toContain('run_code')
+  })
 })
 
 describe('reasoning effort follows the member route, not the Session', () => {

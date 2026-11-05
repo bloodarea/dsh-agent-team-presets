@@ -28,7 +28,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
@@ -36,7 +35,6 @@ import { MEMBER_FRESH_PROVIDER, MEMBER_FORK_PROVIDER } from './member-identity.t
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { openMemberStore } from './member-store.ts'
 import type { MemberRecord, MemberStore } from './member-store.ts'
-import { installNativePresentation } from './presentation.ts'
 import type { StrictToolPolicy } from './tool-policy.ts'
 import { guardPolicy, inheritedFilter } from './tool-policy.ts'
 
@@ -519,18 +517,6 @@ export class MemberRuntime {
 export function installMemberScopes(agent: Agent, record: MemberRecord): () => void {
   const disposers: Array<() => unknown> = []
   try {
-    if (record.route !== undefined) {
-      disposers.push(installModelSelection(agent.ctx, {
-        current: {
-          provider: record.route.provider,
-          model: record.route.model,
-          ...record.route.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: ReasoningEffortId(record.route.reasoningEffort) },
-        },
-        assembled: undefined,
-      }))
-    }
     if (record.persona.trim() !== '') {
       disposers.push(agent.ctx.systemPrompt.section({
         name: PERSONA_PREFIX_SECTION,
@@ -546,16 +532,25 @@ export function installMemberScopes(agent: Agent, record: MemberRecord): () => v
       }))
     }
     const policy: StrictToolPolicy = { teamId: record.teamId, mode: record.policy.mode, allow: [...record.policy.allow] }
-    // A strict policy can only govern a surface it can name, so a custom member
-    // is given its own native presentation at the Agent scope. The install is
-    // deliberately NOT best-effort: if this Agent's scope already declares
-    // another presentation, this throws, the whole installation rolls back, and
-    // creation is vetoed before the member's first request instead of leaving it
-    // on a transport the policy cannot constrain.
-    if (policy.mode === 'custom') disposers.push(installNativePresentation(agent))
+    // Keep the deployment's executor: rc.1 intentionally leaves an unavailable
+    // selection after a scoped executor is unloaded. The awaited creation edge
+    // checks that a custom member has a native surface before its first request.
     disposers.push(guardPolicy(agent, policy, { role: 'member', presentation: 'caller' }))
     const filter = inheritedFilter(agent, policy)
     if (filter !== undefined) disposers.push(agent.ctx.tools.restrict(filter))
+    // Model selection is a durable Session choice, not a scoped registration.
+    // Commit it only after every reversible scope installed successfully. On a
+    // fork this supersedes the inherited Lead selection; on resume an identical
+    // recorded choice is a no-op. Omitted effort resolves the member's defaults.
+    if (record.route !== undefined) {
+      agent.model.select({
+        provider: record.route.provider,
+        model: record.route.model,
+        ...record.route.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: ReasoningEffortId(record.route.reasoningEffort) },
+      })
+    }
   } catch (error: unknown) {
     for (const dispose of disposers.reverse()) void dispose()
     throw error

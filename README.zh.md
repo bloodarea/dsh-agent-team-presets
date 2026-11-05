@@ -6,9 +6,16 @@
 
 [English](<README.md>) | 中文
 
-> **社区插件 v0.1.8** · [发布版本](https://github.com/bloodarea/dsh-agent-team-presets/releases/tag/v0.1.8)
+> **社区插件 v0.1.9** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.1.9)
 >
-> 需要启用 Agent Teams 的兼容 DeepSeek Harness 部署。本版本支持 DSH rc.2 与 0.2.1-rc.2 API，详见[环境要求](#requirements)。仓库已包含预构建产物，安装时无需从源码构建。
+> 本版适配 **DeepSeek Harness 0.2.2-rc.1**，新增**与单个成员单独对话**：在输入区悬浮团队后点选成员，即可让当前会话以该成员的角色卡、工具权限、Team Skill 与模型路由运行。成员路由改用 `agent.model.select()`，工具激活按步评估。需要启用 Agent Teams；旧宿主请保留 0.1.8。仓库包含预构建产物，安装时无需构建。
+
+### 0.1.9 更新内容
+
+- **与单个成员单独对话。** 输入区的团队选择器在悬浮时展开成员面板；点选成员会把该成员的角色卡、工具策略、Team Skill 与模型路由注入当前会话；点选队长则保持会话模型不变。
+- **适配 DeepSeek Harness 0.2.2-rc.1。** 成员路由通过 `agent.model.select()` 写入，工具激活按步评估；成员路由不可用时在应用前明确拒绝，不会回退到队长。
+- **自定义工具策略仅支持原生 Agent 预设。** PTC 下插件保留宿主执行器并明确拒绝自定义白名单；PTC 配合「所有工具」模式仍可继续使用。
+- **内置排障 Skill。** 全局 `agent-team-presets-troubleshooting` 覆盖团队应用、成员创建、路由证据、Team Skill 可见性与安装/升级异常。
 
 <a id="project-introduction"></a>
 ## 项目介绍
@@ -42,13 +49,15 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 
 - **复用团队：** 新建、复制、编辑、选择和删除具名预设。
 - **成员独立路由：** 按角色分配模型与推理强度，不改变队长的模型。
+- **单独对话：** 在输入区悬浮团队即可查看队长与队员；选择某个队员，可把该成员的角色卡、工具策略、Team Skill 与模型路由注入当前会话。
 - **独立工具策略：** 为队长和各成员选择所有可用工具，或设置自定义白名单。
 - **两大系列九大内置预设：** 涵盖研发规模系列（轻量研发团队、标准研发团队、全栈软件研发团队）与工作模式系列（需求探索、架构规划、既定工作流执行、工程研发协作、独立代码与安全审计、科研协作）。
 - **展示元数据：** 可为团队填写简介、标签、适用场景、推荐任务与备注。纯前端展示与检索使用，**绝不注入 LLM 运行时上下文**，节省上下文 Token。
 - **本地分类与检索：** 独立分类管理页支持创建、重命名、排序和删除自定义分类；支持按团队来源（全部/插件内置/自定义）与分类系列二级联动筛选，并在输入区与设置页实时全文搜索。
-- **插件私有 Team Skill 库：** 支持从文件夹或 ZIP 导入技能至插件私有目录（`~/.dsh/team-skills`），与宿主全局技能完全隔离。
+- **插件私有 Team Skill 库：** 支持从文件夹或 ZIP 导入技能至插件私有目录（`~/.dsh/agent-team-presets/team-skills`），与宿主全局技能完全隔离。
 - **角色作用域技能隔离：** 成员编辑页提供专属技能三列卡片网格，分配给角色的技能在召唤时**严格仅在该 Agent 作用域内注册**，其他成员与队长均不可见。
 - **官方内置技能与本地副本：** 随包自带两个交付技能（`github-repository-presentation`、`git-release-hygiene`）和两个方法技能（`grilling`、`research`），默认物化入库并绑定给工程、需求探索与科研角色；支持创建本地可编辑副本，支持一键「恢复为插件内置版本」，并在官方更新时显示新版本提示。
+- **插件级排障 Skill：** 安装插件后会在全局 skill 层注册 `agent-team-presets-troubleshooting`（不是 Team Skill，也不按 Agent 隔离）。覆盖团队不生效、成员无法召唤、工具策略被拒、模型路由取证、Team Skill 不可见以及安装/升级异常。
 - **强阻断保护的删除机制：** 若技能仍被任一团队角色绑定、被运行中成员使用或被其它技能依赖，拒绝删除；模态弹窗直观列出所有持有者（如 `标准研发团队 → executor`）并禁用确认按钮。
 - **依赖真实性检查与 MCP 边界：** 技能声明的 CLI 可执行程序会在宿主 PATH 上实际解析并标注「存在/缺失」（缺失时拒绝分配）；如实展示声明的 MCP 服务（声明式展示，不自动拉起连接，不阻断分配）。
 - **面向智能体的会话工具：** 根会话提供 `list_team_skills`、`assign_team_skill`、`unassign_team_skill`、`remove_team_skill`，以及 `get_team_preset`、`update_team_preset`。
@@ -78,15 +87,33 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="screenshots"></a>
 ## 界面预览
 
-以下截图展示 v0.1.8 设置页团队管理、私有技能库与输入区选用流程。模型与工具取决于你的实际部署。
+前几张截图展示 0.1.9 输入区与「与单个成员单独对话」；其余展示设置页团队管理、私有技能库与早期输入区流程。图中所有提供方、模型、团队与成员名称都来自隔离演示环境的占位数据，不是真实部署。
 
-**管理已保存的团队：标签页、搜索框、来源与系列筛选**
+**在输入区浏览与筛选团队**
+
+![会话输入区的团队选择器](<docs/shots/0.2-composer-team-picker.png>)
+
+**悬浮团队即可展开成员面板：队长、成员、模型路由与角色描述**
+
+![会话输入区的团队选择器与成员面板](<docs/shots/0.2-composer-member-panel.png>)
+
+悬浮不会改变当前选择。队长一行带「队长」徽标并显示「会话模型」；每个成员一行显示自己的提供方与模型，未配置路由时显示「会话模型」。
+
+**点击成员即与其单独对话：触发器标出成员，会话模型改为该成员路由**
+
+![在输入区与单个成员单独对话](<docs/shots/0.2-composer-member-selected.png>)
+
+该成员的角色卡、工具权限、Team Skill 与模型路由会注入本会话。触发器显示「团队 · 成员」，模型控件切换为该成员配置的路由（图中为 `Example Fast`）。
+
+**点击队长则按常规方式选用团队：不改动会话模型**
+
+![在输入区选择队长](<docs/shots/0.2-composer-captain-selected.png>)
+
+队长始终跟随会话，因此点选队长只更换团队与角色卡，模型保持不变：上图仍保留上一次成员选择带来的 `Example Fast`。
+
+**管理已保存的团队：标签页、搜索框、来源与系列筛选（设置页沿用 v0.1.8 版式）**
 
 ![设置中的团队列表](<docs/shots/teams-list.png>)
-
-**在会话输入区选择团队：支持搜索与来源筛选**
-
-![会话输入区的团队选择器](<docs/shots/composer-picker.png>)
 
 **私有 Team Skill 技能库：来源色标与操作入口**
 
@@ -148,12 +175,13 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="requirements"></a>
 ## 环境要求
 
-- **具备所需 rc.2 API 的 DeepSeek Harness。** 支持版本：`>=0.2.0-rc.2 <0.3.0`。插件管理器按声明的 `engines.dsh` 范围判定，超出即拒绝安装或激活；`@deepseek-ai/dsh-*` 的 peer 范围供包管理器使用，该判定不读取它们。本版本实测环境为 **`0.2.1-rc.2`**；0.1.8 未在 `0.2.0-rc.2` 上复验。详见 [package.json](<package.json>)。
+- **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.1`**。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
+- **自定义工具白名单使用原生工具 Agent 预设（standard 或 cordis）。** 当前宿主无法在临时覆盖执行器后恢复继承的执行器，因此插件保留宿主执行器；PTC 下的自定义策略会明确拒绝。PTC 配合「所有工具」模式可继续使用；选择自定义策略前请先切换到原生工具预设。
 - **目标 profile 已启用 Agent Teams。** 标准集成是 `@deepseek-ai/dsh-experimental-agent-team-profile`，提供团队服务、工具和 Web 名册。本插件负责配置与管理团队，不替代该子系统。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.1.8`）和 Harness 版本（如 `0.2.1-rc.2`）是不同的版本线。
+插件版本（`0.1.9`）和 Harness 版本（如 `0.2.2-rc.1`）是不同的版本线。
 
 <a id="use-this-package"></a>
 ## 安装与升级
@@ -163,13 +191,15 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 打开 **全局面板 → 插件 → 添加插件**，把下面这一行粘贴到「包名或地址」，点击 **安装**：
 
 ```text
-dsh-agent-team-presets@0.1.8
+github:bloodarea/dsh-agent-team-presets#v0.1.9
 ```
 
 <!-- release-version: 与 package.json 的 version 同步 -->
 
+0.1.9 目前从 GitHub 标签分发；npm 仍为 0.1.8，待下一次 npm 发布后再使用下方 npm 渠道。
+
 - **安装源**决定从哪个 npm 源下载。「默认安装源」指 pnpm 自身配置所指的源。要绕开镜像选「npm 官方源」；要换内网私有源或云厂商镜像选「自定义地址」。
-- `@0.1.8` 指定版本；想装 npm 上最新的已发布版本，去掉它只填 `dsh-agent-team-presets`。
+- `#v0.1.9` 指定 GitHub 标签；npm 发布 0.1.9 后也可用 `@0.1.9`。想装 npm 上最新的已发布版本，去掉版本只填 `dsh-agent-team-presets`。
 - 输入框支持包名、`name@version`、`github:作者/仓库`、tarball 地址或本地绝对路径。
 - 本包声明了自己的 `dsh.bundle`，安装后由插件管理器登记为 profile 的 bundle 层，不要再手写 loader 条目。
 - 已安装本包时无法重复安装同一包名。要更换安装来源（如由 GitHub 改为 npm），先在插件列表中卸载，再粘贴新规格安装。
@@ -189,10 +219,10 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 dsh plugin --profile web add github:bloodarea/dsh-agent-team-presets
 ```
 
-需要固定 v0.1.8 发布标签时：
+需要固定 v0.1.9 发布标签时：
 
 ```sh
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.8
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.9
 ```
 
 ### npm 发布渠道
@@ -206,7 +236,7 @@ dsh plugin --profile <profile> add dsh-agent-team-presets
 
 ### 确认安装并安全升级
 
-安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.1.8`，且组件处于运行中状态。
+安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.1.9`，且组件处于运行中状态。
 
 - 升级前备份 profile 设置、团队定义与会话选择记录。
 - 从开发链接迁移时，先通过插件管理器移除 `@deepseek-ai/dsh-experimental-agent-team-presets`，再启用社区包。
@@ -231,6 +261,15 @@ dsh plugin --profile <profile> add dsh-agent-team-presets
 预设角色是召唤模板。每次召唤会创建带唯一 target（如 `executor` 或 `executor-2`）的实例。需要继续已有成员工作时，使用 `send_message` 发向返回的 target，而不是重新创建实例。
 
 选择 **不使用团队（No team）** 会在队长与队员全部空闲后卸载团队应用，恢复常规会话行为，不改变已选模型。
+
+### 与单个成员单独对话
+
+在输入区团队选择器中悬浮某个团队，会展开成员面板：队长排在最前，模型一栏显示 **会话模型**；其后是各队员的「提供方 · 模型」与角色描述。
+
+- 选择 **队长** 即常规应用该团队：队长主导本会话、可召唤队员，并继续使用会话已选的模型。
+- 选择 **队员** 即与该成员单独对话：该成员的角色卡（名称、角色描述、独立系统提示词）成为本会话 persona，其工具策略与已分配的 Team Skill 生效，不再安装队长简报与 `spawn_team_member`；同时会话模型自动切换为该成员配置的提供方/模型与推理强度。未配置路由的成员保持会话当前模型。
+- 再切回队长不会恢复旧模型：队长始终跟随会话当前所选模型。
+- 角色与模型的切换和团队切换一样，会等待运行中的任务到达边界；若所选成员已被删除，则拒绝该选择并保持会话锁定，绝不静默回退到队长。
 
 ### 字段说明
 
@@ -306,7 +345,7 @@ dsh plugin --profile <profile> add dsh-agent-team-presets
 
 传统 Harness 技能一般注册到全局环境，所有智能体均可看到。本插件开创性地实现了 **Team Skill 私有技能子系统**：
 
-1. **私有存储库：** 技能统一存放在插件专属目录（`~/.dsh/team-skills` 或独立存储域），不污染宿主全局技能列表。
+1. **私有存储库：** 技能统一存放在插件专属目录（`~/.dsh/agent-team-presets/team-skills` 或独立存储域），不污染宿主全局技能列表。
 2. **角色 Agent 作用域隔离：** 成员被队长召唤时，其绑定的专属技能**严格仅在该成员的 Agent Scope 内注册**。其他队员和队长既无法看到、也无法调用该技能。
 3. **官方内置技能：** 随包提供 4 个内置技能——交付型 `github-repository-presentation`、`git-release-hygiene`，方法型 `grilling`（先澄清再动手）与 `research`（只认一手来源）。默认绑定：工程团队的 `executor`/`repository-specialist` 获得交付技能；需求探索队长获得 `grilling`，其 `technical-scout`/`product-scout` 与科研协作 `evidence-scout` 获得 `research`。
 4. **本地副本与一键恢复：** 内置技能默认只读，支持一键「创建本地可编辑副本」修改文件。插件版本升级时会自动提示 `updateAvailable`，支持随时「恢复为插件内置版本」。
@@ -393,6 +432,10 @@ Configuration for "agent-team-presets" is overridden by a home patch or command-
 
 请检查 profile patch、`$DSH_HOME/cordis.patch.yml` 和 `--patch` 中是否有重复的手写 `agent-team-presets` 声明。移除重复项并保留 Host 管理的设置行。
 
+### 插件内置排障 Skill
+
+插件在 profile 组合出 skill 服务后，会在全局 skill 层注册 `agent-team-presets-troubleshooting`。它是宿主级 skill，不属于私有 Team Skill 库，也不按 Agent 隔离；所有会话都可以通过 `skill` 工具加载。适用于团队不生效、成员无法召唤、工具被拒、成员模型路由存疑、Team Skill 不可见或安装/升级异常。该 Skill 也写明了证据优先级：`configuredRoute`、`model/selection`、`request/header.config` 和成员快照 `route` 高于 `subagent/descriptor` 或名册展示值。
+
 ### 常见问题
 
 | 现象 | 排查方向 |
@@ -401,7 +444,8 @@ Configuration for "agent-team-presets" is overridden by a home patch or command-
 | 技能删除按钮置灰不可点击 | 技能受保护：查看弹窗中的阻断列表，需先在对应团队角色中取消分配。 |
 | 技能分配被拒绝 (`dependency-missing`) | 技能声明的某个必需命令行程序在宿主 `PATH` 上未找到。注意声明的 MCP 服务仅供展示参考，不阻断分配；如需使用请确认 profile 中已正确配置并连接对应 MCP。 |
 | 成员创建被拒绝 | 检查持久存储、执行后端（`spawn`/`fork`）、模型配额及并发限额。 |
-| 成员显示的模型与配置不一致 | 在 Harness rc.2 中，`list_agents.model` 读取 fallback 元数据。实际路由以 `spawn_team_member` 返回的 `configuredRoute` 或会话请求日志为准。 |
+| 成员显示的模型与配置不一致 | `list_agents.model` 可能返回继承或 fallback 模型，即使成员实际已按配置路由运行。实际路由以 `spawn_team_member` 的 `configuredRoute`、`model/selection`、首条 `request/header.config` 和成员快照 `route` 为准。 |
+| 所选成员的模型路由不可用 | Host 会拒绝应用并保留会话原有组合与模型，不会静默回退到队长。请在 **设置 → 智能体团队预设** 中修正该成员的提供方/模型（及推理强度）后重新选择。输入区只提示成员不存在，不显示 Host 拒绝原因；请同时确认成员路由与部署的提供方目录。 |
 
 <a id="understand-the-implementation"></a>
 ## 工作原理
@@ -409,9 +453,9 @@ Configuration for "agent-team-presets" is overridden by a home patch or command-
 插件通过 Cordis 与 Harness 生命周期扩展点深度协作，无需修改宿主源码：
 
 1. **Profile 配置：** 保存团队预设、展示元数据、本地分类与活动会话选择。
-2. **会话应用：** 在 Agent 作用域安装队长 persona、工具策略和 `spawn_team_member`。
+2. **会话应用：** 在 Agent 作用域安装队长 persona、工具策略和 `spawn_team_member`；选择单个成员时改为安装该成员的角色卡与工具策略，不安装队长简报与成员工具，并把该成员配置的模型路由设为会话当前模型。
 3. **成员创建与技能注入：** 校验路由与委派配额，保存持久快照并召唤子会话。串行 `agent/created` 钩子在首次请求前，将模型路由、persona、工具白名单以及**专属 Team Skill 严格注入该成员的 Agent 作用域**。
-4. **私有技能管理器：** 负责技能目录存储（`~/.dsh/team-skills`）、防崩溃事务日志、依赖解析与删除阻断核验。
+4. **私有技能管理器：** 负责技能目录存储（`~/.dsh/agent-team-presets/team-skills`）、防崩溃事务日志、依赖解析与删除阻断核验。
 
 ### 源码导航
 

@@ -65,21 +65,13 @@ export declare function inheritedFilter(agent: Agent, policy: StrictToolPolicy):
  *
  * The policy is identical either way; only the refusal wording differs, because
  * a member has no `spawn_team_member` to be redirected to and must ask its
- * Team Lead instead.
+ * Team Lead instead. A solo member is a third case: the Session is that member,
+ * talking to the user directly, so there is no Team Lead to ask either.
  */
 export interface GuardRole {
     /** The slot this guard protects; defaults to the captain. */
-    readonly role?: 'captain' | 'member';
-    /**
-     * Who declares the tool presentation this guard relies on.
-     *
-     * `self` (the default) keeps the historical best-effort declaration for
-     * callers that install a legacy child policy with nothing else to prepare it.
-     * `caller` means the caller already established a native presentation through
-     * {@link prepareNativePresentation} and must not have it declared twice: an
-     * Agent scope accepts exactly one declaration, so a second one would throw
-     * while the first is still in effect.
-     */
+    readonly role?: 'captain' | 'member' | 'solo';
+    /** @deprecated Executor selection belongs to the Agent preset; guards never replace it. */
     readonly presentation?: 'self' | 'caller';
 }
 /** Own-layer tools and nested PTC capability dispatch both pass through this guard. */

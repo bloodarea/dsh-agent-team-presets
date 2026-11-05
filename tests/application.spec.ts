@@ -15,6 +15,7 @@ import { MemberRuntime } from '../src/member-runtime.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import { subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import type { TeamAgentPreset, TeamPreset } from '../src/types.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const signal = new AbortController().signal
 const temporary: string[] = []
@@ -54,7 +55,7 @@ function fixtureTool(name: string, execute: () => string) {
 }
 
 async function execute(ctx: Context, agent: Agent, name: string, args: object = {}) {
-  return await ctx.tools.execute({ callId: ToolCallId(`${name}-call`), name, arguments: args, agent, signal })
+  return await executeTool(ctx, { callId: ToolCallId(`${name}-call`), name, arguments: args, agent, signal })
 }
 
 describe('captain tool permissions', () => {
@@ -149,6 +150,9 @@ describe('captain tool permissions', () => {
       id: 'captain-with-member-tool',
       options: { subagentDepth: 0 },
       session: { header: { delegationDepth: 0 } },
+      // 0.2.2-rc.1 reads the effective wire through `agent.model.current()`;
+      // a stub without a route makes the presentation preflight refuse.
+      model: { current: () => ({ provider: 'fixture', model: 'fixture' }) },
     } as unknown as Agent
     let scope!: Scope
     const scopeFiber = await ctx.plugin(Object.assign(

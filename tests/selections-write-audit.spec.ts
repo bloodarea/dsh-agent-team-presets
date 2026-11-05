@@ -391,6 +391,63 @@ describe('the Team selection write surface', () => {
     page.controller.dispose()
   })
 
+  it('writes one member click as a single selections op naming the stable role', async () => {
+    const page = lane({
+      revision: 5,
+      value: {
+        teams: [{ ...team('team-1', 'Team'), members: [member({ name: 'reviewer', id: 'role-reviewer' })] }],
+        selections: [{ sessionId: 's1', teamId: 'team-1' }],
+      },
+    })
+    await page.controller.selectMember('s1', 'team-1', 'role-reviewer')
+
+    // The whole payload again: the role identity, the fence, and no second op.
+    expect(page.host.writes).toHaveLength(1)
+    expect(page.host.writes[0]?.ops).toEqual([{
+      op: 'set',
+      path: ['selections'],
+      value: [{ sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' }],
+    }])
+    expect(page.host.writes[0]?.revision).toBe(5)
+    expect(page.host.value.selections).toEqual([
+      { sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' },
+    ])
+    // The accepted answer is folded back, so the composer shows the member
+    // without waiting for a reload.
+    expect(page.controller.store.getSnapshot().selections).toEqual([
+      { sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' },
+    ])
+    expect(page.controller.store.getSnapshot().selectionFailure).toBeUndefined()
+    page.controller.dispose()
+  })
+
+  it('clears only the clicked Session\'s role when its captain is selected', async () => {
+    const page = lane({
+      value: {
+        teams: [{ ...team('team-1', 'Team'), members: [member({ name: 'reviewer', id: 'role-reviewer' })] }],
+        selections: [
+          { sessionId: 's1', teamId: 'team-1', roleId: 'role-reviewer' },
+          { sessionId: 's2', teamId: 'team-1', roleId: 'role-reviewer' },
+        ],
+      },
+    })
+    await page.controller.selectTeam('s1', 'team-1')
+
+    expect(page.host.writes[0]?.ops).toEqual([{
+      op: 'set',
+      path: ['selections'],
+      value: [
+        { sessionId: 's2', teamId: 'team-1', roleId: 'role-reviewer' },
+        { sessionId: 's1', teamId: 'team-1' },
+      ],
+    }])
+    expect(page.host.value.selections).toEqual([
+      { sessionId: 's2', teamId: 'team-1', roleId: 'role-reviewer' },
+      { sessionId: 's1', teamId: 'team-1' },
+    ])
+    page.controller.dispose()
+  })
+
   it('sends no selections op for any page action other than an explicit Team click', async () => {
     const page = lane({
       value: {

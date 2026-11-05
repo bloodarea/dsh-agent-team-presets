@@ -5,6 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
+import { executeTool } from './fixtures/execute-tool.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -57,7 +58,7 @@ describe('the Team Skill tool registration', () => {
       ['list_team_skills', {}],
       ['remove_team_skill', { skill_id: 'missing' }],
     ] as const) {
-      const result = await ctx.tools.execute({ callId: ToolCallId(name), name, arguments: args, agent: lead, signal: new AbortController().signal })
+      const result = await executeTool(ctx, { callId: ToolCallId(name), name, arguments: args, agent: lead, signal: new AbortController().signal })
       const text = result.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
       expect(text).toContain(unavailable)
       if (name === 'remove_team_skill') expect(JSON.parse(text)).toMatchObject({ ok: false })

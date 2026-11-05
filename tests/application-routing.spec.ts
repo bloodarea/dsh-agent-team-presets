@@ -18,6 +18,7 @@ import { memberRecords, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import { routedCaptain, slot, team } from './fixtures/team-presets.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -88,7 +89,7 @@ async function flushDeferredWork(): Promise<void> {
 }
 
 async function callMemberTool(ctx: Context, agent: Agent, args: object) {
-  return await ctx.tools.execute({
+  return await executeTool(ctx, {
     callId: ToolCallId('spawn-member'), name: 'spawn_team_member', arguments: args, agent, signal: new AbortController().signal,
   })
 }
@@ -272,7 +273,7 @@ describe('spawn_team_member arguments', () => {
     const definition = ctx.tools.get('spawn_team_member', agent)
     if (definition === undefined) throw new Error('the Team member tool was not registered')
     await ctx.plugin(Object.assign((inner: Context) => { inner.tools.register(definition) }, { inject: ['tools'] }))
-    const result = await ctx.tools.execute({
+    const result = await executeTool(ctx, {
       callId: ToolCallId('agentless'), name: 'spawn_team_member', arguments: { member: 'ghost', task: 'work' },
       signal: new AbortController().signal,
     })

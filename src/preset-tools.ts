@@ -207,8 +207,8 @@ function callingCaptain(ctx: Context, exec: ToolRunContext, tool: string): Agent
  * @throws when no turn is open, or the open turn carries no host-attested human input.
  */
 function requireUserRequest(ctx: Context, agent: Agent, tool: string): void {
-  const boundary = ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')
-  if (boundary === undefined || boundary.openTurnStartSeq === null) {
+  const boundary = ctx.agents.turnBoundaryOf(agent.session)
+  if (boundary.openTurnStartSeq === null) {
     throw new HarnessError(`${tool} must be called inside an open model turn`, 'TEAM_PRESET_TOOL_NO_TURN')
   }
   if (!hasDirectHumanInput(agent, boundary.openTurnStartSeq)) {

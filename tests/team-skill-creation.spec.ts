@@ -43,6 +43,7 @@ import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
 import { slot, team } from './fixtures/team-presets.ts'
 import type { TeamPreset } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -64,7 +65,7 @@ function requestText(request: GenerateOptions): string {
 
 /** Execute one tool as one Agent. */
 async function call(ctx: Context, agent: Agent, name: string, args: object = {}) {
-  return ctx.tools.execute({
+  return executeTool(ctx, {
     callId: ToolCallId(crypto.randomUUID()),
     name,
     arguments: args,

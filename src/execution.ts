@@ -17,7 +17,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import type { Config } from './config.ts'
-import { definitionFingerprint, selectedTeam } from './presets.ts'
+import { definitionFingerprint, findMemberById, memberRouteOf, sameMemberRoute, selectedRoleId, selectedTeam } from './presets.ts'
+import type { ConfiguredMemberRoute } from './presets.ts'
 import type { TeamExecutionRow, TeamExecutionSnapshot } from './types.ts'
 
 /**
@@ -90,6 +91,10 @@ export function hasTeamApplicationMarker(agent: Agent): boolean {
 export interface AppliedTeam {
   /** Identity of the Team the Session has applied. */
   readonly teamId: string
+  /** Member role the Session runs as, or undefined for a captain-led application. */
+  readonly roleId?: string
+  /** Member route that application selected as the Session model, when one was selected. */
+  readonly route?: ConfiguredMemberRoute
   /** Definition fingerprint of that applied preset, so the latest stored one can be compared. */
   readonly fingerprint: string
   /**
@@ -244,7 +249,11 @@ export class TeamExecutionMonitor {
     for (const team of teams) tally(team.id)
     for (const agent of this.ctx.agents.list()) {
       if (!isSessionRoot(agent)) continue
+      const selection = this.sources.config.selections.get().find(row => row.sessionId === agent.session.id)
       const selected = selectedTeam(teams, this.sources.config.selections.get(), agent.session.id)
+      const selectedRole = selectedRoleId(selection)
+      const selectedMember = selectedRole === undefined ? undefined : findMemberById(selected, selectedRole)
+      const selectedRoute = selectedMember === undefined ? undefined : memberRouteOf(selectedMember)
       const applied = this.sources.applied(agent)
       const referenced = new Set<string>()
       if (selected !== undefined) referenced.add(selected.id)
@@ -261,8 +270,15 @@ export class TeamExecutionMonitor {
       const pending = applied === undefined
         || selected === undefined
         || applied.teamId !== selected.id
-        // Only the frozen definition counts: a member route or accent color the
-        // page saved is read live, so it leaves nothing for the next task to adopt.
+        // A role change is a different application even when the definition is
+        // unchanged: the persona, tool policy, and Session model all move.
+        || applied.roleId !== selectedRole
+        // A selected member's route is the Session model, so a route edit is
+        // pending for an individual conversation. A captain-led Team reads its
+        // members' routes only when it summons one, so those edits are not.
+        || (selectedRole !== undefined && !sameMemberRoute(applied.route, selectedRoute))
+        // Only the frozen definition counts: an accent color the page saved is
+        // read live, so it leaves nothing for the next task to adopt.
         || applied.fingerprint !== definitionFingerprint(selected)
       for (const teamId of referenced) {
         const row = tally(teamId)

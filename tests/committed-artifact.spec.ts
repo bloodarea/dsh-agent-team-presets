@@ -141,7 +141,9 @@ function assertMarkerGateUsage(source: string): void {
 
 /** Assert refuseTeam keeps the guard-presence belt-and-braces and the team-gone branch clears restoreFailures. */
 function assertRefuseTeamGuard(source: string): void {
-  const body = normalize(braceBlock(source, /const refuseTeam = \(agent, team, reason\) =>\s*\{/, 'refuseTeam'))
+  // The refusal carries an optional member role now, so the anchor accepts one
+  // extra parameter while still pinning the name and the first three arguments.
+  const body = normalize(braceBlock(source, /const refuseTeam = \(agent, team, reason(?:,\s*[A-Za-z_$][\w$]*)?\) =>\s*\{/, 'refuseTeam'))
   const condition = /!applications\.has\(\s*agent\s*\)\s*&&\s*\(\s*!restoreFailures\.has\(\s*agent\s*\)\s*\|\|\s*!quarantines\.has\(\s*agent\s*\)\s*\)/
   if (!condition.test(body)) throw new Error('refuseTeam lost the guard-presence belt-and-braces (!restoreFailures.has || !quarantines.has)')
   if (!/quarantine\(\s*agent\s*,/.test(body)) throw new Error('refuseTeam no longer quarantines the refused agent')

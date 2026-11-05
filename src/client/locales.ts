@@ -118,6 +118,9 @@ export type TeamPresetsLocaleKey =
   | 'composeSeriesDev'
   | 'composeSeriesModes'
   | 'composeEmpty'
+  | 'composePanelTitle' | 'composePanelCaptain' | 'composePanelMembers' | 'composePanelSessionModel'
+  | 'composePanelCaptainHint' | 'composePanelSoloHint' | 'composePanelEmptyMembers' | 'composePanelNoId'
+  | 'composerMissingMember'
   | 'originBuiltin' | 'originCustom' | 'originOverride'
   | 'skillsTitle'
   | 'skillsSub'
@@ -428,6 +431,15 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   composeSeriesDev: 'Built-in · development',
   composeSeriesModes: 'Built-in · work modes',
   composeEmpty: 'No team matches',
+  composePanelTitle: 'Team members',
+  composePanelCaptain: 'Captain',
+  composePanelMembers: 'Members',
+  composePanelSessionModel: 'Session model',
+  composePanelCaptainHint: 'The captain takes over this session: its system prompt becomes the session prompt, its tool policy scopes the session tools, and it follows the model you already selected — the team never changes your model.',
+  composePanelSoloHint: 'Select a member to talk to it alone: its role card, tool policy, Team Skills, and model route are injected into this session.',
+  composePanelEmptyMembers: 'This team has no members yet.',
+  composePanelNoId: 'This member has no stable id, so it cannot be selected on its own.',
+  composerMissingMember: 'Missing member: {member} (team {team})',
   skillsAssignHint: 'Checked skills belong to this member only. They are discovered through this Agent scope, never globally.',
   skillsAssignEmpty: 'No team skill is installed yet. Add one on the Team skills page.',
   skillsOverrideOn: 'a local override is active',
@@ -706,6 +718,15 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   composeSeriesDev: '插件内置 · 研发规模',
   composeSeriesModes: '插件内置 · 工作模式',
   composeEmpty: '没有匹配的团队',
+  composePanelTitle: '团队成员',
+  composePanelCaptain: '队长',
+  composePanelMembers: '队员',
+  composePanelSessionModel: '会话模型',
+  composePanelCaptainHint: '队长会接管本会话：队长的系统提示词成为会话提示词，工具权限作用于会话工具；队长跟随会话已选模型，不会改动你的模型。',
+  composePanelSoloHint: '选择队员即可只与该成员单独对话：其角色卡、工具权限、Team Skill 与模型路由会注入本会话。',
+  composePanelEmptyMembers: '该团队还没有队员。',
+  composePanelNoId: '该成员缺少稳定 ID，无法单独选择。',
+  composerMissingMember: '成员已失效：{member}（团队 {team}）',
   skillsAssignHint: '勾选的技能只属于这名成员，通过该 Agent 的作用域发现，不会全局注册。',
   skillsAssignEmpty: '还没有安装任何团队技能，请先到「团队技能」页添加。',
   skillsOverrideOn: '已启用本地覆盖',

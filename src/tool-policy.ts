@@ -143,43 +143,35 @@ function admits(agent: Agent, name: string): boolean {
  *
  * The policy is identical either way; only the refusal wording differs, because
  * a member has no `spawn_team_member` to be redirected to and must ask its
- * Team Lead instead.
+ * Team Lead instead. A solo member is a third case: the Session is that member,
+ * talking to the user directly, so there is no Team Lead to ask either.
  */
 export interface GuardRole {
   /** The slot this guard protects; defaults to the captain. */
-  readonly role?: 'captain' | 'member'
-  /**
-   * Who declares the tool presentation this guard relies on.
-   *
-   * `self` (the default) keeps the historical best-effort declaration for
-   * callers that install a legacy child policy with nothing else to prepare it.
-   * `caller` means the caller already established a native presentation through
-   * {@link prepareNativePresentation} and must not have it declared twice: an
-   * Agent scope accepts exactly one declaration, so a second one would throw
-   * while the first is still in effect.
-   */
+  readonly role?: 'captain' | 'member' | 'solo'
+  /** @deprecated Executor selection belongs to the Agent preset; guards never replace it. */
   readonly presentation?: 'self' | 'caller'
 }
 
 /** Own-layer tools and nested PTC capability dispatch both pass through this guard. */
 export function guardPolicy(agent: Agent, policy: StrictToolPolicy, role: GuardRole = {}): () => void {
-  const member = role.role === 'member'
+  const solo = role.role === 'solo'
+  const member = role.role === 'member' || solo
   const allowed = new Set(policy.allow)
-  let native: (() => void) | undefined
-  if (policy.mode === 'custom' && role.presentation !== 'caller') {
-    try { native = agent.ctx.tools.presentAs('native') }
-    catch { /* An exact-Agent presentation exists; guard still denies run_code. */ }
-  }
   const disposeGuard = agent.ctx.tools.guard(exec => {
     if (exec.name === 'spawn_teammate') {
-      return member
-        ? 'A Team member cannot create teammates; ask the Team Lead to summon one.'
-        : 'This Team uses preset-managed creation; call spawn_team_member instead.'
+      return solo
+        ? 'This Session talks to one Team member directly and has no Team Lead, so it cannot create teammates.'
+        : member
+          ? 'A Team member cannot create teammates; ask the Team Lead to summon one.'
+          : 'This Team uses preset-managed creation; call spawn_team_member instead.'
     }
     if (policy.mode === 'custom' && ['subagent', 'subagent_fork', 'workflow'].includes(exec.name)) {
-      return member
-        ? 'A Team member cannot delegate through providers; report the limitation to the Team Lead.'
-        : 'Custom Team policies cannot delegate through providers without a durable strict-policy contract; use preset-managed Team members.'
+      return solo
+        ? 'A directly-addressed Team member cannot delegate through providers.'
+        : member
+          ? 'A Team member cannot delegate through providers; report the limitation to the Team Lead.'
+          : 'Custom Team policies cannot delegate through providers without a durable strict-policy contract; use preset-managed Team members.'
     }
     if (exec.name === RUN_CODE_NAME && policy.mode === 'custom') {
       // Shipped Node PTC can import fs/child_process outside SDK dispatch. A
@@ -200,7 +192,7 @@ export function guardPolicy(agent: Agent, policy: StrictToolPolicy, role: GuardR
     }
     return undefined
   })
-  return () => { disposeGuard(); native?.() }
+  return disposeGuard
 }
 
 /** Old plugin-generated briefing, not merely upstream Team membership. */

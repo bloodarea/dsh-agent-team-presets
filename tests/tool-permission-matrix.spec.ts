@@ -12,6 +12,7 @@ import { applyTeamToAgent } from '../src/application.ts'
 import TeamPresetsToolCatalog from '../src/tool-catalog.ts'
 import { SPAWN_TEAM_MEMBER_DESCRIPTION } from '../src/tool-descriptions.ts'
 import { slot, team } from './fixtures/team-presets.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 afterEach(async () => {
@@ -19,7 +20,7 @@ afterEach(async () => {
 })
 
 async function call(ctx: Context, agent: Agent, name: string, args: object = {}) {
-  return ctx.tools.execute({ callId: ToolCallId(crypto.randomUUID()), name, arguments: args, agent, signal: new AbortController().signal })
+  return executeTool(ctx, { callId: ToolCallId(crypto.randomUUID()), name, arguments: args, agent, signal: new AbortController().signal })
 }
 
 /** Text of one tool result, so a denial can be told apart from an unrelated failure. */

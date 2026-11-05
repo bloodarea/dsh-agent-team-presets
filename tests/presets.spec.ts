@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  captainBriefing, definitionFingerprint, findMember, findTeam, memberBriefing, memberTarget, memberTargets,
-  selectedTeam, toolMode, withSelection,
+  captainBriefing, definitionFingerprint, findMember, findMemberById, findTeam, memberBriefing, memberTarget,
+  memberTargets, selectedMember, selectedRoleId, selectedTeam, soloMemberBriefing, toolMode, withSelection,
 } from '../src/presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from '../src/types.ts'
 
@@ -195,5 +195,48 @@ describe('memberBriefing', () => {
   it('omits the role line for a member without a description', () => {
     expect(memberBriefing(team([]), agent('builder'), 'builder'))
       .toBe('You are "builder" on the Agent Team "T".')
+  })
+})
+
+describe('individual member selection', () => {
+  /** One member carrying the stable identity a solo selection references. */
+  const identified: TeamAgentPreset = { ...agent('reviewer', 'checks diffs'), id: 'role-1' }
+
+  it('stores the member role and clears it when the captain is selected again', () => {
+    const member = withSelection([], 's1', 'team-1', 'role-1')
+    expect(member).toEqual([{ sessionId: 's1', teamId: 'team-1', roleId: 'role-1' }])
+    expect(withSelection(member, 's1', 'team-1')).toEqual([{ sessionId: 's1', teamId: 'team-1' }])
+    expect(withSelection(member, 's1', undefined)).toEqual([])
+  })
+
+  it('treats an empty stored role as the captain-led meaning', () => {
+    expect(selectedRoleId({ sessionId: 's1', teamId: 'team-1' })).toBeUndefined()
+    expect(selectedRoleId({ sessionId: 's1', teamId: 'team-1', roleId: '' })).toBeUndefined()
+    expect(selectedRoleId({ sessionId: 's1', teamId: 'team-1', roleId: 'role-1' })).toBe('role-1')
+    expect(withSelection([], 's1', 'team-1', '')).toEqual([{ sessionId: 's1', teamId: 'team-1' }])
+  })
+
+  it('resolves the selected member by stable identity, never by position', () => {
+    const preset = team([agent('builder'), identified])
+    expect(findMemberById(preset, 'role-1')).toBe(identified)
+    expect(findMemberById(preset, 'missing')).toBeUndefined()
+    expect(selectedMember([preset], [{ sessionId: 's1', teamId: 'team-1', roleId: 'role-1' }], 's1')).toBe(identified)
+    expect(selectedMember([preset], [{ sessionId: 's1', teamId: 'team-1' }], 's1')).toBeUndefined()
+  })
+
+  it('builds a role card that names the member, the Team, and the direct-conversation rule', () => {
+    const preset: TeamPreset = { ...team([identified]), name: '测试团队', description: '测试一下' }
+    const text = soloMemberBriefing(preset, { ...identified, systemPrompt: '只看 diff。' })
+    expect(text).toContain('You are "reviewer" on the Agent Team "测试团队": 测试一下')
+    expect(text).toContain('Your role: checks diffs')
+    expect(text).toContain('只看 diff。')
+    expect(text).toContain('The user is talking with you directly in this Session.')
+    expect(text).toContain('You are not the Team Lead')
+  })
+
+  it('still names a member that has no name, description, or standing prompt', () => {
+    const text = soloMemberBriefing(team([]), agent(''))
+    expect(text).toContain('You are a member on the Agent Team "T".')
+    expect(text).toContain('You are not the Team Lead')
   })
 })

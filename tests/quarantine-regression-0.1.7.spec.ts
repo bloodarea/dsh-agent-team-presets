@@ -75,6 +75,7 @@ import { mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
+import { executeTool } from './fixtures/execute-tool.ts'
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -478,7 +479,7 @@ async function wireTools(ctx: Context, agent: Agent): Promise<string[]> {
 
 /** Execute one tool as one Agent and report whether it was refused, and why. */
 async function call(h: Harness, agent: Agent, name: string, args: object = {}) {
-  const result = await h.ctx.tools.execute({
+  const result = await executeTool(h.ctx, {
     callId: ToolCallId(`${name}-${Math.random()}`),
     name,
     arguments: args,
@@ -583,46 +584,41 @@ describe('HMR/remount repeats itself without changing the classification', () =>
   })
 })
 
-describe('the PTC presentation fold', () => {
-  it('leaves a quarantined PTC captain with no callable tool at all, recovery channel included', async () => {
-    // A custom Team forces a native presentation of its own, so this Session
-    // really does run a native surface while the Team is applied.
+describe('the PTC presentation fold (removed in 0.2.2-rc.1)', () => {
+  it('refuses a custom policy on a PTC surface and quarantines the captain instead of folding it', async () => {
+    // 0.2.2-rc.1 removed the native-presentation fold: a custom allow-list can no
+    // longer shadow a PTC deployment's executor, so this Team is refused from the
+    // start instead of being applied over a temporary native surface.
     const h = await setup({ teams: [definition('A', 'alpha')], selections: SELECTED, ptc: true })
     const captain = await h.create('s1')
-    await waitForPersona(h, captain, 'Captain prompt A')
-    expect(await wireTools(h.ctx, captain)).toContain(ALLOWED_TOOL)
-    await startTask(h, captain)
-    await h.remount()
     await settlePlugin()
 
-    // The reload released that presentation, so the wire collapses back to the
-    // deployment's PTC transport: one name, and it is a capability.
-    await waitUntil('the wire to collapse back to the PTC transport', async () => {
-      const names = await wireTools(h.ctx, captain)
-      return names.length === 1 && names[0] === 'run_code'
-    })
+    // The deployment's PTC transport is untouched: one name, and it is the
+    // general-purpose capability the custom Team would have denied.
     const wire = await wireTools(h.ctx, captain)
     expect(wire).toEqual(['run_code'])
-    await waitForRefusal(h, captain, 'run_code', UNRESTORABLE, { code: 'return 1', description: 'probe' })
+    // Executing it is still refused by the quarantine the refusal installed, and
+    // the refusal names the actionable cause.
     const direct = await call(h, captain, 'run_code', { code: 'return 1', description: 'probe' })
     expect(direct.isError).toBe(true)
+    expect(direct.text).toContain('native Agent preset')
 
-    // The ten exempted names are not on the wire, and the collapsed surface
-    // refuses a direct call to any of them as a dispatch error rather than
-    // letting the exemption through:
+    // The exempted names are not on the wire, and PTC refuses a direct call to
+    // them before any guard: the recovery channel the refusal recommends is not
+    // reachable from the model at all. This is a denial, never a widening.
     for (const name of ['get_team_preset', 'send_message', 'list_agents', ALLOWED_TOOL] as const) {
       expect(wire, name).not.toContain(name)
       const unreachable = await call(h, captain, name)
       expect(unreachable.isError, name).toBe(true)
       expect(unreachable.text, name).toContain('only `run_code` is callable directly')
     }
-    // So this quarantined captain has exactly zero usable tools: the recovery
-    // channel the refusal text recommends is not reachable from the model at
-    // all. This is a denial, never a widening, but it is a real limit on S2.
-    expect((await applied(h.ctx, captain)).tools).toContain('get_team_preset')
+    // The recovery tools are nevertheless registered on the Agent, and no Team
+    // face was installed.
+    expect(h.ctx.tools.get('get_team_preset', captain)).toBeDefined()
+    expect((await applied(h.ctx, captain)).persona).not.toBe('Captain prompt A')
+    expect((await applied(h.ctx, captain)).tools).not.toContain('spawn_team_member')
 
     await h.release()
-    await waitForAllowed(h, captain, ALLOWED_TOOL)
   })
 
   it('never reads a PTC header that lists only run_code as proof of No team, and cannot widen with it', async () => {
@@ -1011,30 +1007,34 @@ describe('RESIDUAL WINDOW: a Team task whose captain never assembled a request',
     await h.release()
   })
 
-  it('hands the same running task the general-purpose code transport its Team denied', async () => {
-    // The same residual window in a deployment that runs the PTC presentation,
-    // where `run_code` is the only wire tool: the capability it reopens is
-    // arbitrary code, which a custom Team policy denies outright.
+  it('refuses the custom policy on a PTC deployment instead of reopening the denied code transport', async () => {
+    // The old PTC fold installed a native surface for the Team and released it on
+    // reload, which created the residual window this case used to prove: a
+    // running task handed `run_code` back after its Team was deselected. The fold
+    // no longer exists, so the custom Team is refused from the start and there is
+    // no applied policy for a status edge to widen.
     const h = await setup({ teams: [definition('A', 'alpha')], selections: SELECTED, ptc: true })
     const captain = await h.create('s1')
-    await waitForPersona(h, captain, 'Captain prompt A')
+    await settlePlugin()
+
+    expect((await applied(h.ctx, captain)).persona).not.toBe('Captain prompt A')
+    expect(await wireTools(h.ctx, captain)).toEqual(['run_code'])
     const denied = await call(h, captain, 'run_code', { code: 'return 1', description: 'probe' })
     expect(denied.isError).toBe(true)
-    expect(denied.text).toContain('deny general-purpose run_code')
+    expect(denied.text).toContain('native Agent preset')
 
+    // The refused application never installed a policy, so deselecting mid-task
+    // cannot widen anything: the guard stays in place and the transport stays
+    // refused across the same status edges the old window needed.
     h.teammates('s1', [teammate('running')])
     h.selections([])
     await settlePlugin()
-    await h.remount()
-    await settlePlugin()
-
-    // KNOWN RESIDUAL WINDOW — the widened capability here is code execution.
-    // The call is no longer refused by any Team policy or quarantine; only this
-    // harness having no working directory stops the body.
-    expect(await wireTools(h.ctx, captain)).toContain('run_code')
     const after = await call(h, captain, 'run_code', { code: 'return 1', description: 'probe' })
-    expect(after.text).not.toContain('deny general-purpose run_code')
-    expect(after.text).not.toContain(UNRESTORABLE)
+    expect(after.isError).toBe(true)
+    expect(after.text).toContain('native Agent preset')
+    expect(await wireTools(h.ctx, captain)).toEqual(['run_code'])
+    expect(await wireTools(h.ctx, captain)).not.toContain('spawn_team_member')
+    expect((await applied(h.ctx, captain)).tools).not.toContain('spawn_team_member')
 
     h.teammates('s1', [teammate('inactive')])
     h.rosterEvent(captain)

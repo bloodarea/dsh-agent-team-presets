@@ -15,6 +15,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { Config } from './config.ts';
+import type { ConfiguredMemberRoute } from './presets.ts';
 import type { TeamExecutionSnapshot } from './types.ts';
 /**
  * Whether one Agent is a top-level Session agent this plugin composes.
@@ -58,6 +59,10 @@ export declare function hasTeamApplicationMarker(agent: Agent): boolean;
 export interface AppliedTeam {
     /** Identity of the Team the Session has applied. */
     readonly teamId: string;
+    /** Member role the Session runs as, or undefined for a captain-led application. */
+    readonly roleId?: string;
+    /** Member route that application selected as the Session model, when one was selected. */
+    readonly route?: ConfiguredMemberRoute;
     /** Definition fingerprint of that applied preset, so the latest stored one can be compared. */
     readonly fingerprint: string;
     /**

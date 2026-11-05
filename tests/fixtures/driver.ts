@@ -6,6 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
+import { executeTool } from './execute-tool.ts'
 
 /**
  * The Harness checkout this run was pointed at.
@@ -84,21 +85,21 @@ try {
   const captainSystem = (await ctx.systemPrompt.assemble(assembleContextFor(main))).sections
     .map(section => section.text)
     .join('\n\n')
-  const denied = await ctx.tools.execute({
+  const denied = await executeTool(ctx, {
     callId: ToolCallId('captain-denied-echo'),
     name: 'team_permission_echo',
     arguments: { message: 'captain must not reach this' },
     agent: main,
     signal,
   })
-  const spawned = await ctx.tools.execute({
+  const spawned = await executeTool(ctx, {
     callId: ToolCallId('captain-spawn-member'),
     name: 'spawn_team_member',
     arguments: { member: 'member', task: 'Run the global tool you are allowed to use.' },
     agent: main,
     signal,
   })
-  const preset = await ctx.tools.execute({
+  const preset = await executeTool(ctx, {
     callId: ToolCallId('captain-get-preset'),
     name: 'get_team_preset',
     arguments: {},
@@ -111,7 +112,7 @@ try {
   // its original revision after the run.
   const busyMembers = ctx.agentTeams.listMembers(main)
     .filter(member => member.role === 'teammate' && (member.status === 'running' || member.status === 'provisioning')).length
-  const presetWhileBusy = await ctx.tools.execute({
+  const presetWhileBusy = await executeTool(ctx, {
     callId: ToolCallId('captain-write-while-busy'),
     name: 'update_team_preset',
     arguments: { team_id: 'restricted-team', revision: presetRevision, team_description: 'rewritten while the Team runs' },
@@ -121,14 +122,14 @@ try {
 
   for (const member of members) await member.whenIdle()
   // With the Team idle the same call reaches the next gate: no user turn.
-  const presetEdit = await ctx.tools.execute({
+  const presetEdit = await executeTool(ctx, {
     callId: ToolCallId('captain-edit-preset'),
     name: 'update_team_preset',
     arguments: { team_id: 'restricted-team', revision: presetRevision, team_description: 'rewritten outside a turn' },
     agent: main,
     signal,
   })
-  const presetAfter = await ctx.tools.execute({
+  const presetAfter = await executeTool(ctx, {
     callId: ToolCallId('captain-get-preset-after'),
     name: 'get_team_preset',
     arguments: { team_id: 'restricted-team' },
