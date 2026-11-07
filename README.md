@@ -186,51 +186,62 @@ The plugin version (`0.1.9`) and the Harness version (`0.2.2-rc.1`, for example)
 <a id="use-this-package"></a>
 ## Install and upgrade
 
-### One-click install in the GUI (Add plugin)
+### Install and upgrade
+
+#### Option 1 — npm package (recommended; receives update prompts)
 
 Open **Global panels → Plugins → Add plugin**, paste the line below into **Package name or address**, and click **Install**:
 
 ```text
-dsh-agent-team-presets@0.1.9
+dsh-agent-team-presets
 ```
 
 <!-- release-version: keep in sync with package.json version -->
 
-- **Registry** selects which npm source the download comes from. **Default registry** uses pnpm's own configuration. Pick **Official npm registry** to bypass a mirror, or **Custom address** for an internal or cloud mirror.
-- `@0.1.9` pins the published version; `github:bloodarea/dsh-agent-team-presets#v0.1.9` installs the same release from the GitHub tag. Omit the pin to install the latest published package.
-- The field accepts package names, `name@version`, `github:owner/repo`, tarball URLs, or absolute filesystem paths.
-- This package declares `dsh.bundle`, so the plugin manager automatically registers it as a profile bundle layer; do not add a loader entry by hand.
-- Once installed, reinstalling the same package identity is blocked. To switch sources (e.g. from GitHub to npm), uninstall first, then install the new spec.
-- After installation, reload or restart as prompted.
-
-### Install from GitHub
-
-To receive repository update notifications:
+Or install it from the CLI:
 
 ```sh
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
+dsh plugin --profile <profile> add dsh-agent-team-presets
 ```
 
 Replace `<profile>` with your active profile (e.g. `web` or `desktop`):
 
 ```sh
-dsh plugin --profile web add github:bloodarea/dsh-agent-team-presets
+dsh plugin --profile web add dsh-agent-team-presets
 ```
 
-To pin the v0.1.9 release tag:
+The plugin manager compares the installed version against npm's `latest` dist-tag, so every later release is offered as an update.
+
+#### Option 2 — floating GitHub install
+
+Tracks the repository's default branch; an update is offered when `package.json` on that branch moves to a higher version:
 
 ```sh
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
+```
+
+#### Option 3 — reproducible pin (no update prompts)
+
+```text
+dsh-agent-team-presets@0.1.9
 dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.9
 ```
 
-### npm release channel
+A fixed version or tag reproduces exactly one release. **A `#tag` GitHub spec is only ever compared against that same tag, so the market never reports an update for it — upgrading means editing the spec by hand.** Use this form only when you need a frozen install.
 
-GitHub and [npm](https://www.npmjs.com/package/dsh-agent-team-presets) are separate release channels. npm publishes 0.1.9. Verify the published version before installing:
+#### Install notes
+
+- **Registry** selects which npm source the download comes from. **Default registry** uses pnpm's own configuration. Pick **Official npm registry** to bypass a mirror, or **Custom address** for an internal or cloud mirror.
+- The field accepts package names, `name@version`, `github:owner/repo`, tarball URLs, or absolute filesystem paths.
+- This package declares `dsh.bundle`, so the plugin manager automatically registers it as a profile bundle layer; do not add a loader entry by hand.
+- Once installed, reinstalling the same package identity is blocked. To switch sources (e.g. from GitHub to npm), uninstall first, then install the new spec.
+- GitHub and [npm](https://www.npmjs.com/package/dsh-agent-team-presets) are separate release channels, so check the version this install would fetch before switching channels:
 
 ```sh
 npm view dsh-agent-team-presets version
-dsh plugin --profile <profile> add dsh-agent-team-presets
 ```
+
+- After installation, reload or restart as prompted.
 
 ### Verify and upgrade safely
 

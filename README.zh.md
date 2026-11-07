@@ -186,51 +186,62 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="use-this-package"></a>
 ## 安装与升级
 
-### 在 GUI 中一键安装（添加插件）
+### 安装与升级
+
+#### 方式一 —— npm 包（推荐，会收到更新提示）
 
 打开 **全局面板 → 插件 → 添加插件**，把下面这一行粘贴到「包名或地址」，点击 **安装**：
 
 ```text
-dsh-agent-team-presets@0.1.9
+dsh-agent-team-presets
 ```
 
 <!-- release-version: 与 package.json 的 version 同步 -->
 
-- **安装源**决定从哪个 npm 源下载。「默认安装源」指 pnpm 自身配置所指的源。要绕开镜像选「npm 官方源」；要换内网私有源或云厂商镜像选「自定义地址」。
-- `@0.1.9` 指定已发布版本；`github:bloodarea/dsh-agent-team-presets#v0.1.9` 从同一版本的 GitHub 标签安装。想装 npm 上最新的已发布版本，去掉版本只填 `dsh-agent-team-presets`。
-- 输入框支持包名、`name@version`、`github:作者/仓库`、tarball 地址或本地绝对路径。
-- 本包声明了自己的 `dsh.bundle`，安装后由插件管理器登记为 profile 的 bundle 层，不要再手写 loader 条目。
-- 已安装本包时无法重复安装同一包名。要更换安装来源（如由 GitHub 改为 npm），先在插件列表中卸载，再粘贴新规格安装。
-- 安装完成后按提示重新加载或重启应用。
-
-### 从 GitHub 安装
-
-需要接收仓库新版本更新提示时：
+也可以用命令行安装：
 
 ```sh
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
+dsh plugin --profile <profile> add dsh-agent-team-presets
 ```
 
 将 `<profile>` 替换为实际运行的 profile（例如 `web` 或 `desktop`）：
 
 ```sh
-dsh plugin --profile web add github:bloodarea/dsh-agent-team-presets
+dsh plugin --profile web add dsh-agent-team-presets
 ```
 
-需要固定 v0.1.9 发布标签时：
+插件管理器会把已安装版本与 npm 的 `latest` 标签比较，之后每有新版本都会提示更新。
+
+#### 方式二 —— 浮动 GitHub 安装
+
+跟随仓库默认分支；该分支上的 `package.json` 版本升高后就会提示更新：
 
 ```sh
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
+```
+
+#### 方式三 —— 可复现的固定版本（收不到更新提示）
+
+```text
+dsh-agent-team-presets@0.1.9
 dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.9
 ```
 
-### npm 发布渠道
+固定版本号或固定标签只能复现一个确定的发布。**带 `#标签` 的 GitHub 规格只会与同一个标签比对，市场永远不会提示更新——升级只能手动改规格。** 只在确实需要冻结安装时使用这种形式。
 
-GitHub 与 [npm](https://www.npmjs.com/package/dsh-agent-team-presets) 是独立发布渠道。从 npm 安装前先确认已发布版本：
+#### 安装说明
+
+- **安装源**决定从哪个 npm 源下载。「默认安装源」指 pnpm 自身配置所指的源。要绕开镜像选「npm 官方源」；要换内网私有源或云厂商镜像选「自定义地址」。
+- 输入框支持包名、`name@version`、`github:作者/仓库`、tarball 地址或本地绝对路径。
+- 本包声明了自己的 `dsh.bundle`，安装后由插件管理器登记为 profile 的 bundle 层，不要再手写 loader 条目。
+- 已安装本包时无法重复安装同一包名。要更换安装来源（如由 GitHub 改为 npm），先在插件列表中卸载，再粘贴新规格安装。
+- GitHub 与 [npm](https://www.npmjs.com/package/dsh-agent-team-presets) 是独立发布渠道，换渠道前先确认这次会装到哪个版本：
 
 ```sh
 npm view dsh-agent-team-presets version
-dsh plugin --profile <profile> add dsh-agent-team-presets
 ```
+
+- 安装完成后按提示重新加载或重启应用。
 
 ### 确认安装并安全升级
 
