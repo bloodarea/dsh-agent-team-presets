@@ -16,7 +16,7 @@
  * `rgb(231, 236, 247)` title. Hard-coded light palettes on the Team Skill page had
  * the same effect. The bug comes back the moment an undefined alias name or a
  * literal colour re-enters the stylesheets, so both are guarded here against
- * `audit/2026-10-19-dark-mode/TOKEN-CONTRACT.md`.
+ * `docs/internal/audit/2026-10-19-dark-mode/TOKEN-CONTRACT.md`.
  *
  * No DOM test can observe a theme, and the real proof remains the Lead's two-theme
  * pass on the live GUI. This file is the static half: it reads the stylesheets and
