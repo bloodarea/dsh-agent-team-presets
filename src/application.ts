@@ -287,6 +287,20 @@ export function capabilityRefusal(
 const CONCURRENT_CAPACITY = /active child limit/i
 /** The Team's lifetime member allowance, which a finished member still occupies. */
 const LIFETIME_QUOTA = /team member limit/i
+/** The allowance the Host reported, when its refusal carries the number. */
+const LIFETIME_LIMIT = /team member limit (\d+)/i
+
+/**
+ * One roster line this refusal can act on.
+ *
+ * The roster is the only place that knows whether an occupied slot belongs to a
+ * member that still runs, or to a creation that never became usable. Without that
+ * split the captain cannot tell a busy Team from one that will never summon again.
+ */
+export interface SpawnRosterEntry {
+  readonly name: string
+  readonly status: string
+}
 
 /**
  * Explain one failed creation in terms the captain can act on.
@@ -296,17 +310,29 @@ const LIFETIME_QUOTA = /team member limit/i
  * is always preserved verbatim inside the explanation, because it carries the
  * exact numbers the Host decided with.
  * @param error - the failure `spawnTeammate` reported.
+ * @param roster - current roster rows, used to name the slots that never became usable.
  * @returns the model-facing explanation.
  */
-function classifySpawnFailure(error: unknown): string {
+export function classifySpawnFailure(error: unknown, roster: readonly SpawnRosterEntry[] = []): string {
   const message = error instanceof Error ? error.message : String(error)
   if (CONCURRENT_CAPACITY.test(message)) {
     return 'No subagent slot is free right now: this deployment\'s concurrent subagent limit is reached. Wait for a '
       + `running member to finish, then summon again. (${message})`
   }
   if (LIFETIME_QUOTA.test(message)) {
-    return 'This Team has used up its lifetime member allowance. A member that already finished still occupies its '
-      + `Team roster slot, so this Team cannot summon another instance; finish the task with the members it has. (${message})`
+    const limit = LIFETIME_LIMIT.exec(message)?.[1]
+    const used = roster.length
+    const failed = roster.filter(entry => entry.status === 'failed').map(entry => entry.name)
+    const occupancy = limit === undefined
+      ? `${used} roster slot${used === 1 ? '' : 's'} occupied`
+      : `${used} of ${limit} roster slots occupied`
+    const spent = failed.length === 0
+      ? ''
+      : `, and ${failed.length} of them never became usable (${failed.join(', ')})`
+    return 'This Team has used up its lifetime member allowance. A member that already finished, or a creation that '
+      + `never became usable, still occupies its Team roster slot (${occupancy}${spent}). The Host's roster is `
+      + 'append-only and exposes no removal API, so a slot spent by a failed creation cannot be reclaimed; start a new '
+      + `Session to summon more members. (${message})`
   }
   return message
 }
@@ -485,7 +511,7 @@ function registerMemberTool(
             // and the Host then reports only its provisioning checkpoint. Name the
             // member's real cause so the fault is not mistaken for a Team fault.
             const cause = members.failureOf(caller.id, instance)
-            const reported = classifySpawnFailure(error)
+            const reported = classifySpawnFailure(error, ctx.agentTeams.listMembers(caller))
             if (cause === undefined) throw new Error(reported, { cause: error })
             throw new Error(`${reported} (the member's own first request failed: ${cause})`, { cause: error })
           }
