@@ -14,7 +14,7 @@
 
 - **与单个成员单独对话。** 输入区的团队选择器在悬浮时展开成员面板；点选成员会把该成员的角色卡、工具策略、Team Skill 与模型路由注入当前会话；点选队长则保持会话模型不变。
 - **适配 DeepSeek Harness 0.2.2-rc.1。** 成员路由通过 `agent.model.select()` 写入，工具激活按步评估；成员路由不可用时在应用前明确拒绝，不会回退到队长。
-- **自定义工具策略仅支持原生 Agent 预设。** PTC 下插件保留宿主执行器并明确拒绝自定义白名单；PTC 配合「所有工具」模式仍可继续使用。
+- **自定义工具策略会把该会话自己的工具面定下来。** 在 PTC 预设下应用自定义白名单时，插件把宿主自带的 native 工具执行器挂到该会话的 Agent 作用域：部署级执行器与其他会话仍走 PTC，注册归该 Agent 所有并随其销毁，白名单治理这个面。该会话此后不再使用 `run_code`。
 - **内置排障 Skill。** 全局 `agent-team-presets-troubleshooting` 覆盖团队应用、成员创建、路由证据、Team Skill 可见性与安装/升级异常。
 
 <a id="project-introduction"></a>
@@ -176,7 +176,7 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 ## 环境要求
 
 - **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.1`**。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
-- **自定义工具白名单使用原生工具 Agent 预设（standard 或 cordis）。** 当前宿主无法在临时覆盖执行器后恢复继承的执行器，因此插件保留宿主执行器；PTC 下的自定义策略会明确拒绝。PTC 配合「所有工具」模式可继续使用；选择自定义策略前请先切换到原生工具预设。
+- **自定义工具白名单在 PTC 下通过给该会话一个自己的 native 面来工作。** 宿主无法在释放执行器后恢复继承，所以插件从不主动释放：在 PTC 预设下它把宿主自带的 native 工具执行器挂到该会话的 Agent 作用域，部署级执行器保持原样。代价是明确的：该会话此后不再使用 `run_code`，而其他会话与「所有工具」模式继续走 PTC。若挂载失败、或挂载后工具面仍暴露 PTC 传输，则应用被拒绝且不留残留 —— 因为从未释放过任何执行器。
 - **目标 profile 已启用 Agent Teams。** 标准集成是 `@deepseek-ai/dsh-experimental-agent-team-profile`，提供团队服务、工具和 Web 名册。本插件负责配置与管理团队，不替代该子系统。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。

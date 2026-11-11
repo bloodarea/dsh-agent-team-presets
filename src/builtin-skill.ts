@@ -67,19 +67,13 @@ export const BUILTIN_SKILL_CONTENT: string = `# Agent Team Presets 使用问题�
 
 ## 2. 自定义工具策略被拒 / PTC
 
-典型报错：
+PTC 预设 + 自定义白名单现在可以应用，但会改变该会话的工具面：
 
-~~~text
-Custom Team tool policies require a native Agent preset (standard or cordis).
-This Session uses PTC, and this Harness version cannot restore an inherited
-executor after a temporary override.
-~~~
-
-- 这是 **有意拒绝**，不是漏配。DSH 0.2.2-rc.1 的 setExecutor disposer 会在精确作用域留下不可用的选择，没有公开操作能恢复继承执行器；插件不再安装 native presentation 覆盖，因此 PTC 下不能安全执行自定义 allow-list。
-- 处理：
-  1. 在会话开始前把 Agent preset 切到 standard 或 cordis；或
-  2. 该 Team 改用 all-tools 模式（PTC 仍可用）。
-- 不要尝试 presentAs、强制 native、关闭 guard 或修改隔离来“让它先跑起来”；这会让策略与实际执行面不一致。
+- 应用时插件把宿主自带的 native 工具执行器挂到**该会话的 Agent 作用域**（`agent.ctx.tools.setExecutor`），部署级 PTC 执行器和其他会话都不受影响。
+- 该注册的 effect 归 Agent ctx 所有，插件**从不主动释放** —— 这正是 DSH 0.2.2-rc.1 单向释放（tombstone）不会咬到的原因；Agent 销毁时随上下文回收。
+- 代价：这个会话此后不再使用 `run_code`，直到它的 Agent 结束。
+- 报错时只有两种可能：挂载失败，或挂载后工具面仍暴露 PTC 传输；两种情况都不会留下残留（从未释放过执行器），处理方式是该 Team 改用 all-tools 模式，或在会话开始前选 native 预设。
+- 不要绕过 guard、不要关闭隔离、也不要手工 `presentAs`：策略必须与实际执行面一致。
 - 检查点：会话当前 Agent preset、Team 队长/成员的 toolMode、报错是否来自应用阶段还是 spawn_team_member。
 
 ## 3. 成员无法召唤

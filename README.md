@@ -14,7 +14,7 @@ English | [中文](<README.zh.md>)
 
 - **Talk to one member directly.** The composer's Team picker now shows a member panel on hover. Selecting a member injects its role card, tool policy, Team Skills, and model route into the current Session; selecting the captain keeps the Session model unchanged.
 - **DeepSeek Harness 0.2.2-rc.1.** Member routes are recorded through `agent.model.select()` and tool admission is evaluated per step. The plugin refuses an unusable member route before applying anything instead of falling back to the captain.
-- **Custom tool policies are native-only.** On PTC presets the plugin preserves the deployment's executor and explicitly refuses custom allow-lists; PTC still works with the all-tools mode.
+- **Custom tool policies settle the Session's own tool surface.** On a PTC preset, applying a custom allow-list mounts the Harness native tool executor on that Session's Agent scope: the deployment executor and every other Session keep PTC, the Agent owns the registration for its whole life, and the allow-list governs that surface. The Session itself stops using `run_code` from then on.
 - **Built-in troubleshooting skill.** The global `agent-team-presets-troubleshooting` skill explains Team application, member creation, route evidence, Team Skill visibility, and install/upgrade failures.
 
 <a id="project-introduction"></a>
@@ -176,7 +176,7 @@ The captain always follows the Session, so selecting it changes the Team and the
 ## Requirements
 
 - **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`.** Verified against **`0.2.2-rc.1`**. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
-- **Custom tool allow-lists require a native Agent preset (standard or cordis).** This Host cannot restore an inherited executor after a temporary override, so the plugin preserves the deployment's executor and explicitly refuses custom policies on PTC. PTC remains available with the all-tools mode. Select a native Agent preset before using custom policies.
+- **Custom tool allow-lists work on PTC by giving that Session its own native surface.** The Host cannot restore an inherited executor after a release, so the plugin never releases one: on a PTC preset it mounts the Harness native tool executor on the Session's Agent scope and leaves the deployment executor alone. The trade-off is deliberate — that Session stops using `run_code` for the rest of its life, while other Sessions and the all-tools mode keep PTC. If mounting fails, or the surface still exposes the PTC transport afterwards, the application is refused and nothing is left behind, because no executor was ever released.
 - **Agent Teams enabled in the target profile.** The standard integration is `@deepseek-ai/dsh-experimental-agent-team-profile`, which supplies the Team service, tools, and Web roster. This plugin configures and manages Teams; it does not replace that subsystem.
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.

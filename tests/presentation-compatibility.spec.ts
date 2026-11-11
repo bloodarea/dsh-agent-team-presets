@@ -40,7 +40,7 @@ async function setup(program = false) {
     })
   }
   register('read'); register('write')
-  return { ctx, agent, register, bodies, modelSelection, programExecutor }
+  return { ctx, agent, register, bodies, modelSelection, programExecutor, parentScope: parent, parentKey: key }
 }
 
 async function batch(ctx: Context, agent: Agent, names: readonly string[]) {
@@ -63,14 +63,29 @@ describe('nonmutating executor preparation', () => {
     }
   })
 
-  it('refuses PTC without installing a tombstone or changing its inherited executor', async () => {
+  it('gives a PTC Session a native surface on its own scope without releasing anything', async () => {
     const h = await setup(true)
     for (let attempt = 0; attempt < 2; attempt++) {
-      expect(await prepareNativePresentation(h.agent)).toMatchObject({ kind: 'conflict', reason: expect.stringContaining('native Agent preset') })
-      expect((await readWire(h.agent))?.tools).toEqual(['run_code'])
-      await batch(h.ctx, h.agent, [])
+      expect(await prepareNativePresentation(h.agent)).toEqual({ kind: 'already-native' })
+      expect((await readWire(h.agent))?.tools).toEqual(['read', 'write'])
+      // The deployment default keeps its PTC selection: nothing was released and
+      // no inherited executor was replaced.
+      expect(h.parentScope.ctx.tools.selectExecutor(h.parentKey)).toBe(h.programExecutor)
+      const outcomes = (await batch(h.ctx, h.agent, ['read', 'write'])).results.map(row => row.result.isError)
+      expect(outcomes).toEqual([false, false])
     }
-    expect(h.programExecutor.execute).toHaveBeenCalledTimes(2)
+    expect(h.programExecutor.execute).not.toHaveBeenCalled()
+  })
+
+  it('governs the native surface it just installed with a strict allow-list', async () => {
+    const h = await setup(true)
+    expect(await prepareNativePresentation(h.agent)).toEqual({ kind: 'already-native' })
+    const disposeGuard = guardPolicy(h.agent, custom)
+    const disposeFilter = h.agent.ctx.tools.restrict(inheritedFilter(h.agent, custom)!)
+    expect((await readWire(h.agent))?.tools).toEqual(['read'])
+    expect((await batch(h.ctx, h.agent, ['read', 'write'])).results.map(row => row.result.isError)).toEqual([false, true])
+    disposeFilter(); disposeGuard()
+    expect((await readWire(h.agent))?.tools).toEqual(['read', 'write'])
   })
 
   it('keeps an all-tools policy on the inherited PTC executor after disposal', async () => {
