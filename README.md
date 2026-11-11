@@ -6,16 +6,16 @@
 
 English | [中文](<README.zh.md>)
 
-> **Community plugin v0.1.9** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.1.9)
+> **Community plugin v0.2.0** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.0)
 >
 > This release targets **DeepSeek Harness 0.2.2-rc.1** and adds **individual member chat**: hover a Team in the composer, then select one member to run the Session as that member with its own role card, tools, Team Skills, and model route. It also moves member routing to `agent.model.select()` and per-step tool admission. Requires Agent Teams; keep 0.1.8 on older hosts. Prebuilt artifacts are included.
 
-### What's new in 0.1.9
+### What's new in 0.2.0
 
-- **Talk to one member directly.** The composer's Team picker now shows a member panel on hover. Selecting a member injects its role card, tool policy, Team Skills, and model route into the current Session; selecting the captain keeps the Session model unchanged.
-- **DeepSeek Harness 0.2.2-rc.1.** Member routes are recorded through `agent.model.select()` and tool admission is evaluated per step. The plugin refuses an unusable member route before applying anything instead of falling back to the captain.
-- **Custom tool policies settle the Session's own tool surface.** On a PTC preset, applying a custom allow-list mounts the Harness native tool executor on that Session's Agent scope: the deployment executor and every other Session keep PTC, the Agent owns the registration for its whole life, and the allow-list governs that surface. The Session itself stops using `run_code` from then on.
-- **Built-in troubleshooting skill.** The global `agent-team-presets-troubleshooting` skill explains Team application, member creation, route evidence, Team Skill visibility, and install/upgrade failures.
+- **Custom tool policies work on a PTC Session.** Applying a custom allow-list on a PTC preset registers the Harness native tool executor on that Session's Agent scope and never releases it; the deployment executor and every other Session keep PTC, and the Agent owns the registration for its whole life. The trade-off is explicit: that Session stops using `run_code` until it ends. A mount that fails, or a surface that still exposes the PTC transport, is refused without releasing anything, so a refused Session keeps its previous surface.
+- **A spent member allowance is diagnosable.** The creation refusal now reports `N of M` roster slots occupied, names the occupants whose creation never became usable, and states that the Host roster is append-only with no removal API — so a Team that will never summon again is distinguishable from a busy one.
+
+Carried over from 0.1.9: individual member chat from the composer, the Harness 0.2.2-rc.1 adaptation (`agent.model.select()` routes, per-step tool admission), and the built-in troubleshooting skill.
 
 <a id="project-introduction"></a>
 ## Overview
@@ -181,7 +181,7 @@ The captain always follows the Session, so selecting it changes the Team and the
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.1.9`) and the Harness version (`0.2.2-rc.1`, for example) are separate version lines.
+The plugin version (`0.2.0`) and the Harness version (`0.2.2-rc.1`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -223,8 +223,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### Option 3 — reproducible pin (no update prompts)
 
 ```text
-dsh-agent-team-presets@0.1.9
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.9
+dsh-agent-team-presets@0.2.0
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.0
 ```
 
 A fixed version or tag reproduces exactly one release. **A `#tag` GitHub spec is only ever compared against that same tag, so the market never reports an update for it — upgrading means editing the spec by hand.** Use this form only when you need a frozen install.
@@ -245,7 +245,7 @@ npm view dsh-agent-team-presets version
 
 ### Verify and upgrade safely
 
-After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.1.9`, and a running component.
+After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.2.0`, and a running component.
 
 - Back up profile settings, Team definitions, and Session selections before upgrading.
 - When migrating from a development link, remove `@deepseek-ai/dsh-experimental-agent-team-presets` first before enabling the community package.

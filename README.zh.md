@@ -6,16 +6,16 @@
 
 [English](<README.md>) | 中文
 
-> **社区插件 v0.1.9** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.1.9)
+> **社区插件 v0.2.0** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.0)
 >
 > 本版适配 **DeepSeek Harness 0.2.2-rc.1**，新增**与单个成员单独对话**：在输入区悬浮团队后点选成员，即可让当前会话以该成员的角色卡、工具权限、Team Skill 与模型路由运行。成员路由改用 `agent.model.select()`，工具激活按步评估。需要启用 Agent Teams；旧宿主请保留 0.1.8。仓库包含预构建产物，安装时无需构建。
 
-### 0.1.9 更新内容
+### 0.2.0 更新内容
 
-- **与单个成员单独对话。** 输入区的团队选择器在悬浮时展开成员面板；点选成员会把该成员的角色卡、工具策略、Team Skill 与模型路由注入当前会话；点选队长则保持会话模型不变。
-- **适配 DeepSeek Harness 0.2.2-rc.1。** 成员路由通过 `agent.model.select()` 写入，工具激活按步评估；成员路由不可用时在应用前明确拒绝，不会回退到队长。
-- **自定义工具策略会把该会话自己的工具面定下来。** 在 PTC 预设下应用自定义白名单时，插件把宿主自带的 native 工具执行器挂到该会话的 Agent 作用域：部署级执行器与其他会话仍走 PTC，注册归该 Agent 所有并随其销毁，白名单治理这个面。该会话此后不再使用 `run_code`。
-- **内置排障 Skill。** 全局 `agent-team-presets-troubleshooting` 覆盖团队应用、成员创建、路由证据、Team Skill 可见性与安装/升级异常。
+- **PTC 会话可以用自定义工具策略了。** 在 PTC 预设下应用自定义白名单时，插件把宿主自带的 native 工具执行器注册到该会话的 Agent 作用域并从不释放：部署级执行器与其他会话仍走 PTC，注册归该 Agent 所有并随其销毁。代价是明确的 —— 该会话此后不再使用 `run_code`，直到它结束。挂载失败、或挂载后工具面仍暴露 PTC 传输时会拒绝应用，且因为从未释放，会话保留原有工具面。
+- **名额耗尽时能看出是谁占的。** 召唤被拒时现在会报 `N/M` 个 roster 槽位被占用、按名字列出创建从未成功的占位，并说明宿主 roster 只追加、无移除 API —— 让"永远不能再召唤"的团队与"暂时忙"的团队可区分。
+
+沿用 0.1.9：输入区与单个成员单独对话、Harness 0.2.2-rc.1 适配（`agent.model.select()` 路由、按步工具激活）、内置排障 Skill。
 
 <a id="project-introduction"></a>
 ## 项目介绍
@@ -181,7 +181,7 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.1.9`）和 Harness 版本（如 `0.2.2-rc.1`）是不同的版本线。
+插件版本（`0.2.0`）和 Harness 版本（如 `0.2.2-rc.1`）是不同的版本线。
 
 <a id="use-this-package"></a>
 ## 安装与升级
@@ -223,8 +223,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### 方式三 —— 可复现的固定版本（收不到更新提示）
 
 ```text
-dsh-agent-team-presets@0.1.9
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.1.9
+dsh-agent-team-presets@0.2.0
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.0
 ```
 
 固定版本号或固定标签只能复现一个确定的发布。**带 `#标签` 的 GitHub 规格只会与同一个标签比对，市场永远不会提示更新——升级只能手动改规格。** 只在确实需要冻结安装时使用这种形式。
@@ -245,7 +245,7 @@ npm view dsh-agent-team-presets version
 
 ### 确认安装并安全升级
 
-安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.1.9`，且组件处于运行中状态。
+安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.2.0`，且组件处于运行中状态。
 
 - 升级前备份 profile 设置、团队定义与会话选择记录。
 - 从开发链接迁移时，先通过插件管理器移除 `@deepseek-ai/dsh-experimental-agent-team-presets`，再启用社区包。

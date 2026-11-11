@@ -47,7 +47,7 @@ export const BUILTIN_SKILL_CONTENT: string = `# Agent Team Presets 使用问题�
 | 现象 | 先查 | 常见原因 | 处理 |
 |---|---|---|---|
 | 选中团队但不生效 | 当前会话 Team selection、应用状态、报错文本 | Team 无效、被 quarantine、任务运行中冻结、Agent preset 不兼容 | 修复预设或换 Team；等队长/成员 idle；必要时换 Agent preset |
-| 自定义工具策略被拒 | 报错是否提到 native Agent preset / PTC | DSH rc.1 无法在临时覆盖执行器后恢复继承执行器，插件主动拒绝 | 改用 all-tools，或先把 Agent preset 换成 standard/cordis |
+| 自定义工具策略被拒 | 报错是否提到 native executor / run_code 仍暴露 | 挂载 native 执行器失败，或挂载后工具面仍含 PTC 传输 | 改用 all-tools，或在会话开始前换 standard/cordis 预设；两种情况都不会留下残留 |
 | 成员无法召唤 | 报错文本、成员快照、subagent provider、存储 | 无 member runtime、无存储、无 spawn/fork 后端、深度/配额、快照损坏、技能目录无法发布 | 按报错逐项修复；不要绕过标记或隔离 |
 | 成员模型与配置不符 | configuredRoute、model/selection、request/header、成员快照 route；list_agents 的 model 仅作展示 | 展示值 fallback（list_agents 可能返回错误/继承模型）；预设未保存；provider 不支持该模型/effort；成员路由在召唤时读取 | 以运行证据为准；三处运行证据一致而 list_agents 不同时，判定为展示问题，实际路由正确 |
 | Team Skill 不可见 | 是否已分配给正确 roleId、skill 工具是否可见、库是否打开 | 分配错角色、成员创建早于目录发布、宿主隐藏 skill 工具、存储未打开 | 重新分配/重建成员；检查库与绑定 |
