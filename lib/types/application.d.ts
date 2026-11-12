@@ -19,7 +19,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm';
-import type { SessionId } from '@deepseek-ai/dsh-session';
+import { SessionId } from '@deepseek-ai/dsh-session';
 import type { ConfiguredMemberRoute } from './presets.ts';
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from './types.ts';
 import type { MemberRuntime } from './member-runtime.ts';
@@ -168,6 +168,29 @@ export declare function assertTeamApplicable(agent: Agent, team: TeamPreset): vo
  * @returns the refusal text, or undefined when every named capability is reachable.
  */
 export declare function capabilityRefusal(agent: Agent, team: TeamPreset, target?: TeamApplicationTarget): string | undefined;
+/**
+ * One roster line this refusal can act on.
+ *
+ * The roster is the only place that knows whether an occupied slot belongs to a
+ * member that still runs, or to a creation that never became usable. Without that
+ * split the captain cannot tell a busy Team from one that will never summon again.
+ */
+export interface SpawnRosterEntry {
+    readonly name: string;
+    readonly status: string;
+}
+/**
+ * Explain one failed creation in terms the captain can act on.
+ *
+ * The two limits are different: an activity slot frees itself when a member
+ * finishes, while a used-up Team allowance never comes back. The official text
+ * is always preserved verbatim inside the explanation, because it carries the
+ * exact numbers the Host decided with.
+ * @param error - the failure `startActivation` reported.
+ * @param roster - current roster rows, used to name the slots that never became usable.
+ * @returns the model-facing explanation.
+ */
+export declare function classifySpawnFailure(error: unknown, roster?: readonly SpawnRosterEntry[]): string;
 /**
  * Apply one Team preset to one live Session.
  *

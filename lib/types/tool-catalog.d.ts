@@ -9,7 +9,7 @@
 import { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type { TeamExecutionMonitor } from './execution.ts';
-import type { TeamExecutionSnapshot, ToolCatalogValue } from './types.ts';
+import type { TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         /** Remote catalog of restrictable tools for the Team presets settings page. */
@@ -24,11 +24,18 @@ export interface TeamPresetsToolCatalogConfig {
      * an execution state it cannot know.
      */
     readonly monitor?: TeamExecutionMonitor;
+    /**
+     * Preset members one Session's Team has summoned, read from the durable member
+     * snapshots. Omitted in a composition that mounts no member runtime, which then
+     * reports an empty roster instead of inventing members.
+     */
+    readonly roster?: (sessionId: string) => TeamRosterValue;
 }
 /** Remote catalog of the deployment's inherited and Team tool names. */
 export default class TeamPresetsToolCatalog extends TypertRemoteService {
     static inject: string[];
     private readonly monitor;
+    private readonly rosterSource;
     /**
      * @param ctx - Host context carrying the tool registry and Typert gateway.
      * @param config - the preset runtime's execution monitor, when it is mounted.
@@ -57,5 +64,14 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
      * @param signal - cancellation owned by the Remote stream carrier.
      * @returns whole-set frames, opening with the current state.
      */
+    /**
+     * List the preset members one Session's Team has summoned.
+     *
+     * Progressive disclosure: the header control is absent until this answers at
+     * least one member, so an unsummoned Team adds nothing to the session chrome.
+     * @param sessionId - the Session root whose roster is read.
+     * @returns the roster, empty when this Session summoned no preset member.
+     */
+    roster(sessionId: string): Promise<TeamRosterValue>;
     execution(signal: AbortSignal): AsyncIterable<TeamExecutionSnapshot>;
 }

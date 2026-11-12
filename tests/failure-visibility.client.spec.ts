@@ -57,9 +57,11 @@ describe('default preset restore visibility', () => {
   it('offers the restore on the Team list and wires it to the controller', () => {
     expect(listView).toContain('props.onRestoreDefaults')
     expect(listView).toContain("t('restoreDefaults')")
-    // The button says what it does and does not do, so a reader knows the local
-    // routes survive and their own Teams are untouched.
-    expect(listView).toContain("t('restoreDefaultsHint')")
+    // The rule lives in the confirmation the button opens: a reader still learns
+    // what is reset and what survives, without a standing paragraph on the list.
+    expect(listView).toContain("t('restoreConfirmTitle')")
+    expect(listView).toContain("t('restoreConfirmBody')")
+    expect(listView).toContain('confirmRestore')
     expect(section).toContain('props.restoreDefaults()')
   })
 

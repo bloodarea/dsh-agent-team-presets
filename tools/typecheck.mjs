@@ -11,11 +11,12 @@ if (!checkout || !existsSync(join(checkout, 'tsconfig.base.json'))) throw new Er
 const harness = resolve(checkout)
 const require = createRequire(join(harness, 'package.json'))
 const ts = require('typescript')
-const clientRequire = createRequire(join(harness, 'packages/experimental/agent-team-presets/package.json'))
+// This package manages its own React typings; the checkout only supplies Harness sources.
+const clientRequire = createRequire(join(root, 'package.json'))
 const reactTypes = dirname(clientRequire.resolve('@types/react/package.json'))
 const base = ts.readConfigFile(join(harness, 'tsconfig.base.json'), ts.sys.readFile)
 const paths = Object.fromEntries(Object.entries(base.config.compilerOptions.paths).map(([key, values]) => [key, values.map(value => resolve(harness, value))]))
-paths['@deepseek-ai/dsh-experimental-client-ui-agent-team/client'] = [join(harness, 'packages/experimental/client-ui-agent-team/src/client/index.ts')]
+paths['@deepseek-ai/dsh-client-ui-agent-team/client'] = [join(harness, 'packages/client/ui-agent-team/src/client/index.ts')]
 paths['react'] = [join(reactTypes, 'index.d.ts')]
 paths['react/*'] = [join(reactTypes, '*.d.ts')]
 paths['dsh-agent-team-presets/remote'] = [join(root, 'lib/typert.remote-client.d.ts')]
@@ -31,7 +32,10 @@ for (const face of ['host', 'client']) {
   delete parsed.options.rootDir
   const program = ts.createProgram(parsed.fileNames, parsed.options)
   const diagnostics = ts.getPreEmitDiagnostics(program)
-  const ours = diagnostics.filter(row => row.file === undefined || isWithinDirectory(root, row.file.fileName))
+  // A checkout may live inside `node_modules` of this workspace; its sources are
+  // inputs, not this package's code, so they never count as local diagnostics.
+  const ours = diagnostics.filter(row => row.file === undefined
+    || (isWithinDirectory(root, row.file.fileName) && !isWithinDirectory(join(root, 'node_modules'), row.file.fileName)))
   if (ours.length) {
     console.error(ts.formatDiagnosticsWithColorAndContext(ours, { getCanonicalFileName: name => name, getCurrentDirectory: () => root, getNewLine: () => '\n' }))
     process.exitCode = 1

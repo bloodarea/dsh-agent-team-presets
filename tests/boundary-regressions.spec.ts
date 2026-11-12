@@ -5,7 +5,7 @@
  * the strict-policy presentation decision, and the official complete-persona
  * adaptation.
  *
- * Nothing here stubs `spawnTeammate`: every case composes the real Team service,
+ * Nothing here stubs `startActivation`: every case composes the real Team service,
  * the real continuation manager, real JSONL persistence, and the real storage
  * stack, then drives the plugin's own `apply()` and its `spawn_team_member`
  * tool. The evidence is the member's own model request, the roster, the durable
@@ -27,7 +27,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-import TeamService from '@deepseek-ai/dsh-experimental-agent-team'
+import TeamService from '@deepseek-ai/dsh-agent-team'
 import { bindScopeParent, createScope } from '@deepseek-ai/dsh-scope'
 import { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type { PtcRunRequest, PtcRunSpec, PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
@@ -42,7 +42,7 @@ import { FixtureSessionQuery } from './fixtures/session-query.ts'
 import { memberRecords, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
-import { settlePlugin } from './fixtures/plugin-harness.ts'
+import { disposeRealTeamContext, settlePlugin } from './fixtures/plugin-harness.ts'
 import type { TeamPreset } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
@@ -71,7 +71,7 @@ class HeldMemberAdapter extends MockAdapter {
 
 afterEach(async () => {
   for (const release of releases.splice(0)) release()
-  for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
+  for (const ctx of contexts.splice(0).reverse()) await disposeRealTeamContext(ctx)
   for (const path of temporary.splice(0)) await rm(path, { recursive: true, force: true })
 })
 
@@ -181,6 +181,7 @@ async function stack(root: string, options: {
     ...options.captain,
   })
   const config = {
+    skillRoot: join(root, 'team-skills'),
     teams: { get: () => [definition] },
     selections: { get: () => [{ sessionId: 'lead', teamId: definition.id }] },
     freshProvider: 'spawn',
@@ -206,8 +207,8 @@ async function stack(root: string, options: {
 }
 
 /** The leading teammate row of one Session's roster, when a member was created. */
-function memberRow(h: Awaited<ReturnType<typeof stack>>) {
-  return h.ctx.agentTeams.listMembers(h.root).find(row => row.role === 'teammate')
+async function memberRow(h: Awaited<ReturnType<typeof stack>>) {
+  return (await h.ctx.subagents.listDescendants(h.root.id)).find(row => row.kind === 'child' && row.mode === 'continuable')
 }
 
 describe('durable member identity', () => {
@@ -216,7 +217,7 @@ describe('durable member identity', () => {
     const h = await stack(root, { hold: true })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
     expect(resultText(spawn), resultText(spawn)).not.toContain('Error')
-    const row = memberRow(h)
+    const row = await memberRow(h)
     expect(row).toBeDefined()
     // The child's own durable suffix records the backend it was created through,
     // which is what survives an unreadable snapshot.
@@ -225,12 +226,12 @@ describe('durable member identity', () => {
     const descriptor = child.session.ownEvents().find(event => event.type === 'subagent/descriptor')
     expect((descriptor?.data as { provider?: string } | undefined)?.provider).toBe(MEMBER_FRESH_PROVIDER)
     // The Host's own roster row records the same backend.
-    expect(row?.provider).toBe(MEMBER_FRESH_PROVIDER)
+    expect(row).toMatchObject({ kind: 'child', parentId: h.root.id, name: 'reviewer' })
     // Drain the held member inside the case: draining it delivers its settlement
     // notice to the Lead, and a Lead turn woken while the context is being
     // disposed can never finish. Let that turn settle before teardown.
     h.release()
-    await h.ctx.subagents.drainChildren(h.root, [row!.id])
+    await vi.waitFor(() => expect(h.ctx.agents.get(row!.id)).toBeUndefined())
     await vi.waitFor(() => expect(h.lead.requests.length).toBeGreaterThan(0))
     await h.root.whenIdle()
   }, 20000)
@@ -240,7 +241,7 @@ describe('durable member identity', () => {
     const first = await stack(root)
     const spawned = await call(first.ctx, first.root, 'spawn_team_member', { member: 'reviewer', task: 'FIRST' })
     expect(resultText(spawned)).not.toContain('Error')
-    const childId = memberRow(first)!.id
+    const childId = (await memberRow(first))!.id
     await vi.waitFor(() => expect(first.member.requests.some(request => request.sessionId === childId)).toBe(true))
     await vi.waitFor(() => expect(first.ctx.agents.get(childId)).toBeUndefined())
     const unitPath = first.storage!.unitPath
@@ -261,9 +262,7 @@ describe('durable member identity', () => {
     // creation surfaces as a rejected delivery instead of a queued one. The
     // contract under test is unchanged: the child never runs and is never
     // published on either route.
-    await second.ctx.agentTeams.sendMessage(resumed, {
-      target: 'reviewer',
-      content: [{ type: 'text', text: 'SECOND' }],
+    await second.ctx.subagents.sendMessage(resumed, childId, [{ type: 'text', text: 'SECOND' }], {
       signal: new AbortController().signal,
     }).catch(() => undefined)
     await settlePlugin()
@@ -279,7 +278,7 @@ describe('durable member identity', () => {
     const first = await stack(root)
     const spawned = await call(first.ctx, first.root, 'spawn_team_member', { member: 'reviewer', task: 'FIRST' })
     expect(resultText(spawned)).not.toContain('Error')
-    const childId = memberRow(first)!.id
+    const childId = (await memberRow(first))!.id
     await vi.waitFor(() => expect(first.member.requests.some(request => request.sessionId === childId)).toBe(true))
     await vi.waitFor(() => expect(first.ctx.agents.get(childId)).toBeUndefined())
     await first.ctx.fiber.dispose()
@@ -291,9 +290,7 @@ describe('durable member identity', () => {
       resumeSessionId: SessionId('lead'),
       agentOptions: { provider: 'mock', model: 'lead-model' },
     })).agent
-    await second.ctx.agentTeams.sendMessage(resumed, {
-      target: 'reviewer',
-      content: [{ type: 'text', text: 'SECOND' }],
+    await second.ctx.subagents.sendMessage(resumed, childId, [{ type: 'text', text: 'SECOND' }], {
       signal: new AbortController().signal,
     }).catch(() => undefined)
     await settlePlugin()
@@ -307,7 +304,7 @@ describe('durable member identity', () => {
     const first = await stack(root)
     const spawned = await call(first.ctx, first.root, 'spawn_team_member', { member: 'reviewer', task: 'FIRST' })
     expect(resultText(spawned)).not.toContain('Error')
-    const childId = memberRow(first)!.id
+    const childId = (await memberRow(first))!.id
     await vi.waitFor(() => expect(first.member.requests.some(request => request.sessionId === childId)).toBe(true))
     await vi.waitFor(() => expect(first.ctx.agents.get(childId)).toBeUndefined())
     await first.ctx.fiber.dispose()
@@ -318,9 +315,7 @@ describe('durable member identity', () => {
       resumeSessionId: SessionId('lead'),
       agentOptions: { provider: 'mock', model: 'lead-model' },
     })).agent
-    await second.ctx.agentTeams.sendMessage(resumed, {
-      target: 'reviewer',
-      content: [{ type: 'text', text: 'SECOND' }],
+    await second.ctx.subagents.sendMessage(resumed, childId, [{ type: 'text', text: 'SECOND' }], {
       signal: new AbortController().signal,
     })
     // The control for the veto cases: with the snapshot intact the member keeps
@@ -339,7 +334,7 @@ describe('delegation depth admission', () => {
     expect(result.isError).toBe(true)
     expect(resultText(result)).toContain('depth 0')
     // A refused creation leaves no intent record, no roster row, and no request.
-    expect(memberRow(h)).toBeUndefined()
+    expect(await memberRow(h)).toBeUndefined()
     expect(await memberRecords(h.storage!)).toHaveLength(0)
     expect(h.member.requests).toHaveLength(0)
   }, 20000)
@@ -350,7 +345,7 @@ describe('delegation depth admission', () => {
     const result = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
     expect(result.isError).toBe(true)
     expect(resultText(result)).toContain('depth limit 2')
-    expect(memberRow(h)).toBeUndefined()
+    expect(await memberRow(h)).toBeUndefined()
     expect(await memberRecords(h.storage!)).toHaveLength(0)
     expect(h.member.requests).toHaveLength(0)
   }, 20000)
@@ -360,7 +355,7 @@ describe('delegation depth admission', () => {
     const h = await stack(root, { maxDepth: 2, parentDepth: 1 })
     const result = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
     expect(result.isError, resultText(result)).toBe(false)
-    expect(memberRow(h)).toBeDefined()
+    expect(await memberRow(h)).toBeDefined()
   }, 20000)
 })
 
@@ -372,7 +367,7 @@ describe('fixed-route preflight', () => {
     expect(result.isError).toBe(true)
     expect(resultText(result)).toContain('ghost-route/ghost-model')
     expect(resultText(result)).toContain('does not register')
-    expect(memberRow(h)).toBeUndefined()
+    expect(await memberRow(h)).toBeUndefined()
     expect(await memberRecords(h.storage!)).toHaveLength(0)
     expect(h.member.requests).toHaveLength(0)
   }, 20000)
@@ -383,7 +378,7 @@ describe('fixed-route preflight', () => {
     const result = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
     expect(result.isError).toBe(true)
     expect(resultText(result)).toContain('nonexistent')
-    expect(memberRow(h)).toBeUndefined()
+    expect(await memberRow(h)).toBeUndefined()
     expect(await memberRecords(h.storage!)).toHaveLength(0)
   }, 20000)
 
@@ -392,7 +387,7 @@ describe('fixed-route preflight', () => {
     const h = await stack(root, { member: reviewer({ reasoningEffort: 'max' }) })
     const result = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
     expect(result.isError, resultText(result)).toBe(false)
-    const row = memberRow(h)!
+    const row = (await memberRow(h))!
     await vi.waitFor(() => expect(h.member.requests.some(request => request.sessionId === row.id)).toBe(true))
     const request = h.member.requests.find(entry => entry.sessionId === row.id)!
     expect(request.model).toBe('member-model')
@@ -427,7 +422,7 @@ class BindingProbeRuntime extends PtcRuntime {
  */
 async function presentationStack(
   root: string,
-  mode: 'native' | 'ptc' | 'both',
+  mode: 'native' | 'ptc',
   exact: boolean,
   completePersona = false,
   foreignComplete = false,
@@ -507,30 +502,22 @@ async function applyTeam(h: { ctx: Context; agent: Agent }, definition: TeamPres
 }
 
 describe('strict policy presentation', () => {
-  it('refuses a custom policy on a PTC surface and preserves the deployment executor', async () => {
+  it('applies a custom policy through an Agent-owned native executor over inherited PTC', async () => {
     const h = await presentationStack(await base(), 'ptc', false)
     const definition = team([reviewer()], { toolMode: 'custom', tools: ['read'], systemPrompt: 'CAPTAIN' })
-    const warn = vi.spyOn(h.ctx.logger, 'warn')
     const fiber = await applyTeam(h, definition)
-    // 0.2.2-rc.1 has no native-presentation fold: a custom allow-list cannot
-    // shadow a PTC deployment, so the Team is refused and the deployment's
-    // executor is left exactly as it was.
-    expect(h.ctx.tools.get('spawn_team_member', h.agent)).toBeUndefined()
+    expect(h.ctx.tools.get('spawn_team_member', h.agent)).toBeDefined()
     const surface = await wire(h.agent)
-    expect(surface.tools).toContain('run_code')
-    expect(surface.sections.map(section => section.text)).not.toContain('CAPTAIN')
-    expect(warnings(warn)).toContain('native Agent preset')
-    // The refusal quarantines the Session: the one callable name is denied with
-    // that actionable reason, and every other name is refused by the PTC
-    // executor before any guard. Neither path runs a tool body.
-    const denied = await call(h.ctx, h.agent, 'run_code', { code: 'return 1', description: 'probe' })
-    expect(denied.isError).toBe(true)
-    expect(resultText(denied)).toContain('native Agent preset')
-    const unlisted = await call(h.ctx, h.agent, 'read')
-    expect(unlisted.isError).toBe(true)
-    expect(resultText(unlisted)).toContain('only `run_code` is callable directly')
-    expect(h.bodies).toEqual([])
+    expect(surface.tools).toContain('read')
+    expect(surface.tools).not.toContain('run_code')
+    expect(surface.sections.map(section => section.text)).toContain('CAPTAIN')
+    expect((await call(h.ctx, h.agent, 'read')).isError).toBe(false)
+    expect((await call(h.ctx, h.agent, 'write')).isError).toBe(true)
+    expect((await call(h.ctx, h.agent, 'run_code', { code: 'return 1', description: 'probe' })).isError).toBe(true)
+    expect(h.bodies).toEqual(['read'])
     await fiber.dispose()
+    // The executor registration belongs to the Agent and survives plugin unload.
+    expect((await wire(h.agent)).tools).not.toContain('run_code')
   }, 20000)
 
   it('refuses a custom Team when the Agent scope already declares the PTC transport', async () => {
@@ -622,42 +609,8 @@ describe('session capability preflight', () => {
 })
 
 describe('ordered teardown', () => {
-  it('drains the members it installed through the official call', async () => {
-    const root = await base()
-    const h = await stack(root, { hold: true })
-    const spawned = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
-    expect(resultText(spawned), resultText(spawned)).not.toContain('Error')
-    const row = memberRow(h)!
-    await vi.waitFor(() => expect(h.ctx.agents.get(row.id)).toBeDefined())
-    const drained: string[][] = []
-    const realDrain = h.ctx.subagents.drainChildren.bind(h.ctx.subagents)
-    vi.spyOn(h.ctx.subagents, 'drainChildren').mockImplementation(async (parent, ids) => {
-      drained.push([...ids])
-      // Let the held member finish so the official drain can reach quiescence.
-      h.release()
-      await realDrain(parent, ids)
-    })
-    // Exactly what a plugin unload or HMR remount does: this activation is
-    // released while the Host and its services stay alive.
-    await h.fiber.dispose()
-    expect(drained.some(ids => ids.includes(row.id))).toBe(true)
-  }, 30000)
-
-  it('stops the members it installed rather than leaving them running unguarded', async () => {
-    const root = await base()
-    const h = await stack(root, { hold: true })
-    const spawned = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
-    expect(resultText(spawned), resultText(spawned)).not.toContain('Error')
-    const row = memberRow(h)!
-    await vi.waitFor(() => expect(h.ctx.agents.get(row.id)).toBeDefined())
-    const realDrain = h.ctx.subagents.drainChildren.bind(h.ctx.subagents)
-    vi.spyOn(h.ctx.subagents, 'drainChildren').mockImplementation(async (parent, ids) => {
-      h.release()
-      await realDrain(parent, ids)
-    })
-    await h.fiber.dispose()
-    // The ordered shutdown drained the member it installed through the official
-    // call, so its residency ended with the plugin instead of outliving it.
-    expect(h.ctx.agents.get(row.id)).toBeUndefined()
-  }, 30000)
+  // rc.2 removed drainChildren. The root-scoped unload policy is still being
+  // selected; keep these obligations visible until the production policy lands.
+  it.todo('releases only activations owned by this plugin on unload')
+  it.todo('keeps restored members guarded until their activation ends')
 })

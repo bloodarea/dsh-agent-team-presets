@@ -8,7 +8,13 @@
  * both facts in one place instead of repeating them in each fixture.
  */
 
-import type {} from '@deepseek-ai/dsh-subagent'
+import { vi } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SubagentActivation, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
+import { SubagentError } from '@deepseek-ai/dsh-subagent'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 
 /**
  * Let the plugin's queued work settle before an assertion.
@@ -49,8 +55,8 @@ export async function settlePlugin(): Promise<void> {
  * @throws when the application did not settle in time.
  */
 export async function waitForTeamApplication(
-  ctx: { tools: { get: (name: string, agent: unknown) => unknown } },
-  agent: unknown,
+  ctx: Pick<Context, 'tools'>,
+  agent: Agent,
   timeoutMs = 5000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
@@ -67,21 +73,40 @@ export async function waitForTeamApplication(
   throw new Error('the Team application did not settle before the deadline')
 }
 
+/** Drain real fixture children and their parent notices before unmounting the runtime. */
+export async function disposeRealTeamContext(ctx: Context): Promise<void> {
+  const roots = ctx.agents.list().filter(agent => agent.session.header.origin !== 'subagent')
+  await ctx.subagents.drainDescendants(roots)
+  for (const root of roots) await root.whenIdle()
+  await ctx.fiber.dispose()
+}
+
 /** Knobs for {@link subagentServiceDouble}. */
 export interface SubagentDoubleOptions {
   /** Provider names this deployment registers. Defaults to the plugin's own defaults. */
   readonly providers?: readonly string[]
   /** Absolute delegation depth cap the deployment resolves. Defaults to 2. */
   readonly maxDepth?: number | undefined
+  readonly rootOf?: (agent: Agent) => Agent
+  readonly namesOf?: (agent: Agent) => { self: string; parent?: string }
+  readonly startActivation?: (spec: SubagentActivationSpec) => Promise<SubagentActivation>
+  readonly members?: (root: Agent) => readonly DoubleMember[]
+}
+
+/** Test-owned catalog/live rows; these never replace the real-service integration stack. */
+export interface DoubleMember {
+  readonly id: string
+  readonly name: string
+  readonly role?: string
+  readonly status: string
 }
 
 /**
  * Minimal stand-in for the official `subagents` service.
  *
- * The plugin registers one delegating alias per configured provider and asks
- * for the deployment's depth cap, so the double answers exactly those two
- * questions. It never runs a child: a spec that needs real member execution
- * mounts the official `Subagents` plus a real provider instead.
+ * Supplies provider discovery, tree identity and start admission independently
+ * of execution. Tests can inspect an accepted activation through the callback;
+ * real member execution mounts the official `Subagents` and providers instead.
  * @param options - provider names and the resolved depth cap.
  * @returns a service object suitable for `ctx.provide('subagents', …)`.
  */
@@ -89,7 +114,7 @@ export function subagentServiceDouble(options: SubagentDoubleOptions = {}): Reco
   const providers = options.providers ?? ['spawn', 'fork']
   const provider = (name: string): Record<string, unknown> => ({
     name,
-    capabilities: { agentOptions: true, outputSchema: false, depthLimit: true, toolFilter: true, persona: true },
+    capabilities: { agentOptions: true, agentPreset: true, outputSchema: false, depthLimit: true },
     inheritsParentContext: name !== 'spawn',
     // Presence of this method IS the continuable capability.
     prepareContinuable: async () => ({}),
@@ -100,7 +125,75 @@ export function subagentServiceDouble(options: SubagentDoubleOptions = {}): Reco
     getProvider: (name: string) => providers.includes(name) ? provider(name) : undefined,
     list: () => [...providers],
     resolveMaxDepth: () => options.maxDepth ?? 2,
-    drainChildren: async () => {},
+    rootOf: options.rootOf ?? ((agent: Agent) => {
+      if (agent.session.header.origin === 'subagent') throw new SubagentError('fixture child is unpublished', 'UNAUTHORIZED')
+      return agent
+    }),
+    namesOf: options.namesOf ?? (() => ({ self: 'lead' })),
+    startActivation: options.startActivation ?? (async () => { throw new Error('the subagent double does not run children') }),
+    interrupt: () => {},
     drainDescendants: async () => {},
   }
+}
+
+/** A minimal accepted activation for specs that inspect start admission, never child execution. */
+export function acceptedActivation(spec: SubagentActivationSpec): SubagentActivation {
+  if (spec.childId === undefined) throw new Error('fixture requires a reserved child identity')
+  return {
+    childId: spec.childId, name: spec.name ?? 'member', messageId: MessageId('fixture-message'),
+    result: Promise.resolve({ output: [], stopReason: 'completed' }),
+    dispose: async () => {},
+  }
+}
+
+/** Mount rc.2 discovery doubles and project test-owned rows onto the real projection seam. */
+export function mountSubagentDouble(ctx: Context, options: SubagentDoubleOptions = {}): void {
+  const list = ctx.agents.list.bind(ctx.agents)
+  const snapshot = ctx.sessionProjections.snapshot.bind(ctx.sessionProjections)
+  const synthetic = new Map<string, { agent: Agent; root: Agent; name: string }>()
+  const refresh = (): Agent[] => {
+    const live = list()
+    synthetic.clear()
+    for (const root of live.filter(agent => agent.session.header.origin !== 'subagent')) {
+      for (const row of options.members?.(root) ?? []) {
+        if (row.role === 'lead' || (row.status !== 'running' && row.status !== 'provisioning')) continue
+        if (live.some(agent => agent.id === row.id)) continue
+        const id = SessionId(row.id)
+        const session = new Proxy(root.session, { get(target, key) {
+          if (key === 'id') return id
+          if (key === 'header') return { ...target.header, id, origin: 'subagent' }
+          if (key === 'ownEvents' || key === 'snapshotEvents') return () => []
+          return Reflect.get(target, key, target)
+        } })
+        const agent = new Proxy(root, { get(target, key) {
+          if (key === 'id') return id
+          if (key === 'status') return 'running'
+          if (key === 'session') return session
+          return Reflect.get(target, key, target)
+        } })
+        synthetic.set(row.id, { agent, root, name: row.name })
+      }
+    }
+    return [...live, ...[...synthetic.values()].map(entry => entry.agent)]
+  }
+  vi.spyOn(ctx.agents, 'list').mockImplementation(refresh)
+  vi.spyOn(ctx.sessionProjections, 'snapshot').mockImplementation((...args) => {
+    const result = snapshot(...args)
+    const root = list().find(agent => agent.session === args[0])
+    if (root === undefined || options.members === undefined) return result
+    const catalog = options.members(root).filter(row => row.role !== 'lead').map(row => ({
+      id: SessionId(row.id), name: row.name, mode: 'continuable', provider: 'spawn', createdAt: 0,
+    }))
+    return { ...result, values: { ...result.values, subagentCatalog: catalog } } as typeof result
+  })
+  const fallback = subagentServiceDouble(options)
+  ctx.provide('subagents', {
+    ...fallback,
+    rootOf: (agent: Agent) => synthetic.get(agent.id)?.root ?? options.rootOf?.(agent)
+      ?? (fallback.rootOf as (agent: Agent) => Agent)(agent),
+    namesOf: (agent: Agent) => {
+      const entry = synthetic.get(agent.id)
+      return entry === undefined ? options.namesOf?.(agent) ?? { self: 'lead' } : { self: entry.name, parent: 'lead' }
+    },
+  })
 }

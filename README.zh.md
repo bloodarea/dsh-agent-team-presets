@@ -6,16 +6,24 @@
 
 [English](<README.md>) | 中文
 
-> **社区插件 v0.2.0** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.0)
+> **社区插件 v0.2.1** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.1)
 >
-> 本版适配 **DeepSeek Harness 0.2.2-rc.1**，新增**与单个成员单独对话**：在输入区悬浮团队后点选成员，即可让当前会话以该成员的角色卡、工具权限、Team Skill 与模型路由运行。成员路由改用 `agent.model.select()`，工具激活按步评估。需要启用 Agent Teams；旧宿主请保留 0.1.8。仓库包含预构建产物，安装时无需构建。
+> 本版适配 **DeepSeek Harness 0.2.2-rc.2**：该版本的 Team 子系统不再创建队友，成员改由标准 subagent 运行时创建，不再需要安装 Agent Teams bundle。这是破坏性的宿主要求：0.2.2-rc.1 请保留 0.2.0。仓库包含预构建产物，安装时无需构建。
+
+### 0.2.1 更新内容
+
+- **成员就是标准 subagent。** `spawn_team_member` 改用 `ctx.subagents.startActivation` 创建成员，并在成员快照里预写子会话身份，因此成员自己的模型路由、角色提示词、团队上下文与严格工具策略仍然对它**第一次**模型请求生效。
+- **不再需要 Agent Teams bundle。** 树归属与执行状态改从 subagent 运行时的 catalog、在线 Agent 与创建准入记录读取，不再依赖已移除的 Team 名册、消息与成员接口。
+- **卸载只停止本插件启动的那些实例。** 每次创建的回执都会保留并在卸载时释放；rc.2 没有针对单个冷恢复成员的选择性释放能力，因此这类成员只中断当前工作，其 Agent 作用域内的策略一直保留到 Agent 销毁。
+- **会话头部重新显示团队。** 按官方 `agent-team` 客户端源码复刻 rc.1 的头部动作：队长与本次会话已召唤成员的名册，每行带实时状态与所用模型。队长行只读，成员行可跳到该成员会话；下方是共享任务区，逐条给状态、依赖、写入范围与可展开描述。仅当部署的团队开关打开、且本会话已选预设时渲染。
+- **对 0.2.2-rc.2 宿主的适配。** 名册改按本会话的成员快照与团队选择读取（不再依赖被移除的 Team 投影）；样式里的阴影 token 改为 `--dsw-elevation-stroke-color`；远端契约测试同时接受惰性 `spec` 与内联 schema 两种产物形态。
 
 ### 0.2.0 更新内容
 
 - **PTC 会话可以用自定义工具策略了。** 在 PTC 预设下应用自定义白名单时，插件把宿主自带的 native 工具执行器注册到该会话的 Agent 作用域并从不释放：部署级执行器与其他会话仍走 PTC，注册归该 Agent 所有并随其销毁。代价是明确的 —— 该会话此后不再使用 `run_code`，直到它结束。挂载失败、或挂载后工具面仍暴露 PTC 传输时会拒绝应用，且因为从未释放，会话保留原有工具面。
 - **名额耗尽时能看出是谁占的。** 召唤被拒时现在会报 `N/M` 个 roster 槽位被占用、按名字列出创建从未成功的占位，并说明宿主 roster 只追加、无移除 API —— 让"永远不能再召唤"的团队与"暂时忙"的团队可区分。
 
-沿用 0.1.9：输入区与单个成员单独对话、Harness 0.2.2-rc.1 适配（`agent.model.select()` 路由、按步工具激活）、内置排障 Skill。
+沿用 0.1.9：输入区与单个成员单独对话、`agent.model.select()` 成员路由、按步工具激活、内置排障 Skill。
 
 <a id="project-introduction"></a>
 ## 项目介绍
@@ -26,7 +34,7 @@
 
 - 队长使用当前会话选择的模型，并拥有独立的角色描述、系统提示词和工具策略。
 - 每个成员可分别配置提供商、模型、推理强度、系统提示词、工具策略与专属 Team Skill。
-- 队长通过 `spawn_team_member` 召唤成员；消息、共享任务板和运行时协作由原生 Agent Teams 提供。
+- 队长通过 `spawn_team_member` 召唤成员；消息投递、执行与生命周期由 Harness 的 subagent 运行时提供。
 
 本项目是社区插件，不是 Harness 随附的 `@deepseek-ai/dsh-experimental-agent-team-presets` 开发包。
 
@@ -175,13 +183,13 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="requirements"></a>
 ## 环境要求
 
-- **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.1`**。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
+- **DeepSeek Harness `>=0.2.2-rc.2 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.2`**；0.2.2-rc.1 及更旧版本会被拒绝。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
 - **自定义工具白名单在 PTC 下通过给该会话一个自己的 native 面来工作。** 宿主无法在释放执行器后恢复继承，所以插件从不主动释放：在 PTC 预设下它把宿主自带的 native 工具执行器挂到该会话的 Agent 作用域，部署级执行器保持原样。代价是明确的：该会话此后不再使用 `run_code`，而其他会话与「所有工具」模式继续走 PTC。若挂载失败、或挂载后工具面仍暴露 PTC 传输，则应用被拒绝且不留残留 —— 因为从未释放过任何执行器。
-- **目标 profile 已启用 Agent Teams。** 标准集成是 `@deepseek-ai/dsh-experimental-agent-team-profile`，提供团队服务、工具和 Web 名册。本插件负责配置与管理团队，不替代该子系统。
+- **无需 Agent Teams bundle。** 成员通过部署自带的可继续执行 subagent 后端创建；原生消息、任务工具与 Web 名册不受本插件影响。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.2.0`）和 Harness 版本（如 `0.2.2-rc.1`）是不同的版本线。
+插件版本（`0.2.1`）和 Harness 版本（如 `0.2.2-rc.2`）是不同的版本线。
 
 <a id="use-this-package"></a>
 ## 安装与升级
@@ -223,8 +231,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### 方式三 —— 可复现的固定版本（收不到更新提示）
 
 ```text
-dsh-agent-team-presets@0.2.0
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.0
+dsh-agent-team-presets@0.2.1
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.1
 ```
 
 固定版本号或固定标签只能复现一个确定的发布。**带 `#标签` 的 GitHub 规格只会与同一个标签比对，市场永远不会提示更新——升级只能手动改规格。** 只在确实需要冻结安装时使用这种形式。
@@ -245,7 +253,7 @@ npm view dsh-agent-team-presets version
 
 ### 确认安装并安全升级
 
-安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.2.0`，且组件处于运行中状态。
+安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.2.1`，且组件处于运行中状态。
 
 - 升级前备份 profile 设置、团队定义与会话选择记录。
 - 从开发链接迁移时，先通过插件管理器移除 `@deepseek-ai/dsh-experimental-agent-team-presets`，再启用社区包。
@@ -449,7 +457,7 @@ Configuration for "agent-team-presets" is overridden by a home patch or command-
 
 | 现象 | 排查方向 |
 |---|---|
-| 看不到设置页或插件处于 pending | 检查 profile 类型、peer 依赖兼容性、Agent Teams 是否启用及客户端服务。 |
+| 看不到设置页或插件处于 pending | 检查 profile 类型、peer 依赖兼容性、subagent 后端（默认 `spawn`/`fork`）是否可用及客户端服务。 |
 | 技能删除按钮置灰不可点击 | 技能受保护：查看弹窗中的阻断列表，需先在对应团队角色中取消分配。 |
 | 技能分配被拒绝 (`dependency-missing`) | 技能声明的某个必需命令行程序在宿主 `PATH` 上未找到。注意声明的 MCP 服务仅供展示参考，不阻断分配；如需使用请确认 profile 中已正确配置并连接对应 MCP。 |
 | 成员创建被拒绝 | 检查持久存储、执行后端（`spawn`/`fork`）、模型配额及并发限额。 |

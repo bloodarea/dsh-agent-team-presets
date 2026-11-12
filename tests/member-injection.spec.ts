@@ -4,7 +4,7 @@
  * Every case mounts the real Team service, the real continuation manager, real
  * JSONL session persistence, and the real storage stack the `dsh-base` bundle
  * composes, then drives the plugin's own `apply()` and its `spawn_team_member`
- * tool. Nothing here stubs `spawnTeammate`, and no assertion reads a mock's
+ * tool. Nothing here stubs `startActivation`, and no assertion reads a mock's
  * argument list: the member's own model request, its own tool surface, and the
  * durable unit on disk are the evidence.
  *
@@ -20,7 +20,7 @@ import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { settlePlugin, waitForTeamApplication } from './fixtures/plugin-harness.ts'
+import { disposeRealTeamContext, settlePlugin, waitForTeamApplication } from './fixtures/plugin-harness.ts'
 import { ReasoningEffortId, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { bindScopeParent, createScope } from '@deepseek-ai/dsh-scope'
 import { NativeToolExecutor } from '@deepseek-ai/dsh-tool-executor-native'
@@ -31,7 +31,7 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import Subagents from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
-import TeamService from '@deepseek-ai/dsh-experimental-agent-team'
+import TeamService from '@deepseek-ai/dsh-agent-team'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -40,7 +40,6 @@ import { MEMBER_TEAM_SECTION } from '../src/member-runtime.ts'
 import { team, slot } from './fixtures/team-presets.ts'
 import { FixtureSessionQuery } from './fixtures/session-query.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
-import type { MemberStorage } from './fixtures/member-storage.ts'
 import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
 import type { TeamPreset } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
@@ -49,7 +48,7 @@ const contexts: Context[] = []
 const temporary: string[] = []
 
 afterEach(async () => {
-  for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
+  for (const ctx of contexts.splice(0).reverse()) await disposeRealTeamContext(ctx)
   for (const path of temporary.splice(0)) {
     const absolute = await realpath(path)
     if (!absolute.startsWith(join(tmpdir(), 'team-presets-injection-'))) throw new Error('Unexpected fixture root')
@@ -104,7 +103,7 @@ const DEFAULT_CAPTAIN_TOOLS = ['spawn_team_member', 'send_message', 'list_agents
  */
 function definition(members: TeamPreset['members'], captainTools: string[] = DEFAULT_CAPTAIN_TOOLS): TeamPreset {
   return {
-    ...team(members, { systemPrompt: 'CAPTAIN_RULES', toolMode: 'custom', tools: captainTools }),
+    ...team([...members], { systemPrompt: 'CAPTAIN_RULES', toolMode: 'custom', tools: captainTools }),
     name: 'Reviews',
     description: 'TEAM_PURPOSE',
   }
@@ -188,6 +187,7 @@ async function stack(options: {
   })
   let current = definition(options.members, options.captainTools)
   const config = {
+    skillRoot: join(storageRoot, 'team-skills'),
     teams: { get: () => [current] },
     selections: { get: () => [{ sessionId, teamId: current.id }] },
     freshProvider: 'spawn',
@@ -231,7 +231,7 @@ describe('a preset-managed member receives its frozen configuration before its f
     // Registered after the plugin, so the plugin's own listener has already
     // installed the guard when this observes the live child.
     h.ctx.on('agent/created', async ({ agent }) => {
-      if (h.ctx.agentTeams.tryMembership(agent)?.role !== 'teammate') return
+      if (agent.session.header.origin !== 'subagent') return
       const write = await call(h.ctx, agent, 'write', { file_path: '/never-touched', content: 'x' })
       denied.push(write.isError === true)
     })
@@ -240,7 +240,7 @@ describe('a preset-managed member receives its frozen configuration before its f
     h.root.model.select({ provider: 'mock', model: 'lead-model', reasoningEffort: ReasoningEffortId('high') })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK', context })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')
     expect(row?.id).toBeDefined()
 
     await vi.waitFor(() => expect(memberRequests(h.member, row!.id).length).toBeGreaterThan(0), { timeout: 5000 })
@@ -291,16 +291,16 @@ describe('a preset-managed member receives its frozen configuration before its f
     expect(persona).not.toContain('UNIQUE_MEMBER_RULES')
   }, 20_000)
 
-  it('reports the host roster model separately from the route that actually ran', async () => {
+  it('proves the configured route from the member request alongside its durable catalog identity', async () => {
     const h = await stack({ members: [routedMember('member-route', 'member-model')] })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')
     await vi.waitFor(() => expect(memberRequests(h.member, row!.id).length).toBeGreaterThan(0), { timeout: 5000 })
     // The member's own request proves the route; the roster's value is a
     // different fact and is never presented as the execution evidence.
     expect(memberRequests(h.member, row!.id)[0]!.model).toBe('member-model')
-    expect(row?.model).not.toBe('member-model')
+    expect(row).toMatchObject({ kind: 'child', parentId: h.root.id, name: 'reviewer' })
   }, 20_000)
 })
 
@@ -323,9 +323,11 @@ describe('same-Agent preset switching', () => {
     binding.rebind(ptcKey)
     h.ctx.emit('agent-preset/selected', h.root.id, 'ptc')
     await settlePlugin()
-    expect(h.ctx.tools.get('spawn_team_member', h.root)).toBeUndefined()
-    // A refused Team has not poisoned the preset's executor selection.
-    expect((await readWire(h.root))?.tools).toEqual(['run_code'])
+    // The Agent-owned native executor keeps the strict policy governable after
+    // its inherited preset changes to PTC.
+    expect(h.ctx.tools.get('spawn_team_member', h.root)).toBeDefined()
+    expect((await readWire(h.root))?.tools).toContain('read')
+    expect((await readWire(h.root))?.tools).not.toContain('run_code')
     binding.rebind(nativeKey)
     h.ctx.emit('agent-preset/selected', h.root.id, 'standard')
     await waitForTeamApplication(h.ctx, h.root)
@@ -356,7 +358,7 @@ describe('reasoning effort follows the member route, not the Session', () => {
     expect(h.root.options.reasoningEffort).toBe('high')
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
     await vi.waitFor(() => expect(memberRequests(h.member, row.id).length).toBeGreaterThan(0), { timeout: 5000 })
     const first = memberRequests(h.member, row.id)[0]!
     expect(first.model).toBe('member-model')
@@ -386,7 +388,7 @@ describe('reasoning effort follows the member route, not the Session', () => {
     expect(text).toContain('does not support reasoning effort "max"')
     // The refusal lands before anything durable or live exists: no roster row,
     // no snapshot in the unit, and no request on any route.
-    expect(h.ctx.agentTeams.listMembers(h.root).filter(row => row.name === 'reviewer')).toHaveLength(0)
+    expect((await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').filter(row => row.name === 'reviewer')).toHaveLength(0)
     const unit = await h.storage.readUnit()
     const records = Object.values((unit?.tables as Record<string, Record<string, unknown>>)?.members ?? {})
     expect(records).toHaveLength(0)
@@ -402,7 +404,7 @@ describe('durable snapshots and recovery', () => {
     const h = await stack({ members: [routedMember('member-route', 'member-model', 'high')] })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
 
     const unit = await h.storage.readUnit()
     const records = Object.values((unit?.tables as Record<string, Record<string, unknown>>)?.members ?? {})
@@ -428,14 +430,12 @@ describe('durable snapshots and recovery', () => {
     const h = await stack({ members: [routedMember('member-route', 'member-model')] })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'FIRST_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
     await vi.waitFor(() => expect(memberRequests(h.member, row.id).length).toBeGreaterThan(0), { timeout: 5000 })
 
     await vi.waitFor(() => expect(h.ctx.agents.get(row.id)).toBeUndefined(), { timeout: 5000 })
     const before = h.member.requests.length
-    await h.ctx.agentTeams.sendMessage(h.root, {
-      target: 'reviewer',
-      content: [{ type: 'text', text: 'RESUME_TASK' }],
+    await h.ctx.subagents.sendMessage(h.root, row.id, [{ type: 'text', text: 'RESUME_TASK' }], {
       signal: new AbortController().signal,
     })
     await vi.waitFor(() => {
@@ -454,7 +454,7 @@ describe('durable snapshots and recovery', () => {
     const h = await stack({ members: [routedMember('member-route', 'member-model')] })
     const first = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'FIRST_TASK' })
     expect(first.isError, resultText(first)).toBe(false)
-    const original = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
+    const original = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
     await vi.waitFor(() => expect(memberRequests(h.member, original.id).length).toBeGreaterThan(0), { timeout: 5000 })
 
     // A Settings save corrects the member's route. The running task keeps the
@@ -463,9 +463,7 @@ describe('durable snapshots and recovery', () => {
 
     await vi.waitFor(() => expect(h.ctx.agents.get(original.id)).toBeUndefined(), { timeout: 5000 })
     const before = h.member.requests.length
-    await h.ctx.agentTeams.sendMessage(h.root, {
-      target: 'reviewer',
-      content: [{ type: 'text', text: 'RESUME_OLD' }],
+    await h.ctx.subagents.sendMessage(h.root, original.id, [{ type: 'text', text: 'RESUME_OLD' }], {
       signal: new AbortController().signal,
     })
     await vi.waitFor(() => {
@@ -477,7 +475,7 @@ describe('durable snapshots and recovery', () => {
     // A NEW instance of the same role is created from the corrected route.
     const second = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'SECOND_TASK' })
     expect(second.isError, resultText(second)).toBe(false)
-    const fresh = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer-2')!
+    const fresh = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer-2')!
     await vi.waitFor(() => expect(memberRequests(h.member, fresh.id).length).toBeGreaterThan(0), { timeout: 5000 })
     expect(memberRequests(h.member, fresh.id)[0]!.model).toBe('member-model-2')
 
@@ -509,8 +507,8 @@ describe('durable snapshots and recovery', () => {
     ])
     expect(a.isError, resultText(a)).toBe(false)
     expect(b.isError, resultText(b)).toBe(false)
-    const rowA = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
-    const rowB = second.ctx.agentTeams.listMembers(second.root).find(member => member.name === 'auditor')!
+    const rowA = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
+    const rowB = (await second.ctx.subagents.listDescendants(second.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'auditor')!
     await vi.waitFor(() => expect(memberRequests(h.member, rowA.id).length).toBeGreaterThan(0), { timeout: 5000 })
     await vi.waitFor(() => expect(memberRequests(second.member, rowB.id).length).toBeGreaterThan(0), { timeout: 5000 })
     expect(memberRequests(h.member, rowA.id)[0]!.model).toBe('member-model')
@@ -537,7 +535,7 @@ describe('the member team section is a template, not a live roster', () => {
     })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
     await vi.waitFor(() => expect(memberRequests(h.member, row.id).length).toBeGreaterThan(0), { timeout: 5000 })
     const text = requestText(memberRequests(h.member, row.id)[0]!)
     expect(text).toContain('reviewer')

@@ -32,7 +32,7 @@
       name: './echo-tool.ts'
 
     - id: agent-team
-      name: '@deepseek-ai/dsh-experimental-agent-team'
+      name: '@deepseek-ai/dsh-agent-team'
 
     - id: agent-team-presets
       name: 'dsh-agent-team-presets'

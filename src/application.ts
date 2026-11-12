@@ -19,11 +19,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-experimental-agent-team'
+import type {} from '@deepseek-ai/dsh-subagent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { randomUUID } from 'node:crypto'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IMPLICIT_TOOLS, captainBriefing, definitionFingerprint, findMember, memberBriefing, memberRouteOf, memberTargets, memberTeamDivision, soloMemberBriefing, toolMode } from './presets.ts'
@@ -35,6 +36,7 @@ import { memberProviderFor } from './member-identity.ts'
 import { guardPolicy, inheritedFilter, isOwnLayerTool, policyOf } from './tool-policy.ts'
 import { SPAWN_TEAM_MEMBER_DESCRIPTION } from './tool-descriptions.ts'
 import { prepareNativePresentation } from './presentation.ts'
+import { reserveMember, teamMembers } from './team-runtime.ts'
 
 /** The route this plugin actually installed on one created member. */
 const MEMBER_ROUTE_SCHEMA = {
@@ -309,7 +311,7 @@ export interface SpawnRosterEntry {
  * finishes, while a used-up Team allowance never comes back. The official text
  * is always preserved verbatim inside the explanation, because it carries the
  * exact numbers the Host decided with.
- * @param error - the failure `spawnTeammate` reported.
+ * @param error - the failure `startActivation` reported.
  * @param roster - current roster rows, used to name the slots that never became usable.
  * @returns the model-facing explanation.
  */
@@ -363,15 +365,38 @@ function routedMember(frozen: TeamAgentPreset, stored: TeamPreset | undefined): 
 }
 
 /**
+ * Reserve one child name the subagent runtime accepts.
+ *
+ * A name is a lower-case segment of at most 32 characters that starts with a
+ * letter and is never `lead`, so a display-derived target is adjusted rather
+ * than passed through.
+ * @param target - the configured teammate target.
+ * @param used - names already taken among the captain's children.
+ * @returns a free name for this creation.
+ */
+function availableName(target: string, used: ReadonlySet<string>): string {
+  const prefixed = /^[a-z]/u.test(target) ? target : `m-${target}`
+  const base = (prefixed === 'lead' ? 'lead-2' : prefixed).slice(0, 32).replace(/-+$/u, '')
+  let name = base
+  let suffix = 2
+  while (used.has(name)) {
+    const tail = `-${suffix++}`
+    name = `${base.slice(0, 32 - tail.length).replace(/-+$/u, '')}${tail}`
+  }
+  return name
+}
+
+/**
  * Register the model-facing member tool on one Session.
  *
- * Official rc.2's Team request accepts only `name`, `description`, `prompt`,
- * `context`, `provider`, and `signal`; the member's route, persona, and tool
- * scope therefore travel through the durable member snapshot this tool records
- * BEFORE `spawnTeammate` is called, and are installed by the serial
- * `agent/created` listener. A refused snapshot refuses the spawn: a member that
- * could not be recorded must not be created, because nothing would re-scope it.
- * @param ctx - the plugin context providing `agentTeams`.
+ * A subagent creation request carries no persona or tool filter, so the member's
+ * route, persona, and tool scope travel through the durable member snapshot this
+ * tool records BEFORE `startActivation` is called, and are installed by the
+ * serial `agent/created` listener. The snapshot also reserves the child
+ * identity, because the runtime publishes tree membership only after that
+ * callback returns. A refused snapshot refuses the spawn: a member that could
+ * not be recorded must not be created, because nothing would re-scope it.
+ * @param ctx - the plugin context providing `subagents`.
  * @param agent - the live Session agent that owns the tool.
  * @param team - the applied Team preset.
  * @param providers - continuable-subagent providers to spawn through.
@@ -437,14 +462,9 @@ function registerMemberTool(
       // apart from a native teammate after a restart.
       const alias = memberProviderFor(providers, context)
       if ('error' in alias) throw new Error(alias.error)
-      const used = new Set(ctx.agentTeams.listMembers(caller).map(row => row.name))
+      const used = new Set(teamMembers(ctx, caller).map(row => row.name.split('/').pop() ?? row.name))
       for (const name of reserved) used.add(name)
-      let instance = target
-      let suffix = 2
-      while (used.has(instance)) {
-        const tail = `-${suffix++}`
-        instance = `${target.slice(0, 64 - tail.length).replace(/-+$/u, '')}${tail}`
-      }
+      const instance = availableName(target, used)
       reserved.add(instance)
       try {
         return await members.admit(async () => {
@@ -461,8 +481,15 @@ function registerMemberTool(
           const recheck = depthRefusal(ctx, caller)
           if (recheck !== undefined) throw new Error(recheck)
           const policy = policyOf(team.id, member)
+          // The child identity is reserved here and recorded with the snapshot,
+          // so the creation callback can identify this member before the runtime
+          // publishes any membership for it.
+          const childId = SessionId(randomUUID())
+          const description = args.description
+            ?? (member.description.trim() === '' ? member.name.trim() || target : member.description.trim())
           const prepared = await members.prepare({
             root: caller,
+            childId,
             target: instance,
             teamId: team.id,
             roleId: member.id,
@@ -483,24 +510,24 @@ function registerMemberTool(
             spawnContext: context,
           })
           if (prepared.kind === 'refused') throw new Error(prepared.reason)
+          const release = reserveMember(caller, childId, instance)
           try {
-            // Official fields only. The three extra properties earlier versions
-            // passed here are not part of the Team request and were ignored.
-            const result = await ctx.agentTeams.spawnTeammate(caller, {
-              name: instance,
-              description: args.description ?? (member.description.trim() === '' ? member.name.trim() || target : member.description.trim()),
-              prompt: task,
-              context,
+            // The alias is this member's durable identity: the Host writes it into
+            // the child's own descriptor, which is what tells this member apart
+            // from a native teammate after a restart.
+            const activation = members.track(await ctx.subagents.startActivation({
               provider: alias.name,
+              label: description,
+              prompt: task,
+              parent: caller,
               signal: exec.signal,
-            })
-            const failed = result.member.status === 'failed'
-            // The Host can settle a member as failed while resolving the spawn;
-            // record that on the snapshot so the durable record matches the action.
-            if (failed) await members.markFailed(caller.id, instance)
+              delivery: 'parent',
+              name: instance,
+              childId,
+            }))
             return {
-              target: result.member.name,
-              status: failed ? 'failed' as const : 'active' as const,
+              target: activation.name,
+              status: 'active' as const,
               ...route === undefined ? {} : { configuredRoute: { ...route } },
             }
           } catch (error: unknown) {
@@ -511,10 +538,10 @@ function registerMemberTool(
             // and the Host then reports only its provisioning checkpoint. Name the
             // member's real cause so the fault is not mistaken for a Team fault.
             const cause = members.failureOf(caller.id, instance)
-            const reported = classifySpawnFailure(error, ctx.agentTeams.listMembers(caller))
+            const reported = classifySpawnFailure(error, teamMembers(ctx, caller))
             if (cause === undefined) throw new Error(reported, { cause: error })
             throw new Error(`${reported} (the member's own first request failed: ${cause})`, { cause: error })
-          }
+          } finally { release() }
         })
       } finally { reserved.delete(instance) }
     },

@@ -14,7 +14,11 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the ctx.configForms Context merge and the `settings.section` slot.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-subagent/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ComposerTeamSelect } from './ComposerTeamSelect.tsx'
+import { TeamRosterAction } from './TeamRosterAction.tsx'
 import { teamAppearance } from './appearance.ts'
 import type { RosterAppearanceRegistry } from './appearance.ts'
 import { TeamPresetsSection } from './TeamPresetsSection.tsx'
@@ -49,7 +53,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * `cannot get property "remote.settings" without inject`, which is exactly the
  * failure mode this plugin's own scope must never reproduce.
  */
-export const inject = ['slots', 'locale', 'configForms', 'remote', 'remote.session', 'remote.settings']
+export const inject = ['slots', 'locale', 'configForms', 'remote', 'remote.session', 'remote.settings', 'sessions', 'uiWorkspace']
 
 /**
  * Host notifications that change which provider routes exist.
@@ -95,7 +99,7 @@ async function applyUi(ctx: ClientContext): Promise<() => Promise<void>> {
   // further injection, and failing that way takes the whole browser entry down.
   const skills = new TeamSkillsController(ctx)
   const ui = ctx.inject(
-    ['remote.teamPresets', 'slots', 'locale', 'configForms', 'remote.session', 'remote.settings'],
+    ['remote.teamPresets', 'slots', 'locale', 'configForms', 'remote.session', 'remote.settings', 'sessions', 'uiWorkspace'],
     scope => registerUi(scope, skills),
   )
   try {
@@ -114,6 +118,21 @@ async function applyUi(ctx: ClientContext): Promise<() => Promise<void>> {
  * disagree about the settings document.
  * @param ctx - the browser plugin context, with the Team Remote mounted.
  */
+/**
+ * Open one member's conversation from the roster, the way the rc.1 header action
+ * did: resolve the Team Lead Session, then route to that member's child Session.
+ * @param ctx - the injected browser scope.
+ * @param sessionId - the Session the roster was opened from.
+ * @param childSessionId - the member Session to open.
+ */
+function openTeammateOf(ctx: ClientContext): (sessionId: SessionId, childSessionId: SessionId) => void {
+  return (sessionId, childSessionId) => {
+    const address = ctx.sessions.binding(sessionId)?.session.getSnapshot().subagent?.address
+    const parentSessionId = address?.parentSessionId ?? sessionId
+    ctx.uiWorkspace.openSession({ parentSessionId, childSessionId, mode: 'continuable' })
+  }
+}
+
 function registerUi(ctx: ClientContext, skills: TeamSkillsController): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'agent-team-presets: dictionaries')
@@ -155,6 +174,23 @@ function registerUi(ctx: ClientContext, skills: TeamSkillsController): void {
       return teamAppearance(state.teams, state.selections, sessionId)
     }), 'agent-team-presets: roster appearance')
   })
+
+  // Same place the rc.1 official Team action occupied: the header actions strip,
+  // ahead of the other action buttons, with its icon and roster popover. Only the
+  // data source differs — rc.2 removed the Team projection it used to read.
+  const openTeammate = openTeammateOf(ctx)
+  ctx.effect(() => ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+    name: 'conversation.session.header.actions',
+    id: 'agent-team',
+    order: -20,
+    locale: NS,
+    inject: () => ({
+      roster: (sessionId: string) => controller.readRoster(sessionId),
+      openTeammate: (sessionId: Parameters<typeof openTeammate>[0], childSessionId: Parameters<typeof openTeammate>[1]) => {
+        openTeammate(sessionId, childSessionId)
+      },
+    }),
+  }, TeamRosterAction)), 'agent-team-presets: header roster')
 
   ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
     name: 'conversation.input.left',

@@ -26,8 +26,8 @@ export declare function isSessionRoot(agent: Agent): boolean;
 /**
  * Whether any teammate of one Session is still running or provisioning.
  *
- * A teammate whose child has not been created yet has no `agent/status` of its
- * own, so the roster — which folds the durable `team/member` events — is the
+ * A member whose child has not been published yet has no `agent/status` of its
+ * own, so the subagent catalog and this plugin's own admission record are the
  * authority here rather than the Agent registry. The captain is not counted:
  * its own status is the other half of the same question.
  * @param ctx - host context carrying the Team service.

@@ -56,7 +56,7 @@ interface Transition {
 function provider(name: string, overrides: Partial<SubagentProvider> = {}): SubagentProvider {
   return {
     name,
-    capabilities: { agentOptions: true, outputSchema: false, depthLimit: true, toolFilter: true, persona: true },
+    capabilities: { agentOptions: true, agentPreset: true, outputSchema: false, depthLimit: true },
     inheritsParentContext: true,
     prepareContinuable: async () => ({}),
     start: async () => { throw new Error('the identity lifecycle fixture never runs a child') },
@@ -148,7 +148,8 @@ describe('member execution aliases follow the provider registry', () => {
     const h = await harness({ fresh: 'spawn', fork: 'fork' })
 
     // The Web-side failure: the service exists, the provider does not yet.
-    expect(h.ctx.subagents.list()).toEqual([])
+    expect(h.ctx.subagents.getProvider('spawn')).toBeUndefined()
+    expect(h.ctx.subagents.getProvider('fork')).toBeUndefined()
     expect(memberProviderFor(h.registry, 'fresh')).toMatchObject({ error: expect.stringContaining('registers no subagent provider named "spawn"') })
     expect(memberProviderFor(h.registry, 'fork')).toMatchObject({ error: expect.stringContaining('registers no subagent provider named "fork"') })
     expect(liveAliases(h.ctx)).toBe(0)
@@ -288,8 +289,8 @@ describe('member execution aliases follow the provider registry', () => {
     h.registry.dispose()
     h.add(provider('spawn-replacement'))
     expect(liveAliases(h.ctx)).toBe(0)
-    expect(h.ctx.subagents.list()).toEqual(expect.arrayContaining(['spawn', 'fork', 'spawn-replacement']))
-    expect(h.ctx.subagents.list().filter(isPresetMemberProvider)).toEqual([])
+    for (const name of ['spawn', 'fork', 'spawn-replacement']) expect(h.ctx.subagents.getProvider(name)).toBeDefined()
+    expect(liveAliases(h.ctx)).toBe(0)
   })
 
   it('lets a provider activate later without any listener left behind after dispose', async () => {
@@ -347,9 +348,7 @@ describe('member execution aliases over a minimal service double', () => {
         return () => { registered.delete(candidate.name) }
       },
       getProvider: (name: string) => registered.get(name) ?? (spawn.name === name ? spawn : undefined),
-      list: () => [...registered.keys()],
       resolveMaxDepth: () => 2,
-      drainChildren: async () => {},
     } as unknown as CordisContext['subagents'])
 
     // The double already answers for `spawn`, so the initial scan registers both

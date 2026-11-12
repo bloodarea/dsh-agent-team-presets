@@ -139,7 +139,7 @@ test('a fresh settings revision fence lands and a stale one is refused with a co
     prepare: prepareProfile,
     // `bootProductionProfile` resolves every bare package name an overlay
     // inserts, and every profile bundle, through `createRequire` anchors in the
-    // checkout. `@deepseek-ai/dsh-experimental-agent-team` is only a peer
+    // checkout. `@deepseek-ai/dsh-agent-team` is only a peer
     // dependency here and `dsh-agent-team-presets` is this repository, so both
     // must be reachable from the anchors: Node's resolution consults NODE_PATH,
     // which points at the checkout's install anchor and at the parent holding

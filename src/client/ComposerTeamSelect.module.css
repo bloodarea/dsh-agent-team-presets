@@ -94,7 +94,12 @@
   position: absolute;
   bottom: 40px;
   left: 0;
-  width: min(360px, calc(100vw - 76px));
+  /* Narrow on purpose: the popover ends just past the filter chips instead of
+   * spanning the composer, so the conversation stays visible beside it. The
+   * member panel beside it reads the same variable, so the two panes always
+   * share one width. */
+  --team-popover-width: min(268px, calc(100vw - 76px));
+  width: var(--team-popover-width);
   z-index: 40;
   display: flex;
   align-items: flex-end;
@@ -121,6 +126,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Two select rows made the popover taller than the space a bottom-docked
+   * menu has on a short viewport; the list gives up height first. */
+  max-height: calc(100dvh - 120px);
+  overflow: hidden;
 }
 
 /* The member panel: the captain row, then the roster, opened to the right of
@@ -130,7 +139,7 @@
   position: absolute;
   bottom: 0;
   left: calc(100% + 8px);
-  width: 320px;
+  width: var(--team-popover-width);
   max-height: 360px;
   overflow: auto;
   background: var(--dsw-alias-bg-layer-3);
@@ -277,6 +286,23 @@
   white-space: nowrap;
 }
 
+.panelSkillTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.panelSkillTag {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
 .panelDesc {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -332,6 +358,35 @@
   outline: none;
 }
 
+.popFilters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.popFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Native select: the popover already floats above the composer, so a second
+ * custom listbox inside it would nest two focus traps for the same choice. */
+.popSelect {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .popChips {
   box-sizing: border-box;
   display: flex;
@@ -355,8 +410,10 @@
 }
 
 .popList {
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
-  max-height: 268px;
+  max-height: 200px;
   overflow: auto;
   display: flex;
   flex-direction: column;

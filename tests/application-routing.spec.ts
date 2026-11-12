@@ -9,14 +9,14 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { ToolCallId, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { SpawnTeammateRequest } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { SubagentActivation, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import { applyTeamToAgent } from '../src/application.ts'
 import { MemberRuntime } from '../src/member-runtime.ts'
 import { memberRecords, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
-import { subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { mountSubagentDouble, acceptedActivation as activationFor } from './fixtures/plugin-harness.ts'
 import { routedCaptain, slot, team } from './fixtures/team-presets.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
 
@@ -50,9 +50,14 @@ class FixtureAdapter extends LlmAdapter {
   }
 }
 
+/** A successful rc2 activation retains the caller's reserved child identity. */
+async function acceptedActivation(spec: SubagentActivationSpec): Promise<SubagentActivation> {
+  return activationFor(spec)
+}
+
 /** Mount the loop, publish one real Agent, and install the given services. */
 async function setup(options: {
-  spawnTeammate?: (caller: Agent, request: SpawnTeammateRequest) => Promise<unknown>
+  startActivation?: (spec: SubagentActivationSpec) => Promise<SubagentActivation>
 } = {}) {
   const ctx = new Context()
   contexts.push(ctx)
@@ -61,16 +66,15 @@ async function setup(options: {
   // Creation admission reads live services before anything durable exists: the
   // depth cap comes from `subagents`, and the member slots below configure a
   // `deepseek` route, so both must exist in this deployment.
-  ctx.provide('subagents', subagentServiceDouble())
+  mountSubagentDouble(ctx, { startActivation: options.startActivation ?? acceptedActivation })
   ctx.llm.registerAdapter(['fixture', 'deepseek'], new FixtureAdapter())
   const agent = await harness.create(SessionId('captain'), { provider: 'fixture', model: 'fixture' })
   ctx.tools.register({ name: 'read', description: 'Read fixture', parameters: {}, output: { schema: { type: 'string' }, render: () => [] }, async execute() { return '' } })
-  ctx.provide('agentTeams', { listMembers: () => [], spawnTeammate: options.spawnTeammate ?? (async () => ({ member: { name: 'member', status: 'active' } })) })
   const storeRoot = await mkdtemp(join(tmpdir(), 'team-presets-routing-store-'))
   temporary.push(storeRoot)
   const storage = await mountMemberStorage(ctx, storeRoot)
   // The member's configuration is frozen in the durable snapshot the creation
-  // edge installs; the Team request carries official fields only.
+  // edge installs; the activation spec carries the task and child identity.
   const members = new MemberRuntime(ctx)
   return { ctx, agent, storage, members }
 }
@@ -101,8 +105,8 @@ function resultText(result: { content: readonly { type: string; text?: string }[
 
 describe('spawn_team_member arguments', () => {
   it('keeps a Chinese-named member route attached to its identity after reorder', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'member-1', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const first = slot({ id: 'architect-id', name: '架构师', provider: 'deepseek', model: 'old-architect' })
     const other = slot({ id: 'review-id', name: '评审员', provider: 'deepseek', model: 'review-model' })
     const stored = team([other, { ...first, model: 'new-architect' }])
@@ -114,8 +118,8 @@ describe('spawn_team_member arguments', () => {
   })
 
   it('does not infer a route from an ambiguous legacy display name', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'member-1', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const first = slot({ name: '评审员', provider: 'deepseek', model: 'frozen-review' })
     const stored = team([{ ...first, model: 'wrong-one' }, { ...first, model: 'wrong-two' }])
     const application = applyTeamToAgent(ctx, agent, team([first]), { fresh: 'spawn', fork: 'fork' }, () => stored, members)
@@ -124,24 +128,34 @@ describe('spawn_team_member arguments', () => {
     application.dispose()
   })
 
-  it('freezes the member route, persona, policy, and context mode while sending official fields only', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'reviewer', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+  it('freezes the member route, persona, policy, and context mode while sending the rc2 activation spec', async () => {
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const application = applyTeamToAgent(ctx, agent, team([slot({
       name: 'reviewer', description: 'checks diffs', provider: 'deepseek', model: 'deepseek-reasoner',
       reasoningEffort: 'max', tools: ['read'], systemPrompt: 'You review diffs.',
     })]), { fresh: 'spawn', fork: 'fork' }, undefined, members)
     const result = await callMemberTool(ctx, agent, { member: 'reviewer', task: 'review it', context: 'fork' })
     expect(result.isError, resultText(result)).toBe(false)
-    expect(spawnTeammate).toHaveBeenCalledWith(agent, expect.objectContaining({
+    expect(startActivation).toHaveBeenCalledWith(expect.objectContaining({
       name: 'reviewer',
-      description: 'checks diffs',
-      context: 'fork',
+      label: 'checks diffs',
+      delivery: 'parent',
+      prompt: [{ type: 'text', text: 'review it' }],
       provider: 'fork',
     }))
-    const request = spawnTeammate.mock.calls[0]?.[1] as unknown as Record<string, unknown>
-    // The three undeclared properties earlier versions passed were ignored by
-    // the action; the request now carries only what the action declares.
+    const request = startActivation.mock.calls[0]?.[0]
+    expect(request?.parent.id).toBe(agent.id)
+    expect(request?.parent.session.id).toBe(agent.session.id)
+    expect(request?.signal).toBeInstanceOf(AbortSignal)
+    const record = await snapshot(storage)
+    expect(request?.childId).toBe(record.childSessionId)
+    expect(JSON.parse(resultText(result))).toEqual({
+      target: 'reviewer', status: 'active',
+      configuredRoute: { provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'max' },
+    })
+    // The activation spec carries execution identity and task; the snapshot
+    // owns the member-specific persona and policy.
     expect(request).not.toHaveProperty('agentOptions')
     expect(request).not.toHaveProperty('persona')
     expect(request).not.toHaveProperty('toolFilter')
@@ -159,8 +173,8 @@ describe('spawn_team_member arguments', () => {
   })
 
   it('freezes a member route that names no reasoning effort', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'reviewer', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const application = applyTeamToAgent(
       ctx, agent,
       team([slot({ name: 'reviewer', provider: 'deepseek', model: 'deepseek-chat' })]),
@@ -176,12 +190,13 @@ describe('spawn_team_member arguments', () => {
   })
 
   it('defaults context to fresh, description to the member name, and freezes no route for an unset one', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'reviewer', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const application = applyTeamToAgent(ctx, agent, team([slot({ name: 'reviewer' })]), { fresh: 'spawn', fork: 'fork' }, undefined, members)
     await callMemberTool(ctx, agent, { member: 'reviewer', task: 'review it' })
-    const request = spawnTeammate.mock.calls[0]?.[1]
-    expect(request).toMatchObject({ name: 'reviewer', description: 'reviewer', context: 'fresh', provider: 'spawn' })
+    const request = startActivation.mock.calls[0]?.[0]
+    expect(request?.parent.id).toBe(agent.id)
+    expect(request).toMatchObject({ name: 'reviewer', label: 'reviewer', provider: 'spawn', delivery: 'parent', prompt: [{ type: 'text', text: 'review it' }] })
     expect(request).not.toHaveProperty('agentOptions')
     expect(request).not.toHaveProperty('persona')
     expect(request).not.toHaveProperty('toolFilter')
@@ -195,60 +210,53 @@ describe('spawn_team_member arguments', () => {
   })
 
   it('summons a nameless member under its generated target', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'member-1', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const application = applyTeamToAgent(ctx, agent, team([slot({ name: '' })]), { fresh: 'spawn', fork: 'fork' }, undefined, members)
     await callMemberTool(ctx, agent, { member: 'member-1', task: 'work' })
-    expect(spawnTeammate).toHaveBeenCalledWith(agent, expect.objectContaining({ name: 'member-1', description: 'member-1' }))
+    expect(startActivation).toHaveBeenCalledWith(expect.objectContaining({ name: 'member-1', label: 'member-1' }))
     expect(await snapshot(storage)).toMatchObject({ memberName: 'member-1' })
     application.dispose()
   })
 
   it('honours a caller-supplied description and a default-all member policy', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'member', status: 'active' } }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const application = applyTeamToAgent(ctx, agent, team([slot({ name: 'member', description: 'ignored', toolMode: 'all', tools: ['read'] })]), {
       fresh: 'spawn', fork: 'fork',
     }, undefined, members)
     await callMemberTool(ctx, agent, { member: 'member', task: 'work', description: 'explicit description' })
-    const request = spawnTeammate.mock.calls[0]?.[1]
-    expect(request).toMatchObject({ description: 'explicit description' })
+    const request = startActivation.mock.calls[0]?.[0]
+    expect(request?.parent.id).toBe(agent.id)
+    expect(request).toMatchObject({ name: 'member', provider: 'spawn', label: 'explicit description', prompt: [{ type: 'text', text: 'work' }] })
     expect(request).not.toHaveProperty('toolFilter')
     // An explicit default-all mode wins over the legacy nonempty list.
     expect((await snapshot(storage)).policy).toEqual({ mode: 'all', allow: ['read'] })
     application.dispose()
   })
 
-  it('reports a failed member and its configured route without claiming the roster model', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({
-      // The host roster reports the value it knows, which for an unloaded child
-      // falls back to the Lead's own model; it is never the execution evidence.
-      member: { name: 'reviewer', status: 'failed', model: 'lead-model' },
-    }))
-    const { ctx, agent, storage, members } = await setup({ spawnTeammate })
+  it('reports an activation startup failure and preserves the attempted configured route', async () => {
+    const startActivation = vi.fn(async (_spec: SubagentActivationSpec): Promise<SubagentActivation> => {
+      throw new Error('member startup failed')
+    })
+    const { ctx, agent, storage, members } = await setup({ startActivation })
     const application = applyTeamToAgent(ctx, agent, team([slot({
       name: 'reviewer', description: 'reviewer role', provider: 'deepseek', model: 'deepseek-reasoner',
     })]), { fresh: 'spawn', fork: 'fork' }, undefined, members)
     const result = await callMemberTool(ctx, agent, { member: 'reviewer', task: 'review it' })
-    expect(result.isError, resultText(result)).toBe(false)
-    const payload = JSON.parse(resultText(result)) as { status: string; configuredRoute?: unknown; model?: unknown }
-    expect(payload.status).toBe('failed')
-    expect(payload.configuredRoute).toEqual({ provider: 'deepseek', model: 'deepseek-reasoner' })
-    // The roster's model is not forwarded as if it were the member's route.
-    expect(payload.model).toBeUndefined()
-    // A failed creation leaves the frozen snapshot as the record of what was
-    // attempted rather than deleting it.
+    expect(result.isError).toBe(true)
+    expect(resultText(result)).toContain('member startup failed')
+    expect(startActivation).toHaveBeenCalledWith(expect.objectContaining({ name: 'reviewer' }))
     expect(await snapshot(storage)).toMatchObject({
-      memberName: 'reviewer',
-      lifecycle: 'failed',
+      memberName: 'reviewer', lifecycle: 'failed',
       route: { provider: 'deepseek', model: 'deepseek-reasoner' },
     })
     application.dispose()
   })
 
   it('reports no configured route when the member runs on the Session route', async () => {
-    const spawnTeammate = vi.fn(async (_caller: Agent, _request: SpawnTeammateRequest) => ({ member: { name: 'reviewer', status: 'active', model: 'lead-model' } }))
-    const { ctx, agent, members } = await setup({ spawnTeammate })
+    const startActivation = vi.fn(acceptedActivation)
+    const { ctx, agent, members } = await setup({ startActivation })
     const application = applyTeamToAgent(ctx, agent, team([slot({ name: 'reviewer' })]), { fresh: 'spawn', fork: 'fork' }, undefined, members)
     const result = await callMemberTool(ctx, agent, { member: 'reviewer', task: 'review it' })
     const payload = JSON.parse(resultText(result)) as { configuredRoute?: unknown; model?: unknown }

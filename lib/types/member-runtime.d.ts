@@ -1,7 +1,8 @@
 /**
  * Member runtime coordination for preset-managed Team members.
  *
- * Official rc.2's Team request does not carry `agentOptions`, `persona`, or
+ * Preset member snapshots carry the route, persona, and policy before creation.
+ * The serial `agent/created` callback installs `agentOptions`, `persona`, and
  * `toolFilter` to the subagent service, so a member arrives already created
  * with the Team Lead's route and the deployment's full tool surface. The one
  * public extension point that runs before the member's first request is the
@@ -11,7 +12,7 @@
  *    Team service is asked to create it, keyed by `(rootSessionId, name)` —
  *    the identity the roster already persists;
  * 2. on the creation edge, resolves that record through the official
- *    `tryMembership` identity and installs the member-scoped route, persona,
+ *    reserved child identity and installs the member-scoped route, persona,
  *    team context, and strict tool policy before creation resolves;
  * 3. re-installs for every later residency (a finished member is cold-resumed
  *    from its durable descriptor and re-emits `agent/created`);
@@ -26,6 +27,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import type { SubagentActivation } from '@deepseek-ai/dsh-subagent';
 import type { MemberRecord, MemberStore } from './member-store.ts';
 import type { StrictToolPolicy } from './tool-policy.ts';
 /** Prompt section one managed member's team context is registered under. */
@@ -46,6 +48,8 @@ export interface MemberMembership {
 export interface MemberIntent {
     /** The Team Lead Agent summoning the member. */
     readonly root: Agent;
+    /** Reserved child identity, persisted before the Host starts creation. */
+    readonly childId?: string;
     /** Exact instance target the member is created under. */
     readonly target: string;
     /** Team preset identity the snapshot comes from. */
@@ -120,6 +124,8 @@ export declare class MemberRuntime {
      * error name it instead of sending the captain hunting for a routing fault.
      */
     private readonly failures;
+    /** Live creations this activation started, so teardown can stop exactly them. */
+    private readonly activations;
     /** Whole member-creation transactions admitted by this activation. */
     private readonly inFlight;
     private closed;
@@ -156,6 +162,7 @@ export declare class MemberRuntime {
      * @returns whether the member was installed, is not plugin-managed, or is managed but unusable.
      * @throws when a managed member's scopes cannot be installed completely.
      */
+    membershipFor(agent: Agent): MemberMembership | undefined;
     claim(agent: Agent, membership: MemberMembership, managed: boolean): MemberClaim;
     /**
      * Read the newest failure one member's own turn reported.
@@ -181,6 +188,15 @@ export declare class MemberRuntime {
      */
     markFailed(rootSessionId: string, memberName: string): Promise<void>;
     /**
+     * Every durable member record one Team root owns.
+     *
+     * The header roster shows members that have been summoned, not the roles a
+     * Team could summon, so this reads the snapshots rather than Settings.
+     * @param rootSessionId - the Team Lead Session identity.
+     * @returns that root's records, ordered by member name.
+     */
+    recordsUnder(rootSessionId: string): MemberRecord[];
+    /**
      * Read the snapshot one Agent was installed from.
      * @param agent - a live Agent.
      * @returns its frozen record, or undefined when this Agent is not managed here.
@@ -196,6 +212,20 @@ export declare class MemberRuntime {
     releaseAll(): void;
     /** Number of live residencies currently carrying managed registrations. */
     get installedCount(): number;
+    /**
+     * Retain one creation receipt so teardown stops the epoch this activation started.
+     * @param activation - the receipt `startActivation` returned.
+     * @returns the same receipt.
+     */
+    track<T extends SubagentActivation>(activation: T): T;
+    /**
+     * Stop every epoch this activation started.
+     *
+     * A cold-restored residency has no receipt here: rc.2 exposes no selective
+     * disposal for one, so only the current work of those is interrupted.
+     * @returns resolution once every retained epoch has settled.
+     */
+    disposeActivations(): Promise<void>;
     /**
      * Release every registration and close the durable unit.
      * @returns resolution after the unit is released.

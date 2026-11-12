@@ -1,7 +1,10 @@
 /** Team application rejects invalid captain permissions without leaving registrations. */
 import { Context } from '@deepseek-ai/cordis'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import type { SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createScope } from '@deepseek-ai/dsh-scope'
@@ -13,7 +16,7 @@ import { join } from 'node:path'
 import { applyTeamToAgent } from '../src/application.ts'
 import { MemberRuntime } from '../src/member-runtime.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
-import { subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { acceptedActivation, subagentServiceDouble } from './fixtures/plugin-harness.ts'
 import type { TeamAgentPreset, TeamPreset } from '../src/types.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
 
@@ -127,33 +130,30 @@ describe('captain tool permissions', () => {
     await mountAgentLoopTestDependencies(ctx)
     // Creation admission reads the depth cap from `subagents` before it writes
     // anything durable; without it the member tool refuses instead of running.
-    ctx.provide('subagents', subagentServiceDouble())
+    await ctx.plugin(AgentLoop, { agents: [] })
     const storeRoot = await mkdtemp(join(tmpdir(), 'team-presets-application-store-'))
     temporary.push(storeRoot)
     const storage = await mountMemberStorage(ctx, storeRoot)
     // The Team request no longer carries the member's configuration: the
     // durable snapshot does, and the serial creation edge installs it. The
     // request must therefore carry ONLY official fields.
-    const spawnTeammate = vi.fn(async (_caller: Agent, options: Record<string, unknown>) => {
-      expect(options).toMatchObject({ name: 'reviewer', context: 'fresh', provider: 'fresh' })
-      expect(options).not.toHaveProperty('agentOptions')
+    const startActivation = vi.fn(async (options: SubagentActivationSpec) => {
+      expect(options).toMatchObject({ name: 'reviewer', provider: 'fresh', delivery: 'parent' })
+      expect(options.childId).toBeDefined()
       expect(options).not.toHaveProperty('persona')
       expect(options).not.toHaveProperty('toolFilter')
-      return { member: { name: 'reviewer', status: 'inactive' } }
+      return acceptedActivation(options)
     })
-    ctx.provide('agentTeams', { spawnTeammate, listMembers: () => [] })
+    ctx.provide('subagents', subagentServiceDouble({ startActivation }))
+    ctx.provide('agentTeams', {})
     const memberTool = fixtureTool('member-only-global-tool', () => 'unexpected')
     // Creation admission reads the official delegation depth of the calling
     // Agent, so this fixture models an ordinary top-level Session at depth 0
     // rather than a bare id that the official helper cannot read.
-    const agent = {
-      id: 'captain-with-member-tool',
-      options: { subagentDepth: 0 },
-      session: { header: { delegationDepth: 0 } },
-      // 0.2.2-rc.1 reads the effective wire through `agent.model.current()`;
-      // a stub without a route makes the presentation preflight refuse.
-      model: { current: () => ({ provider: 'fixture', model: 'fixture' }) },
-    } as unknown as Agent
+    const agent = (await ctx.agents.create({
+      sessionId: SessionId('captain-with-member-tool'),
+      agentOptions: { provider: 'fixture', model: 'fixture' },
+    })).agent
     let scope!: Scope
     const scopeFiber = await ctx.plugin(Object.assign(
       (root: Context) => { scope = createScope(root, agent) },
@@ -169,7 +169,7 @@ describe('captain tool permissions', () => {
     expect(ctx.tools.schemas(agent).map(tool => tool.name)).toContain('member-only-global-tool')
     const result = await execute(ctx, agent, 'spawn_team_member', { member: 'reviewer', task: 'review' })
     expect(result.isError, JSON.stringify(result.content)).toBe(false)
-    expect(spawnTeammate).toHaveBeenCalledOnce()
+    expect(startActivation).toHaveBeenCalledOnce()
     // The member's own policy is frozen, not the captain's and not the team's.
     const unit = await storage.readUnit()
     const records = Object.values((unit?.tables as Record<string, Record<string, unknown>>)?.members ?? {})

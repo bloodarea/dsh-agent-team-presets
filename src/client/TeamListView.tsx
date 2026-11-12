@@ -4,7 +4,7 @@
  */
 
 import { useMemo, useRef, useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TeamPreset } from '../types.ts'
 import { matchTeam, queryTokens, teamOrigin } from '../team-search.ts'
 import { TEAM_SERIES, teamSeriesOf } from '../team-catalog.ts'
@@ -48,6 +48,7 @@ export interface TeamListViewProps {
 export function TeamListView(props: TeamListViewProps) {
   const { t, disabled } = props
   const fileInput = useRef<HTMLInputElement>(null)
+  const [confirmRestore, setConfirmRestore] = useState(false)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<'all' | 'builtin' | 'custom'>('all')
   const [series, setSeries] = useState<'all' | TeamSeries>('all')
@@ -73,27 +74,34 @@ export function TeamListView(props: TeamListViewProps) {
         <p className={css.intro}>{t('description')}</p>
       </header>
 
-      <div className={css.actionRow}>
-        <Button size="sm" variant="outline" disabled={disabled} onClick={props.onCreate}>{t('newTeam')}</Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => { fileInput.current?.click() }}
-        >
-          {t('importPreset')}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={props.onRestoreDefaults}
-        >
-          {t('restoreDefaults')}
-        </Button>
-        {props.onManageCategories === undefined ? null : (
-          <Button size="sm" variant="outline" onClick={props.onManageCategories}>{t('categoryManagePage')}</Button>
-        )}
+      {/* Two groups: creating and importing on the left, maintenance on the
+          right, so one action row reads as a toolbar instead of a text run. */}
+      <div className={css.toolbar}>
+        <div className={css.toolbarGroup}>
+          <Button size="sm" variant="primary" disabled={disabled} onClick={props.onCreate}>{t('newTeam')}</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled}
+            title={t('importNote')}
+            onClick={() => { fileInput.current?.click() }}
+          >
+            {t('importPreset')}
+          </Button>
+        </div>
+        <div className={css.toolbarGroup}>
+          {props.onManageCategories === undefined ? null : (
+            <Button size="sm" variant="outline" onClick={props.onManageCategories}>{t('categoryManagePage')}</Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => { setConfirmRestore(true) }}
+          >
+            {t('restoreDefaults')}
+          </Button>
+        </div>
         <input
           ref={fileInput}
           className={css.fileInput}
@@ -109,8 +117,26 @@ export function TeamListView(props: TeamListViewProps) {
         />
       </div>
 
-      <p className={css.hint}>{t('importNote')}</p>
-      <p className={css.hint}>{t('restoreDefaultsHint')}</p>
+      {confirmRestore ? (
+        <Modal
+          open
+          onClose={() => { setConfirmRestore(false) }}
+          title={t('restoreConfirmTitle')}
+          closeLabel={t('close')}
+          footer={(
+            <>
+              <Button variant="outline" onClick={() => { setConfirmRestore(false) }}>{t('cancel')}</Button>
+              <Button
+                variant="primary"
+                onClick={() => { setConfirmRestore(false); props.onRestoreDefaults() }}
+              >{t('restoreConfirmAction')}</Button>
+            </>
+          )}
+        >
+          <p className={css.dialogCopy}>{t('restoreConfirmBody')}</p>
+        </Modal>
+      ) : null}
+
       {props.importError === undefined
         ? null
         : <p className={css.warn} role="status">{t(props.importError)}</p>}
@@ -123,6 +149,7 @@ export function TeamListView(props: TeamListViewProps) {
           onChange={(event) => { setQuery(event.target.value) }}
         />
       </div>
+      <div className={css.filters}>
       {/* The taxonomy the prototype implies: 团队来源 is built-in or custom, and the
           categories below it belong to whichever source is selected — the two series
           for built-in presets, the reader's own categories for custom ones. */}
@@ -162,10 +189,12 @@ export function TeamListView(props: TeamListViewProps) {
           ? <span className={css.filterLabel}>{t('filterNoCategory')}</span>
           : null}
       </div>
+      </div>
 
-      <p className={css.hint}>
-        {t('listMatched')} {visible.length} · {t('listNoInject')}
-      </p>
+      <div className={css.resultsHead}>
+        <span className={css.resultCount}>{t('listResultCount').replace('{count}', String(visible.length))}</span>
+        <span className={css.resultNote}>{t('listNoInject')}</span>
+      </div>
 
       {props.teams.length === 0
         ? <p className={css.emptyPage}>{t('emptyTeams')}</p>
@@ -188,7 +217,7 @@ export function TeamListView(props: TeamListViewProps) {
                   </span>
                 </button>
                 <span className={css.rowActions}>
-                  <Button size="sm" variant="ghost" onClick={() => { props.onExport(team.id) }}>
+                  <Button size="sm" variant="ghost" title={t('importNote')} onClick={() => { props.onExport(team.id) }}>
                     {t('exportPreset')}
                   </Button>
                   <Button size="sm" variant="ghost" disabled={disabled} onClick={() => { props.onDuplicate(team.id) }}>

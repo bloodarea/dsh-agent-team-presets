@@ -25,4 +25,4 @@
 
 - insert:
     - id: agent-team
-      name: '@deepseek-ai/dsh-experimental-agent-team'
+      name: '@deepseek-ai/dsh-agent-team'

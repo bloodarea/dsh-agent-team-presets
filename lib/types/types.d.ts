@@ -175,6 +175,35 @@ export type TeamExecutionSnapshot = {
     /** One row per Team the Host reports, ordered by Team identity. */
     teams: readonly TeamExecutionRow[];
 };
+/** One preset member the header roster can show. */
+export interface TeamRosterMemberView {
+    /** Teammate target inside its Team. */
+    readonly name: string;
+    /** Display name the Team configured. */
+    readonly displayName: string;
+    /** Role description the Team configured. */
+    readonly description: string;
+    /** Stable member identity inside the preset, when it carries one. */
+    readonly roleId?: string;
+    /** Durable child Session identity, once the member was created. */
+    readonly childSessionId?: string;
+    /** Whether the row is the Team Lead that carries this Session, or a teammate. */
+    readonly role: 'captain' | 'member';
+    /** Whether the member is running right now. */
+    readonly status: 'running' | 'idle';
+    /** The route this member was frozen with, when it configured one. */
+    readonly route?: {
+        readonly provider: string;
+        readonly model: string;
+        readonly reasoningEffort: string;
+    };
+    /** Model the row runs on when it has no frozen route (the Lead uses the Session's). */
+    readonly model?: string;
+}
+/** Every preset member one Session's Team has summoned. */
+export interface TeamRosterValue {
+    readonly members: readonly TeamRosterMemberView[];
+}
 /** The fixed official series a shipped Team belongs to. */
 export type TeamSeries =
 /** The original research-and-development scale series (three Teams). */

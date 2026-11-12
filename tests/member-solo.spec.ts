@@ -20,8 +20,6 @@ import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
-import type { SpawnTeammateRequest, TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -33,7 +31,7 @@ import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
-import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { settlePlugin, mountSubagentDouble } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
 
 const contexts: Context[] = []
@@ -101,7 +99,7 @@ interface Harness {
   readonly release: () => Promise<void>
 }
 
-/** Mount the plugin over scripted settings, a Team service double, and a model route. */
+/** Mount the plugin over scripted settings, a subagent service double, and a model route. */
 async function setup(options: {
   teams: readonly TeamPreset[]
   selections: readonly TeamSelectionRecord[]
@@ -127,22 +125,7 @@ async function setup(options: {
     })
   }
 
-  const roots = new Set<Agent>()
-  ctx.provide('agentTeams', {
-    spawnTeammate: vi.fn(async (_caller: Agent, request: SpawnTeammateRequest) => ({
-      member: { name: request.name, status: 'active' as const },
-    })),
-    tryMembership: (agent: Agent) => roots.has(agent)
-      ? { root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }
-      : undefined,
-    listMembers: (agent: Agent): TeamMemberView[] => [{
-      id: agent.id,
-      name: 'lead',
-      role: 'lead',
-      status: agent.status === 'running' ? 'running' : 'inactive',
-      diagnostics: [],
-    }],
-  })
+  mountSubagentDouble(ctx)
 
   const storeRoot = await mkdtemp(join(tmpdir(), 'team-presets-solo-store-'))
   temporary.push(storeRoot)
@@ -155,7 +138,6 @@ async function setup(options: {
     describe: vi.fn(() => [{ ns: 'agent-team-presets', revision: 0 }]),
     update: vi.fn(async () => {}),
   })
-  ctx.provide('subagents', subagentServiceDouble())
 
   const config = {
     teams: teamsRef.ref,
@@ -178,7 +160,6 @@ async function setup(options: {
         sessionId: SessionId(id),
         agentOptions: { provider: 'fixture', model: 'fixture' },
       })
-      roots.add(handle.agent)
       agents.push(handle.agent)
       handles.set(handle.agent, handle)
       return handle.agent

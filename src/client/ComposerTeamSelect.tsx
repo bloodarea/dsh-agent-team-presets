@@ -5,21 +5,47 @@
  * It sits in the composer tool row after the permission control.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { FocusEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { CSSProperties, FocusEvent } from 'react'
 import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the conversation slot declarations and the session seat.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// Type-only: declares the deployment's `agentTeam` session projection this
+// control follows, so the picker hides exactly while official Team mode is off.
+import type {} from '@deepseek-ai/dsh-agent-team/types'
 import { selectedMember, selectedRoleId, selectedTeam } from '../presets.ts'
 import { TEAM_SERIES } from '../team-catalog.ts'
 import { matchTeam, orderedCategories, queryTokens, teamOrigin } from '../team-search.ts'
 import { groupTeams, matchesCategoryFilter } from './team-grouping.ts'
 import type { TeamAgentPreset, TeamPreset, TeamSeries } from '../types.ts'
 import type { ProviderChoice, TeamPresetsInjected } from './team-presets-controller.ts'
+import type { TeamSkillsState } from './team-skills-controller.ts'
 import { FORM_ISSUE_KEYS, selectionFailureText } from './locales.ts'
 import css from './ComposerTeamSelect.module.css'
+
+/** The empty library state a build without a Team Skill service reports. */
+const NO_SKILL_STATE: TeamSkillsState = {
+  status: 'unavailable',
+  library: undefined,
+  selectedId: undefined,
+  detail: undefined,
+  busy: false,
+  message: undefined,
+  failed: false,
+  issue: undefined,
+  file: undefined,
+  fileText: undefined,
+  scan: undefined,
+  canOpenScanFolder: false,
+  scanFolderPath: undefined,
+  scanFolderNotice: undefined,
+}
+/** Subscription used when this build composes no Team Skill library. */
+const NO_SKILL_UPDATES = (): (() => void) => () => {}
+/** Snapshot reader used when this build composes no Team Skill library. */
+const readNoSkillState = (): TeamSkillsState => NO_SKILL_STATE
 
 /** How long the member panel survives while the pointer crosses the gap to it. */
 const PANEL_GRACE_MS = 140
@@ -54,6 +80,19 @@ function memberRouteLabel(providers: readonly ProviderChoice[], member: TeamAgen
   return parts.length === 0 ? undefined : parts.join(' · ')
 }
 
+/** Stable tag palette index for one skill id, so a skill keeps its colour. */
+function skillTagStyle(skillId: string): CSSProperties {
+  let hash = 0
+  for (let index = 0; index < skillId.length; index += 1) {
+    hash = (hash * 31 + skillId.charCodeAt(index)) % 360
+  }
+  return {
+    background: `hsl(${hash} 70% 93%)`,
+    borderColor: `hsl(${hash} 55% 82%)`,
+    color: `hsl(${hash} 45% 32%)`,
+  }
+}
+
 /**
  * Render the composer's Team picker.
  * @param props - the Session identity, the page's locale reader, and the selection writers.
@@ -62,6 +101,20 @@ function memberRouteLabel(providers: readonly ProviderChoice[], member: TeamAgen
 export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
   const { t, sessionId } = props
   const state = props.useTeamPresets(snapshot => snapshot)
+  // The official Team-mode switch lives in the model menu. Team presets pick
+  // members through the subagent runtime, so the switch is the product's answer
+  // to "may this Session run a Team at all": while it is off, the control that
+  // would apply one is not offered. A deployment that composes no Team service
+  // publishes no projection, and then nothing else can gate the control.
+  const teamMode = props.useProjection('agentTeam')
+  // Team Skills bound to a member's role are what that member can load, so the
+  // panel offering a one-to-one chat names them; a bound skill is otherwise
+  // invisible until the member's first turn.
+  const skills = props.skills
+  const skillsState = useSyncExternalStore(
+    skills?.subscribe ?? NO_SKILL_UPDATES,
+    skills?.getSnapshot ?? readNoSkillState,
+  )
   const [open, setOpen] = useState(false)
   // The Team whose member panel is showing: a hover or a keyboard focus keeps it
   // up while the pointer crosses the gap between the picker and the panel.
@@ -114,6 +167,27 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
   const [source, setSource] = useState<'all' | 'builtin' | 'custom'>('all')
   const [series, setSeries] = useState<TeamSeries | 'all'>('all')
   const [categoryId, setCategoryId] = useState('')
+
+  /**
+   * Team Skills bound to each member role of the Team whose panel is open.
+   *
+   * Only the roles' own bindings count: a captain's skills are not a member's,
+   * and a skill the library does not list has nothing to show.
+   */
+  const skillNamesByRole = useMemo(() => {
+    const byRole = new Map<string, string[]>()
+    const assets = skillsState.library?.assets ?? []
+    if (hoverTeamId === undefined) return byRole
+    for (const asset of assets) {
+      for (const binding of asset.bindings) {
+        if (binding.teamId !== hoverTeamId || binding.captain) continue
+        const names = byRole.get(binding.roleId) ?? []
+        if (!names.includes(asset.skillId)) names.push(asset.skillId)
+        byRole.set(binding.roleId, names)
+      }
+    }
+    return byRole
+  }, [skillsState.library, hoverTeamId])
 
   /** Cancel a pending panel close, so a hover that continues keeps the panel up. */
   const cancelHoverClose = (): void => {
@@ -195,8 +269,13 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
         setPanelPlacement('right')
         return
       }
-      const roomOnLeft = dockRect.left - PANEL_GAP_PX - width >= PANEL_VIEWPORT_MARGIN_PX
-      setPanelPlacement(roomOnLeft ? 'left' : 'overlay')
+      // A flipped panel must stay inside the element that clips the composer:
+      // reaching the viewport edge is not enough when the composer itself ends
+      // further in, and a panel under that edge would be cut in half.
+      const clipRect = dockNode.offsetParent instanceof HTMLElement ? dockNode.offsetParent.getBoundingClientRect() : undefined
+      const leftEdge = dockRect.left - PANEL_GAP_PX - width
+      const leftLimit = Math.max(clipRect?.left ?? 0, PANEL_VIEWPORT_MARGIN_PX) + PANEL_VIEWPORT_MARGIN_PX
+      setPanelPlacement(leftEdge >= leftLimit ? 'left' : 'overlay')
     }
     measure()
     window.addEventListener('resize', measure)
@@ -252,6 +331,7 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
     schedulePanelClose()
   }
 
+  if (teamMode !== undefined && teamMode.enabled !== true) return null
   return (
     <>
       <span className={css.wrap} ref={popover}>
@@ -293,38 +373,59 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
                 placeholder={t('composeSearch')}
                 onChange={(event) => { setQuery(event.target.value) }}
               />
-              <div className={css.popChips}>
-                <span className={css.popFilterLabel}>{t('filterSource')}</span>
-                <button type="button" className={`${css.popChip} ${source === 'all' ? css.popChipActive : ''}`} onClick={() => { setSource('all') }}>{t('listAll')}</button>
-                <button type="button" className={`${css.popChip} ${source === 'builtin' ? css.popChipActive : ''}`} onClick={() => { setSource('builtin'); setCategoryId('') }}>{t('listBuiltin')}</button>
-                <button type="button" className={`${css.popChip} ${source === 'custom' ? css.popChipActive : ''}`} onClick={() => { setSource('custom'); setSeries('all') }}>{t('listCustom')}</button>
-              </div>
-              <div className={css.popChips}>
-                <span className={css.popFilterLabel}>{t('filterCategory')}</span>
-                <button
-                  type="button"
-                  className={`${css.popChip} ${series === 'all' && categoryId === '' ? css.popChipActive : ''}`}
-                  onClick={() => { setSeries('all'); setCategoryId('') }}
-                >{t('listAll')}</button>
-                {source !== 'custom' ? TEAM_SERIES.map(entry => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={`${css.popChip} ${series === entry.id ? css.popChipActive : ''}`}
-                    onClick={() => { setSeries(series === entry.id ? 'all' : entry.id); setCategoryId('') }}
-                  >{entry.id === 'classic-development' ? t('seriesDevelopment') : t('seriesWorkModes')}</button>
-                )) : null}
-                {source !== 'builtin' ? categories.map(entry => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className={`${css.popChip} ${categoryId === entry.id ? css.popChipActive : ''}`}
-                    onClick={() => { setCategoryId(categoryId === entry.id ? '' : entry.id); setSeries('all') }}
-                  >{entry.name}</button>
-                )) : null}
-                {source === 'custom' && categories.length === 0
-                  ? <span className={css.popFilterLabel}>{t('filterNoCategory')}</span>
-                  : null}
+              {/* Two cascading selects: the category list is the source's own
+                  taxonomy, so switching the source can never leave a category
+                  selected that the new source does not offer. */}
+              <div className={css.popFilters}>
+                <label className={css.popFilterRow}>
+                  <span className={css.popFilterLabel}>{t('filterSource')}</span>
+                  <select
+                    className={css.popSelect}
+                    value={source}
+                    onChange={(event) => {
+                      const next = event.target.value
+                      setSource(next === 'builtin' || next === 'custom' ? next : 'all')
+                      setSeries('all')
+                      setCategoryId('')
+                    }}
+                  >
+                    <option value="all">{t('listAll')}</option>
+                    <option value="builtin">{t('listBuiltin')}</option>
+                    <option value="custom">{t('listCustom')}</option>
+                  </select>
+                </label>
+                <label className={css.popFilterRow}>
+                  <span className={css.popFilterLabel}>{t('filterCategory')}</span>
+                  <select
+                    className={css.popSelect}
+                    value={series !== 'all' ? `series:${series}` : categoryId === '' ? '' : `category:${categoryId}`}
+                    onChange={(event) => {
+                      const next = event.target.value
+                      if (next.startsWith('series:')) {
+                        const id = next.slice('series:'.length)
+                        const known = TEAM_SERIES.find(entry => entry.id === id)
+                        setSeries(known === undefined ? 'all' : known.id)
+                        setCategoryId('')
+                        return
+                      }
+                      setSeries('all')
+                      setCategoryId(next.startsWith('category:') ? next.slice('category:'.length) : '')
+                    }}
+                  >
+                    <option value="">{t('listAll')}</option>
+                    {source === 'custom' ? null : TEAM_SERIES.map(entry => (
+                      <option key={entry.id} value={`series:${entry.id}`}>
+                        {entry.id === 'classic-development' ? t('seriesDevelopment') : t('seriesWorkModes')}
+                      </option>
+                    ))}
+                    {source === 'builtin' ? null : categories.map(entry => (
+                      <option key={entry.id} value={`category:${entry.id}`}>{entry.name}</option>
+                    ))}
+                    {source === 'custom' && categories.length === 0
+                      ? <option value="" disabled>{t('filterNoCategory')}</option>
+                      : null}
+                  </select>
+                </label>
               </div>
               <div className={css.popList}>
                 {/* The no-Team choice is pinned first, exactly as the prototype
@@ -412,6 +513,9 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
                     // than offered as a click that would write nothing usable.
                     const selectable = member.id !== undefined && member.id.trim() !== ''
                     const route = memberRouteLabel(state.providers, member) ?? t('composePanelSessionModel')
+                    // Only this member's own role bindings: a captain's skills and
+                    // another role's skills are not what this conversation loads.
+                    const boundNames = member.id === undefined ? [] : skillNamesByRole.get(member.id) ?? []
                     return (
                       <button
                         key={member.id ?? `${hoverTeam.id}:${index}`}
@@ -435,6 +539,13 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
                         </span>
                         <span className={css.panelRoute}>{route}</span>
                         {member.description.trim() === '' ? null : <span className={css.panelDesc}>{member.description}</span>}
+                        {boundNames.length === 0 ? null : (
+                          <span className={css.panelSkillTags}>
+                            {boundNames.map(name => (
+                              <span key={name} className={css.panelSkillTag} style={skillTagStyle(name)}>{name}</span>
+                            ))}
+                          </span>
+                        )}
                         {selectable ? null : <span className={css.panelDesc}>{t('composePanelNoId')}</span>}
                       </button>
                     )

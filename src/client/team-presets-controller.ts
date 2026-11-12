@@ -26,6 +26,8 @@ import {
   uniqueName,
 } from '../preset-transfer.ts'
 import type { TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { TeamRosterValue } from '../types.ts'
 import { liveAssignments } from '../team-search.ts'
 import type {
   TeamAgentPreset, TeamCaptainPreset, TeamCategory, TeamCategoryAssignment, TeamExecutionRow, TeamExecutionState,
@@ -1106,6 +1108,21 @@ export class TeamPresetsController {
     })
   }
 
+  /**
+   * Read the preset members one Session's Team has summoned.
+   *
+   * The header control hides itself while this answers nothing, so a refusal is
+   * reported as an empty roster rather than a control that cannot be trusted.
+   * @param sessionId - the Session root whose roster is read.
+   * @returns the summoned members, or none when the Host cannot answer.
+   */
+  async readRoster(sessionId: string): Promise<TeamRosterValue> {
+    const read = this.readNamespace(() => this.ctx.remote.teamPresets.roster(sessionId))
+    if (read === undefined) return { members: [] }
+    const result = await read
+    return result.ok ? result.value : { members: [] }
+  }
+
   private loadToolCatalogue(): void {
     if (this.toolCatalogueLoading || this.toolCatalogue === 'ready') return
     const generation = this.catalogueGeneration
@@ -1699,6 +1716,14 @@ function describeGroup(group: ModelProviderGroup): ProviderChoice {
 }
 
 /** Business face the page and composer registrations inject. */
+/** Roster reader the header control receives. */
+export interface TeamRosterInjected {
+  /** Reads the summoned members of one Session's Team, and whether that Team is on. */
+  roster: (sessionId: string) => Promise<TeamRosterValue>
+  /** Opens one member's conversation from the roster. */
+  openTeammate: (sessionId: SessionId, childSessionId: SessionId) => void
+}
+
 export interface TeamPresetsInjected {
   /** Team Skill panel state, absent when this build ships no library service. */
   skills?: import('./team-skills-controller.ts').TeamSkillsController

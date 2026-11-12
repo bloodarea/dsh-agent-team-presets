@@ -23,15 +23,15 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import Subagents from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
-import TeamService from '@deepseek-ai/dsh-experimental-agent-team'
+import TeamService from '@deepseek-ai/dsh-agent-team'
 import { apply, inject } from '../src/index.ts'
 import { MEMBER_FORK_PROVIDER, MEMBER_FRESH_PROVIDER } from '../src/member-identity.ts'
 import { slot, team } from './fixtures/team-presets.ts'
-import { FixtureSessionQuery } from './fixtures/session-query.ts'
+import { FixtureSessionQuery, subagentProvider } from './fixtures/session-query.ts'
 import { memberRecords, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
-import { settlePlugin } from './fixtures/plugin-harness.ts'
+import { disposeRealTeamContext, settlePlugin } from './fixtures/plugin-harness.ts'
 import type { TeamPreset } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
@@ -40,7 +40,7 @@ const contexts: Context[] = []
 const temporary: string[] = []
 
 afterEach(async () => {
-  for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
+  for (const ctx of contexts.splice(0).reverse()) await disposeRealTeamContext(ctx)
   for (const path of temporary.splice(0)) await rm(path, { recursive: true, force: true })
 })
 
@@ -116,6 +116,7 @@ async function delayedStack(root: string, configured: { fresh: string; fork: str
   })
   const definition = team([reviewer()], { toolMode: 'all' })
   const config = {
+    skillRoot: join(root, 'team-skills'),
     teams: { get: () => [definition] },
     selections: { get: () => [{ sessionId: 'lead', teamId: definition.id }] },
     freshProvider: configured.fresh,
@@ -132,8 +133,8 @@ async function delayedStack(root: string, configured: { fresh: string; fork: str
 }
 
 /** The leading teammate row of one Session's roster, when a member was created. */
-function memberRow(ctx: Context, root: Agent) {
-  return ctx.agentTeams.listMembers(root).find(row => row.name === 'reviewer')
+async function memberRow(ctx: Context, root: Agent) {
+  return (await ctx.subagents.listDescendants(root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(row => row.name === 'reviewer')
 }
 
 describe('a provider that activates after this plugin', () => {
@@ -149,7 +150,7 @@ describe('a provider that activates after this plugin', () => {
     expect(refused.isError).toBe(true)
     expect(resultText(refused)).toContain('registers no subagent provider named "late-spawn"')
     // A refused creation is not a member: no durable intent, no roster row, no request.
-    expect(memberRow(h.ctx, h.root)).toBeUndefined()
+    expect(await memberRow(h.ctx, h.root)).toBeUndefined()
     expect(h.member.requests).toHaveLength(0)
   }, 20000)
 
@@ -166,11 +167,11 @@ describe('a provider that activates after this plugin', () => {
     const created = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW' })
     expect(resultText(created), resultText(created)).not.toContain('Error')
 
-    const row = memberRow(h.ctx, h.root)
+    const row = await memberRow(h.ctx, h.root)
     expect(row).toBeDefined()
     // The Host itself persisted this plugin's alias as the member's execution
     // backend, so the member stays identifiable without its snapshot.
-    expect(row?.provider).toBe(MEMBER_FRESH_PROVIDER)
+    expect(await subagentProvider(h.ctx, row!.id)).toBe(MEMBER_FRESH_PROVIDER)
     await vi.waitFor(() => expect(h.member.requests.length).toBeGreaterThan(0))
     expect(h.member.requests[0]?.sessionId).toBe(row?.id)
 
@@ -197,8 +198,8 @@ describe('a provider that activates after this plugin', () => {
     const forkedNow = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'FORK', context: 'fork' })
     expect(resultText(forkedNow), resultText(forkedNow)).not.toContain('Error')
 
-    const rows = h.ctx.agentTeams.listMembers(h.root).filter(row => row.name !== 'lead' && row.role === 'teammate')
-    expect(rows.map(row => row.provider).sort()).toEqual([MEMBER_FORK_PROVIDER, MEMBER_FRESH_PROVIDER])
+    const rows = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').filter(row => row.name !== 'lead')
+    expect((await Promise.all(rows.map(row => subagentProvider(h.ctx, row.id)))).sort()).toEqual([MEMBER_FORK_PROVIDER, MEMBER_FRESH_PROVIDER])
   }, 30000)
 
   it('refuses new members when the provider is withdrawn, then recovers on re-registration', async () => {
@@ -208,7 +209,7 @@ describe('a provider that activates after this plugin', () => {
     const spawn = await h.ctx.plugin(Spawn, { providerName: 'late-spawn' })
     expect(resultText(await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'BEFORE' })))
       .not.toContain('Error')
-    expect(h.member.requests).toHaveLength(1)
+    await vi.waitFor(() => expect(h.member.requests).toHaveLength(1))
 
     // Withdraw the provider: a new creation must be refused, not silently
     // delegated to the deployment's own provider.
@@ -217,7 +218,7 @@ describe('a provider that activates after this plugin', () => {
     const refused = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'WITHDRAWN' })
     expect(refused.isError).toBe(true)
     expect(resultText(refused)).toContain('registers no subagent provider named "late-spawn"')
-    expect(h.member.requests).toHaveLength(1)
+    await vi.waitFor(() => expect(h.member.requests).toHaveLength(1))
 
     // Re-registering the provider restores creation in the same activation.
     await h.ctx.plugin(Spawn, { providerName: 'late-spawn' })

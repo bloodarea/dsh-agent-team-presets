@@ -49,6 +49,7 @@ const e2e = process.argv.includes('--e2e') || process.env.DSH_TEST_E2E === '1'
 const filters = process.argv.slice(2).filter(arg => !arg.startsWith('--'))
 const vitest = await startVitest('test', filters, {
   root, config: false, watch: false,
+  ...process.env.DSH_TEST_NAME === undefined ? {} : { testNamePattern: process.env.DSH_TEST_NAME },
   include: e2e ? ['tests/**/*.spec.{ts,tsx}', 'tests/**/*.e2e.ts'] : ['tests/**/*.spec.{ts,tsx}'],
   // Vitest's own default excludes stay in force outside the e2e lane.
   ...e2e ? { exclude: ['**/node_modules/**'] } : {},

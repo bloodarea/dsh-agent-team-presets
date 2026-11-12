@@ -16,6 +16,7 @@ describe('built deliverables', () => {
       requests.push(id)
       if (id === 'react/jsx-runtime') return { jsx: () => null, jsxs: () => null, Fragment: Symbol() }
       if (id === 'react') return { createContext: () => ({}) }
+      if (id === 'react-dom') return { createPortal: (children: unknown) => children }
       if (id === '@deepseek-ai/dsh-client-store') return { createStore: () => ({}) }
       if (id === '@deepseek-ai/dsh-client-ui-primitives') return {}
       throw new Error(`Undeclared loader import: ${id}`)

@@ -20,7 +20,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-experimental-agent-team'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -35,8 +34,8 @@ import { personaBaseline, prepareNativePresentation, readWire } from './presenta
 import type { Config } from './config.ts'
 import { teamSettingsReconcile } from './settings-reconcile.ts'
 import { hasTeamApplicationMarker, isSessionRoot, TeamExecutionMonitor, teammatesBusy } from './execution.ts'
+import { membershipOf } from './team-runtime.ts'
 import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
-import type { SessionId } from '@deepseek-ai/dsh-session'
 import { registerPresetTools } from './preset-tools.ts'
 import { CAPTAIN_ROLE, TeamSkills, resolveSkillRoot, roleOfMember } from './team-skills/index.ts'
 import type { AgentSkillSync } from './team-skills/index.ts'
@@ -63,7 +62,7 @@ const NAMESPACE = 'agent-team-presets'
  * join, the prompt sections its captain adds, the session projections that
  * authenticate a preset write, and the settings document it owns.
  */
-export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'sessionProjections', 'settings', 'subagents']
+export const inject = ['agents', 'tools', 'systemPrompt', 'sessionProjections', 'settings', 'subagents']
 
 /** Diagnostics prefix for the failures this plugin only reports. */
 const LOG = 'agent-team-presets'
@@ -296,9 +295,10 @@ export function apply(ctx: Context, config: Config): void {
     // A child carrying this plugin's alias is preset-managed even when no
     // snapshot can be read, so it can never be mistaken for a native teammate.
     const managed = isPresetMemberProvider(memberProviderMarker(agent))
-    let membership: ReturnType<typeof ctx.agentTeams.tryMembership>
+    let membership: ReturnType<typeof membershipOf>
     try {
-      membership = ctx.agentTeams.tryMembership(agent)
+      const recorded = members.membershipFor(agent)
+      membership = recorded === undefined ? membershipOf(ctx, agent) : { ...recorded, role: 'teammate' as const }
     } catch (error: unknown) {
       // A marked child whose Team identity cannot be resolved is never explained
       // away as an ordinary child: it is refused before its first request.
@@ -331,7 +331,7 @@ export function apply(ctx: Context, config: Config): void {
         // already bound to this same child is a cold resume of an existing
         // member, not another generation, and is never invalidated by a
         // lowered cap.
-        if (claim.record.lifecycle === 'intent' && claim.record.childSessionId === undefined) {
+        if (claim.record.lifecycle === 'intent') {
           const refusal = createdDepthRefusal(ctx, agent)
           if (refusal !== undefined) {
             members.release(agent)
@@ -471,7 +471,69 @@ export function apply(ctx: Context, config: Config): void {
     config,
     applied: agent => applications.get(agent),
   })
-  ctx.plugin(TeamPresetsToolCatalog, { monitor })
+  // The header roster lists what this Session actually summoned, so it reads the
+  // durable member snapshots and the live Agent registry instead of Settings.
+  ctx.plugin(TeamPresetsToolCatalog, {
+    monitor,
+    roster: (sessionId) => {
+      // The Lead carries the Session, so it is a member of its own Team: the
+      // roster leads with it and only then lists the teammates it summoned.
+      // A Session shows its Team as soon as one is selected, not only after the
+      // next task boundary adopts the definition: the roster is chrome, not the
+      // policy the running task was frozen with.
+      const root = ctx.agents.get(sessionId as Parameters<typeof ctx.agents.get>[0])
+        ?? ctx.agents.get(sessionId.replace(/^session-/, '') as Parameters<typeof ctx.agents.get>[0])
+      // A Session that was just created has no Agent yet, so the selection is
+      // read for the Session identity itself: the roster appears once a Team is
+      // chosen, not one turn later.
+      const canonicalId = root?.session.id ?? sessionId
+      // The selection is keyed by Session identity, which the page may pass with
+      // or without the `session-` prefix; resolve whichever form the Host stored.
+      const bare = sessionId.replace(/^session-/, '')
+      const candidates = [canonicalId, sessionId, bare, `session-${bare}`]
+      const applied = (root === undefined ? undefined : definitions.get(root))
+        ?? candidates.reduce<ReturnType<typeof selectedTeam>>(
+          (found, id) => found ?? selectedTeam(config.teams.get(), config.selections.get(), id),
+          undefined,
+        )
+      const captainName = applied?.captain.name.trim() ?? ''
+      const sessionModel = root === undefined
+        ? undefined
+        : (ctx.sessionProjections.snapshot(root.session, ['modelSelection']).values['modelSelection'] as
+          { next?: { model?: string } } | undefined)?.next?.model
+      const captain = applied === undefined
+        ? []
+        : [{
+          name: captainName === '' ? 'team-lead' : captainName,
+          displayName: captainName === '' ? 'team-lead' : captainName,
+          description: applied.captain.description,
+          role: 'captain' as const,
+          status: root?.status === 'running' ? 'running' as const : 'idle' as const,
+          ...sessionModel === undefined ? {} : { model: sessionModel },
+        }]
+      // Member snapshots key their root by the canonical Session identity, which
+      // the page passes in either form; read through the resolved Agent when the
+      // Host knows this Session.
+      const rows = [...captain, ...members.recordsUnder(canonicalId).map(record => {
+        const live = record.childSessionId === undefined
+          ? undefined
+          : ctx.agents.get(record.childSessionId as Parameters<typeof ctx.agents.get>[0])
+        return {
+          name: record.memberName,
+          displayName: record.displayName.trim() === '' ? record.memberName : record.displayName,
+          description: record.roleDescription,
+          ...record.roleId === undefined ? {} : { roleId: record.roleId },
+          ...record.childSessionId === undefined ? {} : { childSessionId: record.childSessionId },
+          role: 'member' as const,
+          status: live?.status === 'running' ? 'running' as const : 'idle' as const,
+          ...record.route === undefined
+            ? {}
+            : { route: { provider: record.route.provider, model: record.route.model, reasoningEffort: record.route.reasoningEffort ?? '' } },
+        }
+      })]
+      return { members: rows }
+    },
+  })
   // The management page reaches the private library through this one service, so
   // every import, edit, assignment and delete runs the same manager rules as the
   // Agent-facing path instead of a second, page-only implementation.
@@ -508,8 +570,7 @@ export function apply(ctx: Context, config: Config): void {
    */
   const rootOf = (agent: Agent): Agent | undefined => {
     if (isSessionRoot(agent)) return agent
-    const membership = ctx.agentTeams.tryMembership(agent)
-    return membership?.role === 'teammate' ? membership.root : undefined
+    return members.membershipFor(agent)?.root ?? membershipOf(ctx, agent)?.root
   }
 
   /**
@@ -1071,19 +1132,17 @@ export function apply(ctx: Context, config: Config): void {
       }
       return
     }
-    const byRoot = new Map<Agent, SessionId[]>()
+    await members.disposeActivations()
+    // A cold-restored residency has no public selective-disposal handle in rc.2.
+    // Interrupt its work and retain its Agent-owned policies until Agent disposal.
     for (const agent of [...managedMembers]) {
-      const membership = ctx.agentTeams.tryMembership(agent)
-      if (membership?.role !== 'teammate') continue
-      byRoot.set(membership.root, [...byRoot.get(membership.root) ?? [], agent.id])
-    }
-    for (const [root, ids] of byRoot) {
+      if (ctx.agents.get(agent.id) !== agent) continue
+      const membership = members.membershipFor(agent)
+      if (membership === undefined) continue
       try {
-        await subagents.drainChildren(root, ids)
+        subagents.interrupt(agent.id, { kind: 'ancestor', agent: membership.root })
       } catch (error: unknown) {
-        ctx.logger.warn(
-          `${LOG}: managed members of Session "%s" could not be drained: %s`, root.session.id, String(error),
-        )
+        ctx.logger.warn(`${LOG}: managed member "%s" could not be interrupted: %s`, agent.id, String(error))
       }
     }
   }
@@ -1207,8 +1266,8 @@ export function apply(ctx: Context, config: Config): void {
     // A member the runtime just claimed is known by its exact Team identity, so
     // the durable binding is written inside this awaited creation transaction.
     if (managedMembers.has(agent)) {
-      const membership = ctx.agentTeams.tryMembership(agent)
-      if (membership?.role === 'teammate') await members.bind(agent, { root: membership.root, name: membership.name })
+      const membership = members.membershipFor(agent)
+      if (membership !== undefined) await members.bind(agent, membership)
     }
   })
   // A blank Session keeps its Agent identity when its Agent preset changes.
@@ -1263,10 +1322,15 @@ export function apply(ctx: Context, config: Config): void {
     // A stored change moves the frame even when no Session is online to adopt it.
     monitor.invalidate()
   })
-  // The captain running, a teammate running or provisioning, and either of them
-  // going idle are the edges that decide whether a Session is inside a Team
-  // task. A teammate's edge reaches the root through the roster, so a member
-  // finishing can be what releases its Session's frozen definition.
+  // The captain running, a member running or provisioning, and either of them
+  // going idle decide whether a Session is inside a Team task. A member's own
+  // activation and settlement reach the root here, so a member finishing can be
+  // what releases its Session's frozen definition.
+  for (const event of ['subagent/start', 'subagent/end'] as const) {
+    ctx.on(event, () => {
+      for (const agent of ctx.agents.list()) if (isSessionRoot(agent)) reconcile(agent)
+    })
+  }
   ctx.on('agent/status', ({ agent, status }) => {
     const root = rootOf(agent)
     if (root === undefined) return
@@ -1277,7 +1341,7 @@ export function apply(ctx: Context, config: Config): void {
   // so the projection has folded the append this listener just saw, and several
   // settlements in one append batch cost one read.
   ctx.on('session/event', (session, event) => {
-    if (event.type !== 'team/member') return
+    if (event.type !== 'subagent/catalog') return
     const agent = ctx.agents.get(session.id)
     if (agent === undefined || !isSessionRoot(agent)) return
     pendingRoster.add(agent)

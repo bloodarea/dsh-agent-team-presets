@@ -156,6 +156,7 @@ export function TeamImportDialog(props: TeamImportDialogProps) {
           )}
         </>
       )}
+      <p className={css.dialogNote}>{t('importNote')}</p>
     </Modal>
   )
 }

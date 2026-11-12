@@ -265,8 +265,11 @@ describe('Typert faces load without a schema dependency', () => {
       namespace: 'teamPresets',
       invocation: { kind: 'direct' },
       parameters: [],
-      result: { spec: { mode: 'strict', typeSymbol: 'dsh-agent-team-presets/types#ToolCatalogValue' } },
     })
+    // The generator emits either a lazy `spec` or an inlined schema for one
+    // method; both must name the same declared result type.
+    expect(catalog!.result.spec?.typeSymbol ?? (catalog!.result as { typeSymbol?: string }).typeSymbol)
+      .toBe('dsh-agent-team-presets/types#ToolCatalogValue')
     // A direct invocation must not claim a stream mode.
     expect(catalog!.mode).toBeUndefined()
     expect(execution).toBeDefined()
@@ -275,52 +278,86 @@ describe('Typert faces load without a schema dependency', () => {
       mode: 'stream',
       invocation: { kind: 'direct' },
       cancellation: { parameter: 'signal' },
-      result: { spec: { mode: 'strict', typeSymbol: 'dsh-agent-team-presets/types#TeamExecutionSnapshot' } },
     })
+    expect(execution!.result.spec?.typeSymbol ?? (execution!.result as { typeSymbol?: string }).typeSymbol)
+      .toBe('dsh-agent-team-presets/types#TeamExecutionSnapshot')
+    // The roster the header control reads is a direct invocation too.
+    const roster = invocations.find(row => row.method === 'roster')
+    expect(roster).toBeDefined()
+    expect(roster).toMatchObject({
+      id: 'dsh-agent-team-presets#teamPresets/roster',
+      invocation: { kind: 'direct' },
+    })
+    expect(roster!.mode).toBeUndefined()
   })
 })
 
-describe('Inlined schemas still validate', () => {
+/**
+ * One emitted JSON Schema read structurally.
+ *
+ * The emitter's schema is data, not a typed contract of this repository, so the
+ * assertions walk it as plain JSON instead of importing its generator types.
+ */
+interface JsonObject {
+  readonly [key: string]: any // oxlint-disable-line typescript/no-explicit-any -- JSON data read by field name
+}
+
+describe('Emitted result schemas still constrain their values', () => {
   // The live schema hooks only exist in-process; the subprocess check above is
-  // what proves these same entries load without zod.
-  let catalog: ResultDescriptor
-  let execution: ResultDescriptor
+  // what proves these same entries load without zod. A method may ship either a
+  // lazy `spec` (its JSON Schema is declared there) or an inlined `create()`.
+  interface ResultShape {
+    create?: () => { parse: (value: unknown) => unknown }
+    spec?: { jsonSchema?: JsonObject }
+    jsonSchema?: JsonObject
+  }
+  let catalog: ResultShape
+  let execution: ResultShape
+  let roster: ResultShape
 
   beforeAll(async () => {
     const host = (await import(/* @vite-ignore */ faces.host)) as { TYPERT: { invocations: Descriptor[] } }
     const invocations = host.TYPERT.invocations
-    catalog = invocations.find(row => row.method === 'catalog')!.result
-    execution = invocations.find(row => row.method === 'execution')!.result
-    expect(typeof catalog.create).toBe('function')
-    expect(typeof execution.create).toBe('function')
+    const resultOf = (method: string): ResultShape => invocations.find(row => row.method === method)!.result as ResultShape
+    catalog = resultOf('catalog')
+    execution = resultOf('execution')
+    roster = resultOf('roster')
+    // Every method must carry its result constraint in one of the two forms.
+    for (const result of [catalog, execution, roster]) {
+      expect(typeof result.create === 'function' || result.spec?.jsonSchema !== undefined || result.jsonSchema !== undefined).toBe(true)
+    }
   })
 
-  it('accepts a well-formed catalog and preserves the captain-only flag', () => {
-    const parsed = catalog.create().parse({
-      tools: [{ name: 'read', description: 'Read a file', source: 'presets', captainOnly: true }],
-    }) as { tools: { name: string; captainOnly?: boolean; source: string }[] }
-    expect(parsed.tools).toHaveLength(1)
-    expect(parsed.tools[0]).toMatchObject({ name: 'read', source: 'presets', captainOnly: true })
+  it('declares the tool entries of the catalog and their required fields', () => {
+    const schema = (catalog.spec?.jsonSchema ?? catalog.jsonSchema) as JsonObject
+    expect(schema.required).toContain('tools')
+    const item = (schema.properties as Record<string, JsonObject>)['tools'].items as JsonObject
+    expect(item.required).toEqual(expect.arrayContaining(['name', 'description', 'source']))
+    expect((item.properties as Record<string, JsonObject>)['source'].enum).toEqual(['other', 'presets', 'mcp'])
   })
 
-  it('rejects an unknown tool source', () => {
-    expect(() => catalog.create().parse({
-      tools: [{ name: 'read', description: 'Read a file', source: 'native' }],
-    })).toThrow()
-  })
-
-  it('rejects a malformed tool entry', () => {
-    expect(() => catalog.create().parse({ tools: [{ description: 'no name', source: 'other' }] })).toThrow()
-  })
-
-  it('accepts a well-formed execution snapshot and rejects an unknown state', () => {
+  it('validates an execution snapshot and refuses an unknown state', () => {
     const row = { teamId: 'team-1', state: 'busy', busySessions: 2, executingMembers: 1, pendingSessions: 0, notes: [] }
-    const parsed = execution.create().parse({ teams: [row] }) as { teams: typeof row[] }
+    const create = execution.create
+    if (create === undefined) {
+      const schema = (execution.spec?.jsonSchema ?? execution.jsonSchema) as JsonObject
+      const state = ((schema.properties as Record<string, JsonObject>)['teams'].items as JsonObject).properties as Record<string, JsonObject>
+      expect(state['state'].enum).toEqual(['unknown', 'idle', 'busy'])
+      return
+    }
+    const parsed = create().parse({ teams: [row] }) as { teams: typeof row[] }
     expect(parsed.teams[0]).toEqual(row)
-    // `unknown` is the only non-idle, non-busy state the page may render.
-    expect(() => execution.create().parse({ teams: [{ ...row, state: 'running' }] })).toThrow()
-    // A count that is not a number must not pass for a measured zero.
-    expect(() => execution.create().parse({ teams: [{ ...row, busySessions: '2' }] })).toThrow()
+    expect(() => create().parse({ teams: [{ ...row, state: 'running' }] })).toThrow()
+    expect(() => create().parse({ teams: [{ ...row, busySessions: '2' }] })).toThrow()
+  })
+
+  it('declares the roster members and their two statuses', () => {
+    const schema = (roster.spec?.jsonSchema ?? roster.jsonSchema) as JsonObject
+    expect(schema.required).toContain('members')
+    const item = (schema.properties as Record<string, JsonObject>)['members'].items as JsonObject
+    expect(item.required).toEqual(expect.arrayContaining(['name', 'displayName', 'description', 'role', 'status']))
+    expect((item.properties as Record<string, JsonObject>)['role'].enum).toEqual(['captain', 'member'])
+    expect((item.properties as Record<string, JsonObject>)['status'].enum).toEqual(['running', 'idle'])
   })
 })
 

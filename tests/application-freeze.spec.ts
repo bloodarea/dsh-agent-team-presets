@@ -13,8 +13,7 @@ import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
-import type { SpawnTeammateRequest, TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { SubagentActivation, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -25,9 +24,17 @@ import type { TeamPreset, TeamSelectionRecord } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { memberRecord, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
-import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { settlePlugin, mountSubagentDouble, acceptedActivation } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
+
+/** Scripted child discovery and execution state projected by the rc2 harness. */
+interface MemberRow {
+  readonly id: SessionId
+  readonly name: string
+  readonly role: 'teammate'
+  readonly status: 'running' | 'provisioning' | 'inactive' | 'failed'
+}
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -135,12 +142,12 @@ function volatileRef<T>(initial: T): { ref: { get: () => T }; set: (next: T) => 
 }
 
 /** One scripted roster row for a teammate of a Session. */
-function teammate(status: TeamMemberView['status'], name = 'member-1'): TeamMemberView {
-  return { id: SessionId(name), name, role: 'teammate', status, diagnostics: [] }
+function teammate(status: MemberRow['status'], name = 'member-1'): MemberRow {
+  return { id: SessionId(name), name, role: 'teammate', status }
 }
 
-/** One `spawn_team_member` call the fake Team service recorded. */
-type SpawnCall = (caller: Agent, request: SpawnTeammateRequest) => Promise<{ member: { name: string; status: 'active' } }>
+/** One `spawn_team_member` call the subagent double recorded. */
+type SpawnCall = (spec: SubagentActivationSpec) => Promise<SubagentActivation>
 
 interface Harness {
   readonly ctx: Context
@@ -148,7 +155,7 @@ interface Harness {
   readonly adapter: GatedAdapter
   /** The durable member snapshot unit this Team's members are frozen into. */
   readonly storage: MemberStorage
-  readonly spawnTeammate: ReturnType<typeof vi.fn<SpawnCall>>
+  readonly startActivation: ReturnType<typeof vi.fn<SpawnCall>>
   /** The mounted plugin fiber, so a case can dispose it like the Loader would. */
   readonly fiber: { dispose(): Promise<void> }
   /** Create one live Session-root Agent. */
@@ -157,9 +164,9 @@ interface Harness {
   readonly teams: (next: readonly TeamPreset[]) => void
   /** Publish the Session selections and announce the volatile update. */
   readonly selections: (next: readonly TeamSelectionRecord[]) => void
-  /** Replace the roster rows one Session's fake Team service reports. */
-  readonly teammates: (sessionId: string, rows: readonly TeamMemberView[]) => void
-  /** Append one durable `team/member` settlement to a Session's journal feed. */
+  /** Replace the roster rows one Session's subagent double reports. */
+  readonly teammates: (sessionId: string, rows: readonly MemberRow[]) => void
+  /** Append one durable `subagent/catalog` settlement to a Session's journal feed. */
   readonly rosterEvent: (agent: Agent) => void
   /** Wake one Agent into a turn that stays running until {@link release}. */
   readonly wake: (agent: Agent) => void
@@ -169,7 +176,7 @@ interface Harness {
   readonly disposeAgent: (agent: Agent) => Promise<void>
 }
 
-/** Mount the plugin over a scripted Team service, settings document, and model route. */
+/** Mount the plugin over a scripted subagent service, settings document, and model route. */
 async function setup(options: {
   teams: readonly TeamPreset[]
   selections: readonly TeamSelectionRecord[]
@@ -197,30 +204,13 @@ async function setup(options: {
     })
   }
 
-  const roots = new Set<Agent>()
-  const rows = new Map<string, readonly TeamMemberView[]>()
-  const spawnTeammate = vi.fn<SpawnCall>(async (_caller, request) => ({
-    member: { name: request.name, status: 'active' },
-  }))
-  ctx.provide('agentTeams', {
-    spawnTeammate,
-    tryMembership: (agent: Agent) => roots.has(agent)
-      ? { root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }
-      : undefined,
-    listMembers: (agent: Agent): TeamMemberView[] => [
-      {
-        id: agent.id,
-        name: 'lead',
-        role: 'lead',
-        status: agent.status === 'running' ? 'running' : 'inactive',
-        diagnostics: [],
-      },
-      ...rows.get(agent.session.id) ?? [],
-    ],
+  const rows = new Map<string, readonly MemberRow[]>()
+  const startActivation = vi.fn<SpawnCall>(async spec => acceptedActivation(spec))
+  mountSubagentDouble(ctx, {
+    startActivation,
+    members: agent => rows.get(agent.session.id) ?? [],
   })
 
-  // The member runtime's durable unit, mounted exactly as the dsh-base bundle
-  // composes it: member creation is refused without it.
   const storeRoot = await mkdtemp(join(tmpdir(), 'team-presets-freeze-store-'))
   temporary.push(storeRoot)
   const storage = await mountMemberStorage(ctx, storeRoot)
@@ -232,11 +222,6 @@ async function setup(options: {
     describe: vi.fn(() => [{ ns: 'agent-team-presets', revision: 0 }]),
     update: vi.fn(async () => {}),
   })
-
-  // The plugin injects the subagent service, exactly as a deployment that
-  // composes Teams provides it: without it the mount is parked and no Team is
-  // ever applied. The double also answers the depth cap member creation checks.
-  ctx.provide('subagents', subagentServiceDouble())
 
   const config = {
     teams: teamsRef.ref,
@@ -254,14 +239,13 @@ async function setup(options: {
     config,
     adapter,
     storage,
-    spawnTeammate,
+    startActivation,
     fiber,
     create: async (id) => {
       const handle = await ctx.agents.create({
         sessionId: SessionId(id),
         agentOptions: { provider: 'fixture', model: 'fixture' },
       })
-      roots.add(handle.agent)
       agents.push(handle.agent)
       handles.set(handle.agent, handle)
       return handle.agent
@@ -276,13 +260,9 @@ async function setup(options: {
     },
     teammates: (sessionId, next) => { rows.set(sessionId, next) },
     rosterEvent: (agent) => {
-      // Append the durable settlement the Agent Teams service writes, so the
-      // freeze listener sees a committed event with a real sequence number.
-      const append = agent.session.append.bind(agent.session) as unknown as (type: string, data: unknown) => void
-      append('team/member', {
-        version: 2,
-        teamId: TeamId(agent.id),
-        member: { id: 'member-1', name: 'member-1', phase: 'failed' },
+      agent.session.append('subagent/catalog', {
+        version: 3, childId: SessionId('member-1'), name: 'member-1',
+        childCreatedAt: 0, mode: 'continuable', label: 'member settlement',
       })
     },
     wake: (agent) => {
@@ -477,11 +457,16 @@ describe('a running Team task keeps its definition', () => {
 
     const frozen = await callMemberTool(h.ctx, captain, { member: 'alpha', task: 'go' })
     expect(frozen.isError).toBe(false)
-    const request = h.spawnTeammate.mock.calls[0]?.[1]
-    expect(request?.name).toBe('alpha')
-    // The frozen member's persona lives in its durable snapshot, not in the
-    // Team request the host ignored.
-    expect((await memberRecord(h.storage, 'alpha'))?.persona).toContain('Team A')
+    const request = h.startActivation.mock.calls[0]?.[0]
+    expect(request?.parent.id).toBe(captain.id)
+    expect(request).toMatchObject({
+      name: 'alpha', provider: 'preset-member-fresh-v1', label: 'A member',
+      prompt: [{ type: 'text', text: 'go' }], delivery: 'parent',
+    })
+    // The frozen member's persona lives in its durable snapshot.
+    const record = await memberRecord(h.storage, 'alpha')
+    expect(request?.childId).toBe(record?.childSessionId)
+    expect(record?.persona).toContain('Team A')
     expect((await callMemberTool(h.ctx, captain, { member: 'gamma', task: 'go' })).isError).toBe(true)
 
     await h.release()
@@ -811,25 +796,16 @@ describe('application lifecycle across status edges', () => {
       async execute() { return name },
     })
     let root!: Agent
-    ctx.provide('agentTeams', {
-      spawnTeammate: async (_caller: Agent, request: SpawnTeammateRequest) => ({ member: { name: request.name, status: 'active' } }),
-      // Only the Session root is a Team member; the child is ordinary and unmanaged.
-      tryMembership: (agent: Agent) => agent === root
-        ? { root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }
-        : undefined,
-      listMembers: () => [],
-    })
     ctx.provide('settings', {
       configure: () => () => {},
       describe: () => [{ ns: 'agent-team-presets', revision: 0 }],
       update: async () => {},
     })
-    // The mount is parked without the injected subagent service.
-    ctx.provide('subagents', subagentServiceDouble())
+    // An unpublished ordinary child has no subagent membership yet.
+    mountSubagentDouble(ctx)
     root = (await ctx.agents.create({ sessionId: SessionId('s1'), agentOptions: { provider: 'fixture', model: 'fixture' } })).agent
     const child = (await ctx.agents.create({
       sessionId: SessionId('child'),
-      parentAgent: root,
       meta: { parentSession: root.session.id, origin: 'subagent' },
       agentOptions: { provider: 'fixture', model: 'fixture' },
     })).agent

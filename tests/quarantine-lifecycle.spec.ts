@@ -54,8 +54,7 @@ import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
-import type { SpawnTeammateRequest, TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { SubagentActivation, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -67,9 +66,17 @@ import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { CAPTAIN_RECOVERY_TOOLS } from '../src/tool-policy.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
-import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { settlePlugin, mountSubagentDouble, acceptedActivation } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
+
+/** Scripted child discovery and execution state projected by the rc2 harness. */
+interface MemberRow {
+  readonly id: SessionId
+  readonly name: string
+  readonly role: 'teammate'
+  readonly status: 'running' | 'provisioning' | 'inactive' | 'failed'
+}
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -183,12 +190,12 @@ function volatileRef<T>(initial: T): { ref: { get: () => T }; set: (next: T) => 
 }
 
 /** One scripted roster row for a teammate of a Session. */
-function teammate(status: TeamMemberView['status'], name = 'member-1'): TeamMemberView {
-  return { id: SessionId(name), name, role: 'teammate', status, diagnostics: [] }
+function teammate(status: MemberRow['status'], name = 'member-1'): MemberRow {
+  return { id: SessionId(name), name, role: 'teammate', status }
 }
 
-/** One `spawn_team_member` call the fake Team service recorded. */
-type SpawnCall = (caller: Agent, request: SpawnTeammateRequest) => Promise<{ member: { name: string; status: 'active' } }>
+/** One `spawn_team_member` call the subagent double recorded. */
+type SpawnCall = (spec: SubagentActivationSpec) => Promise<SubagentActivation>
 
 interface Harness {
   readonly ctx: Context
@@ -196,7 +203,7 @@ interface Harness {
   readonly adapter: GatedAdapter
   /** The durable member snapshot unit this Team's members are frozen into. */
   readonly storage: MemberStorage
-  readonly spawnTeammate: ReturnType<typeof vi.fn<SpawnCall>>
+  readonly startActivation: ReturnType<typeof vi.fn<SpawnCall>>
   /** Names of the exact-Agent spy tool bodies that actually ran. */
   readonly spyBodies: string[]
   /** The mounted plugin fiber, so a case can dispose it like the Loader would. */
@@ -207,9 +214,9 @@ interface Harness {
   readonly teams: (next: readonly TeamPreset[]) => void
   /** Publish the Session selections and announce the volatile update. */
   readonly selections: (next: readonly TeamSelectionRecord[]) => void
-  /** Replace the roster rows one Session's fake Team service reports. */
-  readonly teammates: (sessionId: string, rows: readonly TeamMemberView[]) => void
-  /** Append one durable `team/member` settlement to a Session's journal feed. */
+  /** Replace the roster rows one Session's subagent double reports. */
+  readonly teammates: (sessionId: string, rows: readonly MemberRow[]) => void
+  /** Append one durable `subagent/catalog` settlement to a Session's journal feed. */
   readonly rosterEvent: (agent: Agent) => void
   /** Wake one Agent into a turn that stays running until {@link release}. */
   readonly wake: (agent: Agent) => void
@@ -223,7 +230,7 @@ interface Harness {
   readonly headerTools: (agent: Agent) => string[]
 }
 
-/** Mount the plugin over a scripted Team service, settings document, and model route. */
+/** Mount the plugin over a scripted subagent service, settings document, and model route. */
 async function setup(options: {
   teams: readonly TeamPreset[]
   selections: readonly TeamSelectionRecord[]
@@ -255,30 +262,12 @@ async function setup(options: {
     })
   }
 
-  const roots = new Set<Agent>()
-  // A resumed Session is known to the Team service by identity before its Agent
-  // exists, so a cold-start case can script a roster the mount already sees.
-  const knownRoots = new Set<string>()
-  const rows = new Map<string, readonly TeamMemberView[]>()
+  const rows = new Map<string, readonly MemberRow[]>()
   const spyBodies: string[] = []
-  const spawnTeammate = vi.fn<SpawnCall>(async (_caller, request) => ({
-    member: { name: request.name, status: 'active' },
-  }))
-  ctx.provide('agentTeams', {
-    spawnTeammate,
-    tryMembership: (agent: Agent) => roots.has(agent) || knownRoots.has(agent.session.id)
-      ? { root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }
-      : undefined,
-    listMembers: (agent: Agent): TeamMemberView[] => [
-      {
-        id: agent.id,
-        name: 'lead',
-        role: 'lead',
-        status: agent.status === 'running' ? 'running' : 'inactive',
-        diagnostics: [],
-      },
-      ...rows.get(agent.session.id) ?? [],
-    ],
+  const startActivation = vi.fn<SpawnCall>(async spec => acceptedActivation(spec))
+  mountSubagentDouble(ctx, {
+    startActivation,
+    members: agent => rows.get(agent.session.id) ?? [],
   })
 
   const storeRoot = await mkdtemp(join(tmpdir(), 'team-presets-quarantine-store-'))
@@ -292,7 +281,6 @@ async function setup(options: {
     describe: vi.fn(() => [{ ns: 'agent-team-presets', revision: 0 }]),
     update: vi.fn(async () => {}),
   })
-  ctx.provide('subagents', subagentServiceDouble())
 
   const config = {
     teams: teamsRef.ref,
@@ -310,16 +298,14 @@ async function setup(options: {
     config,
     adapter,
     storage,
-    spawnTeammate,
+    startActivation,
     spyBodies,
     get fiber() { return fiber },
     create: async (id) => {
-      knownRoots.add(id)
       const handle = await ctx.agents.create({
         sessionId: SessionId(id),
         agentOptions: { provider: 'fixture', model: 'fixture' },
       })
-      roots.add(handle.agent)
       agents.push(handle.agent)
       handles.set(handle.agent, handle)
       // Exact-Agent spies: a name that only this Agent can see proves the guard
@@ -345,13 +331,9 @@ async function setup(options: {
     },
     teammates: (sessionId, next) => { rows.set(sessionId, next) },
     rosterEvent: (agent) => {
-      // Append the durable settlement the Agent Teams service writes, so the
-      // freeze listener sees a committed event with a real sequence number.
-      const append = agent.session.append.bind(agent.session) as unknown as (type: string, data: unknown) => void
-      append('team/member', {
-        version: 2,
-        teamId: TeamId(agent.id),
-        member: { id: 'member-1', name: 'member-1', phase: 'failed' },
+      agent.session.append('subagent/catalog', {
+        version: 3, childId: SessionId('member-1'), name: 'member-1',
+        childCreatedAt: 0, mode: 'continuable', label: 'member settlement',
       })
     },
     wake: (agent) => {
@@ -968,7 +950,7 @@ describe('the recovery set is exact', () => {
     expect(h.spyBodies).not.toContain('subagent')
     expect(h.spyBodies).not.toContain('subagent_fork')
     expect(h.spyBodies).not.toContain('workflow')
-    expect(h.spawnTeammate).not.toHaveBeenCalled()
+    expect(h.startActivation).not.toHaveBeenCalled()
 
     await h.release()
   })
@@ -1102,7 +1084,6 @@ describe('a teammate is never granted the captain recovery set', () => {
     await settlePlugin()
     const child = (await h.ctx.agents.create({
       sessionId: SessionId('child'),
-      parentAgent: captain,
       meta: { parentSession: captain.session.id, origin: 'subagent' },
       agentOptions: { provider: 'fixture', model: 'fixture' },
     })).agent

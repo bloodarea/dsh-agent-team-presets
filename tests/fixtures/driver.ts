@@ -110,8 +110,8 @@ try {
   // Attempt a real preset write while the Team is executing. The busy gate must
   // refuse it, and the stored Team must still report its original description at
   // its original revision after the run.
-  const busyMembers = ctx.agentTeams.listMembers(main)
-    .filter(member => member.role === 'teammate' && (member.status === 'running' || member.status === 'provisioning')).length
+  const busyMembers = (await ctx.subagents.listDescendants(main.id))
+    .filter(member => member.kind === 'child' && member.activity === 'running').length
   const presetWhileBusy = await executeTool(ctx, {
     callId: ToolCallId('captain-write-while-busy'),
     name: 'update_team_preset',

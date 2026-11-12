@@ -12,6 +12,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { apply, inject } from '../src/index.ts'
 import { BUILTIN_SKILL_NAME } from '../src/builtin-skill.ts'
+import { mountSubagentDouble } from './fixtures/plugin-harness.ts'
 import type { Config } from '../src/config.ts'
 
 const contexts: Context[] = []
@@ -30,18 +31,8 @@ async function setup(): Promise<{ ctx: Context; config: Config }> {
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SkillRegistry)
-  ctx.provide('agentTeams', {
-    spawnTeammate: async () => ({ member: { name: 'member', status: 'active' } }),
-    tryMembership: () => undefined,
-    listMembers: () => [],
-  })
-  ctx.provide('subagents', {
-    registerProvider: () => () => {},
-    getProvider: () => undefined,
-    list: () => [],
-    resolveMaxDepth: () => 2,
-    drainChildren: async () => {},
-  })
+  ctx.provide('agentTeams', {})
+  mountSubagentDouble(ctx, { providers: [] })
   ctx.provide('settings', {
     configure: () => () => {},
     update: async () => {},

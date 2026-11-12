@@ -5,12 +5,13 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { TeamExecutionSnapshot, TeamSkillDeleteView, TeamSkillDependencies, TeamSkillDetailView, TeamSkillImportFile, TeamSkillImportFolderView, TeamSkillLibraryView, TeamSkillRefusalView, TeamSkillScanView, ToolCatalogValue } from 'dsh-agent-team-presets/types'
+import type { TeamExecutionSnapshot, TeamRosterValue, TeamSkillDeleteView, TeamSkillDependencies, TeamSkillDetailView, TeamSkillImportFile, TeamSkillImportFolderView, TeamSkillLibraryView, TeamSkillRefusalView, TeamSkillScanView, ToolCatalogValue } from 'dsh-agent-team-presets/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$7465616d50726573657473 {
     catalog: () => Promise<RemoteResult<ToolCatalogValue>>
     execution: (signal?: AbortSignal) => RemoteStreamHandle<TeamExecutionSnapshot, never>
+    roster: (sessionId: string) => Promise<RemoteResult<TeamRosterValue>>
   }
   interface TypertRemoteNamespace$7465616d536b696c6c73 {
     assignRole: (teamId: string, roleId: string, assetId: string) => Promise<RemoteResult<{ ok: boolean; detail: string; unverified?: readonly string[]; library: TeamSkillLibraryView; }>>
@@ -32,6 +33,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
     'teamPresets/catalog': () => Promise<RemoteResult<ToolCatalogValue>>
     'teamPresets/execution': (signal?: AbortSignal) => RemoteStreamHandle<TeamExecutionSnapshot, never>
+    'teamPresets/roster': (sessionId: string) => Promise<RemoteResult<TeamRosterValue>>
     'teamSkills/assignRole': (teamId: string, roleId: string, assetId: string) => Promise<RemoteResult<{ ok: boolean; detail: string; unverified?: readonly string[]; library: TeamSkillLibraryView; }>>
     'teamSkills/createSkill': (skillId: string, description: string) => Promise<RemoteResult<TeamSkillDetailView | TeamSkillRefusalView>>
     'teamSkills/deleteAsset': (assetId: string) => Promise<RemoteResult<TeamSkillDeleteView>>
@@ -57,6 +59,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 export declare const TYPERT_REMOTE: TypertRemoteInfo<{
   readonly 'teamPresets/catalog': TypertRemoteMethod<{  }, ToolCatalogValue>
   readonly 'teamPresets/execution': TypertRemoteMethod<{  }, TeamExecutionSnapshot, 'stream'>
+  readonly 'teamPresets/roster': TypertRemoteMethod<{ readonly 'sessionId': string }, TeamRosterValue>
   readonly 'teamSkills/assignRole': TypertRemoteMethod<{ readonly 'teamId': string; readonly 'roleId': string; readonly 'assetId': string }, { ok: boolean; detail: string; unverified?: readonly string[]; library: TeamSkillLibraryView; }>
   readonly 'teamSkills/createSkill': TypertRemoteMethod<{ readonly 'skillId': string; readonly 'description': string }, TeamSkillDetailView | TeamSkillRefusalView>
   readonly 'teamSkills/deleteAsset': TypertRemoteMethod<{ readonly 'assetId': string }, TeamSkillDeleteView>

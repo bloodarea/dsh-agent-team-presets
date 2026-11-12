@@ -6,13 +6,11 @@
  * event wiring (which the freeze suite covers).
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
-import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { LlmAdapter, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -23,6 +21,15 @@ import type { Config } from '../src/config.ts'
 import type { TeamExecutionSnapshot, TeamPreset, TeamSelectionRecord } from '../src/types.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { slot, team } from './fixtures/team-presets.ts'
+import { mountSubagentDouble } from './fixtures/plugin-harness.ts'
+
+/** Scripted child discovery and execution state projected by the rc2 harness. */
+interface MemberRow {
+  readonly id: SessionId
+  readonly name: string
+  readonly role: 'teammate'
+  readonly status: 'running' | 'provisioning' | 'inactive' | 'failed'
+}
 
 const contexts: Context[] = []
 
@@ -72,8 +79,8 @@ function volatileRef<T>(initial: T): { ref: { get: () => T }; set: (next: T) => 
 }
 
 /** One scripted roster row for a teammate of a Session. */
-function teammate(status: TeamMemberView['status']): TeamMemberView {
-  return { id: SessionId('member-1'), name: 'member-1', role: 'teammate', status, diagnostics: [] }
+function teammate(status: MemberRow['status']): MemberRow {
+  return { id: SessionId('member-1'), name: 'member-1', role: 'teammate', status }
 }
 
 interface Harness {
@@ -84,7 +91,7 @@ interface Harness {
   /** Record the Team one Session has applied, as the plugin runtime does. */
   readonly apply: (agent: Agent, definition: TeamPreset) => void
   /** Replace the roster rows one Session's fake Team service reports. */
-  readonly teammates: (sessionId: string, rows: readonly TeamMemberView[]) => void
+  readonly teammates: (sessionId: string, rows: readonly MemberRow[]) => void
   /** Make one Session's roster unreadable, as a malformed durable stream does. */
   readonly unreadable: (sessionId: string, unreadable: boolean) => void
   /** Create one live Session-root Agent. */
@@ -107,24 +114,13 @@ async function setup(options: {
   const adapter = new GatedAdapter()
   ctx.llm.registerAdapter(['fixture'], adapter)
 
-  const roots = new Set<Agent>()
+  const rows = new Map<string, readonly MemberRow[]>()
   const unreadable = new Set<string>()
-  const rows = new Map<string, readonly TeamMemberView[]>()
-  ctx.provide('agentTeams', {
-    spawnTeammate: async () => ({ member: { name: 'member', status: 'active' } }),
-    tryMembership: (agent: Agent) => roots.has(agent) && !unreadable.has(agent.session.id)
-      ? { root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }
-      : undefined,
-    listMembers: (agent: Agent): TeamMemberView[] => [
-      {
-        id: agent.id,
-        name: 'lead',
-        role: 'lead',
-        status: agent.status === 'running' ? 'running' : 'inactive',
-        diagnostics: [],
-      },
-      ...rows.get(agent.session.id) ?? [],
-    ],
+  mountSubagentDouble(ctx, { members: agent => rows.get(agent.session.id) ?? [] })
+  const snapshot = vi.mocked(ctx.sessionProjections.snapshot).getMockImplementation()!
+  vi.mocked(ctx.sessionProjections.snapshot).mockImplementation((...args) => {
+    if (unreadable.has(args[0].id)) throw new Error('catalog unavailable')
+    return snapshot(...args)
   })
 
   const teamsRef = volatileRef(options.teams)
@@ -159,7 +155,6 @@ async function setup(options: {
         sessionId: SessionId(id),
         agentOptions: { provider: 'fixture', model: 'fixture' },
       })
-      roots.add(handle.agent)
       agents.push(handle.agent)
       return handle.agent
     },

@@ -95,7 +95,10 @@ describe('the composer member panel', () => {
     expect(composer).toContain('useLayoutEffect')
     expect(composer).toContain('getBoundingClientRect()')
     expect(composer).toContain('window.innerWidth')
-    expect(composer).toContain("setPanelPlacement(roomOnLeft ? 'left' : 'overlay')")
+    // A flipped panel must also stay inside the element that clips the
+    // composer, so the decision reads that element too.
+    expect(composer).toContain('dockNode.offsetParent')
+    expect(composer).toContain("setPanelPlacement(leftEdge >= leftLimit ? 'left' : 'overlay')")
     expect(composer).toContain("setPanelPlacement('right')")
     expect(composer).toContain('css.memberPanelLeft')
     expect(composer).toContain('css.memberPanelOverlay')

@@ -6,11 +6,19 @@
 
 English | [中文](<README.zh.md>)
 
-> **Community plugin v0.2.0** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.0)
+> **Community plugin v0.2.1** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.1)
 >
-> This release targets **DeepSeek Harness 0.2.2-rc.1** and adds **individual member chat**: hover a Team in the composer, then select one member to run the Session as that member with its own role card, tools, Team Skills, and model route. It also moves member routing to `agent.model.select()` and per-step tool admission. Requires Agent Teams; keep 0.1.8 on older hosts. Prebuilt artifacts are included.
+> This release adapts the plugin to **DeepSeek Harness 0.2.2-rc.2**, whose Team subsystem no longer creates teammates. Members are now created through the standard subagent runtime, and no Agent Teams bundle is required. This is a breaking host requirement: keep 0.2.0 on 0.2.2-rc.1. Prebuilt artifacts are included.
 
-### What's new in 0.2.0
+### What's new in 0.2.1
+
+- **Members are ordinary subagents.** `spawn_team_member` creates a member with `ctx.subagents.startActivation` under a reserved child identity recorded with its frozen snapshot, so the member's own route, persona, team context, and strict tool policy still reach its very first request.
+- **No Agent Teams bundle is required.** Tree membership and execution state are read from the subagent runtime — its catalog, live Agents, and admission records — instead of the removed Team roster, messaging, and member APIs.
+- **Teardown stops the epochs this plugin started.** Each creation receipt is retained and released on unload; a cold-restored member, which rc.2 offers no selective disposal for, is interrupted and keeps its Agent-owned policy until the Agent is disposed.
+- **The conversation header shows the Team again.** The rc.1 header action is reproduced from the official `agent-team` client source: a roster of the captain and the members this Session summoned, each row carrying live status and the model it runs on. The captain row is read-only, a member row opens that member's conversation, and the shared-task section lists each task with its status, dependency, write scope and an expandable description. It renders only when the deployment's Team switch is on and this Session selected a preset.
+- **Adaptation to the 0.2.2-rc.2 host.** The roster reads this Session's member snapshots and Team selection instead of the removed Team projection, the shipped stylesheet's elevation token was renamed to `--dsw-elevation-stroke-color`, and the remote-contract tests accept both the lazy `spec` and the inlined schema form the generator emits.
+
+### What changed in 0.2.0
 
 - **Custom tool policies work on a PTC Session.** Applying a custom allow-list on a PTC preset registers the Harness native tool executor on that Session's Agent scope and never releases it; the deployment executor and every other Session keep PTC, and the Agent owns the registration for its whole life. The trade-off is explicit: that Session stops using `run_code` until it ends. A mount that fails, or a surface that still exposes the PTC transport, is refused without releasing anything, so a refused Session keeps its previous surface.
 - **A spent member allowance is diagnosable.** The creation refusal now reports `N of M` roster slots occupied, names the occupants whose creation never became usable, and states that the Host roster is append-only with no removal API — so a Team that will never summon again is distinguishable from a busy one.
@@ -26,7 +34,7 @@ A Team contains a **captain** and any number of **member roles**:
 
 - The captain uses the conversation's selected model, with its own role description, system prompt, and tool policy.
 - Each member can have an independent provider, model, reasoning effort, system prompt, tool policy, and assigned Team Skills.
-- The captain summons members through `spawn_team_member`; native Agent Teams provides messaging, the shared task board, and runtime coordination.
+- The captain summons members through `spawn_team_member`; the Harness subagent runtime provides messaging, execution, and lifecycle.
 
 This is a community plugin, not the Harness's bundled `@deepseek-ai/dsh-experimental-agent-team-presets` development package.
 
@@ -42,7 +50,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 - **Skills lack per-agent scope isolation.** Shipped or user skills are typically registered globally, making all skills visible to every agent; this plugin provides a private Team Skill library where skills are discovered **only** by the specific Agent they are assigned to.
 - **Switching teams is inconvenient.** Pick a preset Team directly from the composer instead of rebuilding roles by hand.
 
-**Design principle:** native Agent Teams owns collaboration at runtime; this plugin owns configuring, managing, isolating, and reusing teams and their skills.
+**Design principle:** the Harness subagent runtime owns collaboration at runtime; this plugin owns configuring, managing, isolating, and reusing teams and their skills.
 
 <a id="features"></a>
 ## Features
@@ -175,13 +183,13 @@ The captain always follows the Session, so selecting it changes the Team and the
 <a id="requirements"></a>
 ## Requirements
 
-- **DeepSeek Harness `>=0.2.2-rc.1 <0.3.0`.** Verified against **`0.2.2-rc.1`**. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
+- **DeepSeek Harness `>=0.2.2-rc.2 <0.3.0`.** Verified against **`0.2.2-rc.2`**; 0.2.2-rc.1 and older are refused. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
 - **Custom tool allow-lists work on PTC by giving that Session its own native surface.** The Host cannot restore an inherited executor after a release, so the plugin never releases one: on a PTC preset it mounts the Harness native tool executor on the Session's Agent scope and leaves the deployment executor alone. The trade-off is deliberate — that Session stops using `run_code` for the rest of its life, while other Sessions and the all-tools mode keep PTC. If mounting fails, or the surface still exposes the PTC transport afterwards, the application is refused and nothing is left behind, because no executor was ever released.
-- **Agent Teams enabled in the target profile.** The standard integration is `@deepseek-ai/dsh-experimental-agent-team-profile`, which supplies the Team service, tools, and Web roster. This plugin configures and manages Teams; it does not replace that subsystem.
+- **No Agent Teams bundle is required.** Members are created through the deployment's continuable subagent providers, and native messaging, task tools, and the Web roster are unaffected by this plugin.
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.2.0`) and the Harness version (`0.2.2-rc.1`, for example) are separate version lines.
+The plugin version (`0.2.1`) and the Harness version (`0.2.2-rc.2`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -223,8 +231,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### Option 3 — reproducible pin (no update prompts)
 
 ```text
-dsh-agent-team-presets@0.2.0
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.0
+dsh-agent-team-presets@0.2.1
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.1
 ```
 
 A fixed version or tag reproduces exactly one release. **A `#tag` GitHub spec is only ever compared against that same tag, so the market never reports an update for it — upgrading means editing the spec by hand.** Use this form only when you need a frozen install.
@@ -245,7 +253,7 @@ npm view dsh-agent-team-presets version
 
 ### Verify and upgrade safely
 
-After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.2.0`, and a running component.
+After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.2.1`, and a running component.
 
 - Back up profile settings, Team definitions, and Session selections before upgrading.
 - When migrating from a development link, remove `@deepseek-ai/dsh-experimental-agent-team-presets` first before enabling the community package.
@@ -449,7 +457,7 @@ The plugin registers `agent-team-presets-troubleshooting` on the global skill la
 
 | Symptom | What to check |
 |---|---|
-| Settings page is absent or plugin pending | Confirm profile type, peer dependencies, Agent Teams enablement, and client services. |
+| Settings page is absent or plugin pending | Confirm profile type, peer dependencies, subagent backends (default `spawn`/`fork`), and client services. |
 | Skill deletion button is disabled | The skill is protected: inspect the blocker list in the modal (bound roles or dependencies must be unassigned first). |
 | Skill assignment refused (`dependency-missing`) | A required executable declared by the skill is absent from host `PATH`. Note that declared MCP servers are reported for visibility and do not block assignment; ensure MCP servers are configured in your profile. |
 | Member creation refused | Check storage domain availability, subagent execution backend (`spawn`/`fork`), model quota, and concurrency limits. |

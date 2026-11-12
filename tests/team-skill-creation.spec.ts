@@ -29,14 +29,14 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Subagents from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-import TeamService from '@deepseek-ai/dsh-experimental-agent-team'
+import TeamService from '@deepseek-ai/dsh-agent-team'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as toolSkill from '@deepseek-ai/dsh-tool-skill'
 import { apply, inject } from '../src/index.ts'
 import { buildSkillPackage } from '../src/team-skills/import.ts'
 import { TeamSkillManager } from '../src/team-skills/manager.ts'
 import { TeamSkillStore } from '../src/team-skills/store.ts'
-import { settlePlugin, waitForTeamApplication } from './fixtures/plugin-harness.ts'
+import { disposeRealTeamContext, settlePlugin, waitForTeamApplication } from './fixtures/plugin-harness.ts'
 import { FixtureSessionQuery } from './fixtures/session-query.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
@@ -49,7 +49,7 @@ const contexts: Context[] = []
 const temporary: string[] = []
 
 afterEach(async () => {
-  for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
+  for (const ctx of contexts.splice(0).reverse()) await disposeRealTeamContext(ctx)
   for (const path of temporary.splice(0)) await rm(path, { recursive: true, force: true })
 })
 
@@ -206,26 +206,10 @@ async function bindAsset(root: string, definition_: TeamPreset = definition()): 
   return 'custom:release-check'
 }
 
-/**
- * The roster row a vetoed creation leaves behind, if any.
- *
- * The Host records the attempt on its roster and marks it `failed` with this
- * plugin's refusal as the diagnostic; that row IS the observable failure the
- * summoner reads. What must never exist is a member that reached its first
- * request.
- * @param ctx - the composed context.
- * @param root - the Session root that summoned the member.
- * @param name - the member name.
- * @returns the failed roster row, or undefined when none exists.
- */
-function refusedRow(ctx: Context, root: Agent, name: string): { status?: string; diagnostics?: readonly string[] } | undefined {
-  const rows = ctx.agentTeams.listMembers(root).filter(member => member.name === name)
-  expect(rows.length).toBeLessThanOrEqual(1)
-  if (rows.length === 0) return undefined
-  const row = rows[0] as { status?: string; diagnostics?: readonly string[] }
-  expect(row.status).toBe('failed')
-  expect((row.diagnostics ?? []).join(' ')).toContain('Team Skill')
-  return row
+/** A refused activation must not leave a published child in the rc.2 catalog. */
+async function expectNoPublishedMember(ctx: Context, root: Agent, name: string): Promise<void> {
+  const rows = await ctx.subagents.listDescendants(root.id)
+  expect(rows.filter(member => member.kind === 'child' && member.mode === 'continuable' && member.name === name)).toEqual([])
 }
 
 /** The requests one member route received for one child session. */
@@ -240,7 +224,7 @@ describe('a member with an assigned Team Skill', () => {
     const h = await stack({ skillRoot, withSkillService: true })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')!
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')!
     await vi.waitFor(() => expect(memberRequests(h.member, row.id).length).toBeGreaterThan(0), { timeout: 5000 })
     const first = memberRequests(h.member, row.id)[0]!
     // R1: the custom allow-list omits `skill`, and the member must still see it.
@@ -265,7 +249,7 @@ describe('a member with an assigned Team Skill', () => {
     })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'auditor', task: 'AUDIT_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'auditor')!
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'auditor')!
     await vi.waitFor(() => expect(memberRequests(h.member, row.id).length).toBeGreaterThan(0), { timeout: 5000 })
     // The assignment belongs to `reviewer`; `auditor` must not inherit it.
     expect(requestText(memberRequests(h.member, row.id)[0]!)).not.toContain('release-check')
@@ -280,7 +264,7 @@ describe('a member with an assigned Team Skill', () => {
     expect(spawn.isError).toBe(true)
     // The refusal names the reason instead of letting the member start blind.
     expect(resultText(spawn)).toContain('Team Skill')
-    expect(refusedRow(h.ctx, h.root, 'reviewer')).toBeDefined()
+    await expectNoPublishedMember(h.ctx, h.root, 'reviewer')
     expect(h.member.requests).toHaveLength(0)
   }, 30_000)
 
@@ -292,7 +276,7 @@ describe('a member with an assigned Team Skill', () => {
     const h = await stack({ skillRoot: join(root, 'library', 'team-skills'), withSkillService: true })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError).toBe(true)
-    expect(refusedRow(h.ctx, h.root, 'reviewer')).toBeDefined()
+    await expectNoPublishedMember(h.ctx, h.root, 'reviewer')
     expect(h.member.requests).toHaveLength(0)
   }, 30_000)
 
@@ -305,7 +289,7 @@ describe('a member with an assigned Team Skill', () => {
       const h = await stack({ skillRoot, withSkillService: true })
       const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
       expect(spawn.isError).toBe(true)
-      expect(refusedRow(h.ctx, h.root, 'reviewer')).toBeDefined()
+      await expectNoPublishedMember(h.ctx, h.root, 'reviewer')
       expect(h.member.requests).toHaveLength(0)
     } finally {
       register.mockRestore()
@@ -445,7 +429,7 @@ describe('a member with an assigned Team Skill', () => {
     const h = await stack({ skillRoot, withSkillService: false })
     const spawn = await call(h.ctx, h.root, 'spawn_team_member', { member: 'reviewer', task: 'REVIEW_TASK' })
     expect(spawn.isError, resultText(spawn)).toBe(false)
-    const row = h.ctx.agentTeams.listMembers(h.root).find(member => member.name === 'reviewer')
+    const row = (await h.ctx.subagents.listDescendants(h.root.id)).filter(row => row.kind === 'child' && row.mode === 'continuable').find(member => member.name === 'reviewer')
     expect(row).toBeDefined()
     await vi.waitFor(() => expect(memberRequests(h.member, row!.id).length).toBeGreaterThan(0), { timeout: 5000 })
   }, 30_000)

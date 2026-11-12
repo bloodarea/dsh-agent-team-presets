@@ -15,7 +15,7 @@ import { GET_TEAM_PRESET_DESCRIPTION, SPAWN_TEAM_MEMBER_DESCRIPTION, UPDATE_TEAM
 import { IMPLICIT_TOOLS } from './presets.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TeamExecutionMonitor } from './execution.ts'
-import type { TeamExecutionSnapshot, ToolCatalogValue, ToolChoice, ToolSource } from './types.ts'
+import type { TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue, ToolChoice, ToolSource } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -32,6 +32,12 @@ export interface TeamPresetsToolCatalogConfig {
    * an execution state it cannot know.
    */
   readonly monitor?: TeamExecutionMonitor
+  /**
+   * Preset members one Session's Team has summoned, read from the durable member
+   * snapshots. Omitted in a composition that mounts no member runtime, which then
+   * reports an empty roster instead of inventing members.
+   */
+  readonly roster?: (sessionId: string) => TeamRosterValue
 }
 
 /**
@@ -114,6 +120,7 @@ function attributionOf(name: string): { source: ToolSource; server?: string } {
 export default class TeamPresetsToolCatalog extends TypertRemoteService {
   static inject = ['tools', 'typert']
   private readonly monitor: TeamExecutionMonitor | undefined
+  private readonly rosterSource: ((sessionId: string) => TeamRosterValue) | undefined
 
   /**
    * @param ctx - Host context carrying the tool registry and Typert gateway.
@@ -122,6 +129,7 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
   constructor(ctx: Context, config: TeamPresetsToolCatalogConfig = {}) {
     super(ctx, 'teamPresetsToolCatalog', { namespace: 'teamPresets' })
     this.monitor = config.monitor
+    this.rosterSource = config.roster
   }
 
   /**
@@ -184,6 +192,19 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
    * @param signal - cancellation owned by the Remote stream carrier.
    * @returns whole-set frames, opening with the current state.
    */
+  /**
+   * List the preset members one Session's Team has summoned.
+   *
+   * Progressive disclosure: the header control is absent until this answers at
+   * least one member, so an unsummoned Team adds nothing to the session chrome.
+   * @param sessionId - the Session root whose roster is read.
+   * @returns the roster, empty when this Session summoned no preset member.
+   */
+  @Remote
+  async roster(sessionId: string): Promise<TeamRosterValue> {
+    return this.rosterSource?.(sessionId) ?? { members: [] }
+  }
+
   @Remote({ mode: 'stream' })
   execution(signal: AbortSignal): AsyncIterable<TeamExecutionSnapshot> {
     return this.monitor?.stream(signal) ?? emptyExecution()

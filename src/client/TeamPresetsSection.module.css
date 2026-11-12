@@ -95,6 +95,65 @@
   gap: 8px;
 }
 
+/* The action toolbar: creating and importing on one side, maintenance on the
+ * other. Two groups keep a maintainer action from reading as a peer of the
+ * page's primary entry point. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* The page's own column gap already separates the toolbar from the intro and
+   * the search box; extra margins here only doubled that space. */
+  margin: 0;
+}
+
+.toolbarGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Results header: the count states what the filters produced, and the runtime
+ * note trails it at a weaker weight instead of sharing one sentence. */
+.resultsHead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The page's column gap already separates the filters from the count. */
+  margin: 0 0 8px;
+}
+
+.resultCount {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.resultNote {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dialogCopy {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-wrap;
+}
+
+.dialogNote {
+  margin: 10px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 /* The import control is a button that opens this input; the browser's own
  * file button never renders in the page. */
 .fileInput {
@@ -609,7 +668,7 @@ select.select:disabled {
 @media (max-width: 820px) { .skillGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Team list discovery row: search, source/series chips, match count. */
-.listToolbar { display: flex; gap: 8px; margin: 10px 0 8px; }
+.listToolbar { display: flex; gap: 8px; margin: 0; }
 .listSearch { flex: 1; min-width: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; padding: 8px 11px; font-size: 13px; background: var(--dsw-specific-input-major); color: var(--dsw-alias-label-primary); outline: none; }
 .chipRow { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .chip { border: 1px solid var(--dsw-alias-border-l3); border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; padding: 6px 10px; cursor: pointer; }
@@ -628,7 +687,15 @@ select.select:disabled {
 
 /* Two questions, two rows: where a preset comes from, and how the reader grouped it.
  * Flattening both into one chip row read like a single three-level hierarchy. */
-.filterRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.filters {
+  display: flex;
+  flex-direction: column;
+  /* The two filter rows are one block: their own 6px rhythm is tighter than the
+   * page's 10px column gap, so the block still reads as a single unit. */
+  gap: 6px;
+}
+
+.filterRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .filterLabel { flex: 0 0 auto; font-size: 12px; color: var(--dsw-alias-label-secondary); min-width: 32px; }
 
 /* The add-a-category row: the field takes the room, the button keeps its own width.

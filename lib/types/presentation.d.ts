@@ -1,4 +1,4 @@
-/** Read the effective tool surface without replacing the deployment's executor. */
+/** Read the effective tool surface, and give a strict policy a settled one. */
 import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent';
 /** One read of the model-visible prompt surface of an Agent. */
 export interface WireSnapshot {
@@ -24,10 +24,17 @@ export type NativePresentation = {
     readonly reason: string;
 };
 /**
- * Validate a strict policy without mutating executor selection. In rc.1,
- * setExecutor's disposer leaves an unavailable selection at the exact scope;
- * there is no public operation to restore the inherited executor. Even a
- * probe would poison cancellation, rollback, deselection, and plugin unload.
+ * Give a strict policy a settled tool surface without releasing anything.
+ *
+ * A native Session already has one. On PTC the deployment default is left alone
+ * and the core native executor is mounted on THIS Agent's scope: its lifetime is
+ * the Agent's, so this module never calls the returned disposer and can never
+ * produce rc.1's one-way release. Because the mounted executor is Harness code
+ * rather than a closure over this plugin, a plugin unload leaves a working
+ * surface instead of a dangling reference. The surface is re-read after mounting;
+ * a Session that still exposes the PTC transport is refused rather than silently
+ * governed, and a refused Session keeps whatever it had, because nothing was
+ * released.
  * @param agent - the Agent the Team is being applied to.
  * @param selection - the route the Session will run on once the application lands.
  * @returns whether a strict policy can govern this Session's tool surface.

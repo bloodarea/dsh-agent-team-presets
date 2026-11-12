@@ -12,7 +12,7 @@ import { TeamSkills } from '../src/team-skills/index.ts'
 import { MemberRuntime } from '../src/member-runtime.ts'
 import type { Config } from '../src/config.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
-import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
+import { mountSubagentDouble } from './fixtures/plugin-harness.ts'
 import TeamPresetsToolCatalog from '../src/tool-catalog.ts'
 import { routedCaptain, team } from './fixtures/team-presets.ts'
 import type { TeamPreset, TeamSelectionRecord } from '../src/types.ts'
@@ -58,30 +58,8 @@ async function setup(
   const teamsRef = volatileRef(teams)
   const selectionsRef = volatileRef(selections)
   const seededRef = volatileRef([...seeded])
-  ctx.provide('agentTeams', {
-    spawnTeammate: async () => ({ member: { name: 'member', status: 'active' } }),
-    // Reconciliation asks the roster whether a Team task is still running. This
-    // composition has no teammates, so only the Lead row exists and it follows
-    // the real Agent status.
-    tryMembership: (agent: Agent) => ({ root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }),
-    listMembers: (agent: Agent) => [{
-      id: SessionId(agent.id),
-      name: 'lead',
-      role: 'lead' as const,
-      status: agent.status === 'running' ? 'running' as const : 'inactive' as const,
-      diagnostics: [],
-    }],
-  })
-  // The plugin injects the subagent service, exactly as a deployment that
-  // composes Teams provides it. These cases never create a member, so the
-  // stand-in only has to exist for the mount to reach its own scan.
-  ctx.provide('subagents', {
-    registerProvider: () => () => {},
-    getProvider: () => undefined,
-    list: () => [],
-    resolveMaxDepth: () => 2,
-    drainChildren: async () => {},
-  })
+  ctx.provide('agentTeams', {})
+  mountSubagentDouble(ctx, { providers: [] })
   const configure = vi.fn(() => () => {})
   const update = vi.fn(async (_ns: string, _patch: { teams: TeamPreset[]; seededDefaults: string[] }) => {})
   ctx.provide('settings', { configure, update, describe: () => [{ ns: 'agent-team-presets', revision: 0 }] })
@@ -317,9 +295,8 @@ describe('Team preset reconciliation', () => {
     const h = await setup([TEAM], [])
     const root = await createAgent(h.ctx, 'root')
     const child = await createAgent(h.ctx, 'child', 'subagent')
-    vi.spyOn(h.ctx.agentTeams, 'tryMembership').mockImplementation(agent => agent === child.agent
-      ? { root: root.agent, id: TeamId(root.agent.id), role: 'teammate', name: 'member' }
-      : { root: agent, id: TeamId(agent.id), role: 'lead', name: 'lead' })
+    vi.spyOn(h.ctx.subagents, 'rootOf').mockImplementation(agent => agent === child.agent ? root.agent : agent)
+    vi.spyOn(h.ctx.subagents, 'namesOf').mockImplementation(agent => ({ self: agent === child.agent ? 'member' : 'lead' }))
     h.ctx.tools.register({ name: 'plain_tool', description: 'plain', parameters: {},
       output: { schema: { type: 'string' }, render: () => [] }, async execute() { return 'ok' } })
     let release!: () => void

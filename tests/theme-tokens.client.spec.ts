@@ -50,6 +50,7 @@ const ALLOWED_TOKENS: ReadonlySet<string> = new Set([
   '--dsw-alias-label-primary',
   '--dsw-alias-label-secondary',
   '--dsw-alias-label-tertiary',
+  '--dsw-alias-label-caption',
   '--dsw-alias-label-dimmed',
   // surfaces
   '--dsw-alias-bg-base',
@@ -58,6 +59,9 @@ const ALLOWED_TOKENS: ReadonlySet<string> = new Set([
   '--dsw-alias-bg-layer-3',
   '--dsw-alias-settings-card-fill',
   '--dsw-alias-settings-card-stroke',
+  '--dsw-alias-scrollbar-bg-l2',
+  '--dsw-alias-scrollbar-hover-l2',
+  '--dsw-elevation-stroke-color',
   '--dsw-specific-input-major',
   '--dsw-specific-menu',
   '--dsw-menu-backdrop-filter',

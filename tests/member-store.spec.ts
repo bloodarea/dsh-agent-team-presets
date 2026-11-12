@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import type { SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -28,7 +29,7 @@ import { MemberRuntime } from '../src/member-runtime.ts'
 import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import { MockAdapter, textResponse } from './fixtures/mock-adapter.ts'
-import { subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { acceptedActivation, mountSubagentDouble } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
 
@@ -47,8 +48,8 @@ async function bare(options: { teams?: ReturnType<typeof team>; selections?: { s
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], new MockAdapter(Array.from({ length: 10 }, () => textResponse('done'))))
-  const spawnTeammate = vi.fn(async () => ({ member: { name: 'reviewer', status: 'active' as const } }))
-  ctx.provide('agentTeams', { listMembers: () => [], spawnTeammate, tryMembership: () => undefined })
+  const startActivation = vi.fn(async (spec: SubagentActivationSpec) => acceptedActivation(spec))
+  ctx.provide('agentTeams', {})
   ctx.provide('settings', { configure: () => () => {}, describe: () => [], update: async () => {} })
   const definition = options.teams ?? team([slot({ name: 'reviewer', description: 'reviews' })])
   const config = {
@@ -61,10 +62,10 @@ async function bare(options: { teams?: ReturnType<typeof team>; selections?: { s
   // The plugin injects the subagent service, exactly as a deployment that
   // composes Teams provides it: without it the mount is parked and no Team is
   // ever applied. The store this spec withholds is a different capability.
-  ctx.provide('subagents', subagentServiceDouble())
+  mountSubagentDouble(ctx, { startActivation })
   await ctx.plugin(Object.assign((owner: Context) => apply(owner, config), { inject }))
   const root = await ctx.agents.create({ sessionId: SessionId('root'), agentOptions: { provider: 'mock', model: 'mock' } })
-  return { ctx, root: root.agent, spawnTeammate, definition }
+  return { ctx, root: root.agent, startActivation, definition }
 }
 
 /** Every member record one medium currently holds, read through a fresh runtime. */
@@ -103,7 +104,7 @@ describe('a deployment without the member store', () => {
     expect(text).toContain('refused rather than letting it run')
     // The captain can see WHY, instead of only that members are unavailable.
     expect(text).toContain('does not compose @deepseek-ai/dsh-storage-domain')
-    expect(h.spawnTeammate).not.toHaveBeenCalled()
+    expect(h.startActivation).not.toHaveBeenCalled()
   })
 })
 

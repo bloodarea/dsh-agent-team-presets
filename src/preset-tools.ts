@@ -13,6 +13,7 @@
  * @module dsh-agent-team-presets/preset-tools
  */
 
+import { executingMemberCount } from './team-runtime.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -241,14 +242,10 @@ function executingMembers(
   appliedTeamId: (root: Agent) => string | undefined,
 ): number {
   let executing = 0
-  for (const root of ctx.agents.roots()) {
+  for (const root of ctx.agents.list().filter(agent => agent.session.header.origin !== 'subagent')) {
     const selected = selectedTeam(config.teams.get(), config.selections.get(), root.session.id)
     if (selected?.id !== teamId && appliedTeamId(root) !== teamId) continue
-    if (ctx.agentTeams.tryMembership(root) === undefined) continue
-    for (const member of ctx.agentTeams.listMembers(root)) {
-      if (member.role !== 'teammate') continue
-      if (member.status === 'running' || member.status === 'provisioning') executing += 1
-    }
+    executing += executingMemberCount(ctx, root)
   }
   return executing
 }

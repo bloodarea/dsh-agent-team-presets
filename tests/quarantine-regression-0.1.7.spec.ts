@@ -60,8 +60,7 @@ import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { TeamId } from '@deepseek-ai/dsh-experimental-agent-team'
-import type { SpawnTeammateRequest, TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { SubagentActivation, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 import { LlmAdapter, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -73,9 +72,17 @@ import { BUILTIN_TEAM_IDS } from '../src/builtin-teams.ts'
 import { CAPTAIN_RECOVERY_TOOLS } from '../src/tool-policy.ts'
 import { mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
-import { settlePlugin, subagentServiceDouble } from './fixtures/plugin-harness.ts'
+import { settlePlugin, mountSubagentDouble, acceptedActivation } from './fixtures/plugin-harness.ts'
 import { slot, team } from './fixtures/team-presets.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
+
+/** Scripted child discovery and execution state projected by the rc2 harness. */
+interface MemberRow {
+  readonly id: SessionId
+  readonly name: string
+  readonly role: 'teammate'
+  readonly status: 'running' | 'provisioning' | 'inactive' | 'failed'
+}
 
 const contexts: Context[] = []
 const temporary: string[] = []
@@ -177,12 +184,12 @@ function volatileRef<T>(initial: T): { ref: { get: () => T }; set: (next: T) => 
 }
 
 /** One scripted roster row for a teammate of a Session. */
-function teammate(status: TeamMemberView['status'], name = 'member-1'): TeamMemberView {
-  return { id: SessionId(name), name, role: 'teammate', status, diagnostics: [] }
+function teammate(status: MemberRow['status'], name = 'member-1'): MemberRow {
+  return { id: SessionId(name), name, role: 'teammate', status }
 }
 
-/** One `spawn_team_member` call the fake Team service recorded. */
-type SpawnCall = (caller: Agent, request: SpawnTeammateRequest) => Promise<{ member: { name: string; status: 'active' } }>
+/** One `spawn_team_member` call the subagent double recorded. */
+type SpawnCall = (spec: SubagentActivationSpec) => Promise<SubagentActivation>
 
 interface Harness {
   readonly ctx: Context
@@ -190,7 +197,7 @@ interface Harness {
   readonly adapter: GatedAdapter
   /** The durable member snapshot unit this Team's members are frozen into. */
   readonly storage: MemberStorage
-  readonly spawnTeammate: ReturnType<typeof vi.fn<SpawnCall>>
+  readonly startActivation: ReturnType<typeof vi.fn<SpawnCall>>
   /** Names of the exact-Agent spy tool bodies that actually ran. */
   readonly spyBodies: string[]
   /** Create one live Session-root Agent, with its exact-Agent spy tools. */
@@ -199,9 +206,9 @@ interface Harness {
   readonly teams: (next: readonly TeamPreset[]) => void
   /** Publish the Session selections and announce the volatile update. */
   readonly selections: (next: readonly TeamSelectionRecord[]) => void
-  /** Replace the roster rows one Session's fake Team service reports. */
-  readonly teammates: (sessionId: string, rows: readonly TeamMemberView[]) => void
-  /** Append one durable `team/member` settlement to a Session's journal feed. */
+  /** Replace the roster rows one Session's subagent double reports. */
+  readonly teammates: (sessionId: string, rows: readonly MemberRow[]) => void
+  /** Append one durable `subagent/catalog` settlement to a Session's journal feed. */
   readonly rosterEvent: (agent: Agent) => void
   /** Append the durable `request/header` row a Host writes for one assembled request. */
   readonly headerRow: (agent: Agent, tools: readonly string[]) => void
@@ -215,7 +222,7 @@ interface Harness {
   readonly headerTools: (agent: Agent) => string[]
 }
 
-/** Mount the plugin over a scripted Team service, settings document, and model route. */
+/** Mount the plugin over a scripted subagent service, settings document, and model route. */
 async function setup(options: {
   teams: readonly TeamPreset[]
   selections: readonly TeamSelectionRecord[]
@@ -247,30 +254,12 @@ async function setup(options: {
     })
   }
 
-  const roots = new Set<Agent>()
-  // A resumed Session is known to the Team service by identity before its Agent
-  // exists, so a cold-start case can script a roster the mount already sees.
-  const knownRoots = new Set<string>()
-  const rows = new Map<string, readonly TeamMemberView[]>()
+  const rows = new Map<string, readonly MemberRow[]>()
   const spyBodies: string[] = []
-  const spawnTeammate = vi.fn<SpawnCall>(async (_caller, request) => ({
-    member: { name: request.name, status: 'active' },
-  }))
-  ctx.provide('agentTeams', {
-    spawnTeammate,
-    tryMembership: (agent: Agent) => roots.has(agent) || knownRoots.has(agent.session.id)
-      ? { root: agent, id: TeamId(agent.id), role: 'lead' as const, name: 'lead' }
-      : undefined,
-    listMembers: (agent: Agent): TeamMemberView[] => [
-      {
-        id: agent.id,
-        name: 'lead',
-        role: 'lead',
-        status: agent.status === 'running' ? 'running' : 'inactive',
-        diagnostics: [],
-      },
-      ...rows.get(agent.session.id) ?? [],
-    ],
+  const startActivation = vi.fn<SpawnCall>(async spec => acceptedActivation(spec))
+  mountSubagentDouble(ctx, {
+    startActivation,
+    members: agent => rows.get(agent.session.id) ?? [],
   })
 
   const storeRoot = await mkdtemp(join(tmpdir(), 'team-presets-regression-store-'))
@@ -284,7 +273,6 @@ async function setup(options: {
     describe: vi.fn(() => [{ ns: 'agent-team-presets', revision: 0 }]),
     update: vi.fn(async () => {}),
   })
-  ctx.provide('subagents', subagentServiceDouble())
 
   const config = {
     teams: teamsRef.ref,
@@ -302,15 +290,13 @@ async function setup(options: {
     config,
     adapter,
     storage,
-    spawnTeammate,
+    startActivation,
     spyBodies,
     create: async (id) => {
-      knownRoots.add(id)
       const handle = await ctx.agents.create({
         sessionId: SessionId(id),
         agentOptions: { provider: 'fixture', model: 'fixture' },
       })
-      roots.add(handle.agent)
       agents.push(handle.agent)
       handles.set(handle.agent, handle)
       // Exact-Agent spies: a name only this Agent can see proves the guard
@@ -336,13 +322,9 @@ async function setup(options: {
     },
     teammates: (sessionId, next) => { rows.set(sessionId, next) },
     rosterEvent: (agent) => {
-      // Append the durable settlement the Agent Teams service writes, so the
-      // freeze listener sees a committed event with a real sequence number.
-      const append = agent.session.append.bind(agent.session) as unknown as (type: string, data: unknown) => void
-      append('team/member', {
-        version: 2,
-        teamId: TeamId(agent.id),
-        member: { id: 'member-1', name: 'member-1', phase: 'failed' },
+      agent.session.append('subagent/catalog', {
+        version: 3, childId: SessionId('member-1'), name: 'member-1',
+        childCreatedAt: 0, mode: 'continuable', label: 'member settlement',
       })
     },
     headerRow: (agent, tools) => {
@@ -584,41 +566,38 @@ describe('HMR/remount repeats itself without changing the classification', () =>
   })
 })
 
-describe('the PTC presentation fold (removed in 0.2.2-rc.1)', () => {
-  it('refuses a custom policy on a PTC surface and quarantines the captain instead of folding it', async () => {
-    // 0.2.2-rc.1 removed the native-presentation fold: a custom allow-list can no
-    // longer shadow a PTC deployment's executor, so this Team is refused from the
-    // start instead of being applied over a temporary native surface.
+describe('the Agent-owned native executor on a PTC deployment', () => {
+  it('applies a custom policy through native tools and keeps recovery reachable after a busy remount', async () => {
     const h = await setup({ teams: [definition('A', 'alpha')], selections: SELECTED, ptc: true })
     const captain = await h.create('s1')
-    await settlePlugin()
+    await waitForPersona(h, captain, 'Captain prompt A')
 
-    // The deployment's PTC transport is untouched: one name, and it is the
-    // general-purpose capability the custom Team would have denied.
     const wire = await wireTools(h.ctx, captain)
-    expect(wire).toEqual(['run_code'])
-    // Executing it is still refused by the quarantine the refusal installed, and
-    // the refusal names the actionable cause.
-    const direct = await call(h, captain, 'run_code', { code: 'return 1', description: 'probe' })
-    expect(direct.isError).toBe(true)
-    expect(direct.text).toContain('native Agent preset')
+    expect(wire).not.toContain('run_code')
+    expect(wire).toContain(ALLOWED_TOOL)
+    expect(wire).not.toContain(DENIED_TOOL)
+    expect((await call(h, captain, ALLOWED_TOOL)).isError).toBe(false)
+    expect((await call(h, captain, DENIED_TOOL)).text).toContain(POLICY_DENIES)
 
-    // The exempted names are not on the wire, and PTC refuses a direct call to
-    // them before any guard: the recovery channel the refusal recommends is not
-    // reachable from the model at all. This is a denial, never a widening.
-    for (const name of ['get_team_preset', 'send_message', 'list_agents', ALLOWED_TOOL] as const) {
-      expect(wire, name).not.toContain(name)
-      const unreachable = await call(h, captain, name)
-      expect(unreachable.isError, name).toBe(true)
-      expect(unreachable.text, name).toContain('only `run_code` is callable directly')
+    await startTask(h, captain)
+    await h.remount()
+    await waitForRefusal(h, captain, ALLOWED_TOOL, UNRESTORABLE)
+    // The core executor belongs to the Agent, so unloading the Team plugin
+    // preserves native recovery tools while the new activation quarantines it.
+    const frozenWire = await wireTools(h.ctx, captain)
+    expect(frozenWire).not.toContain('run_code')
+    for (const name of ['get_team_preset', 'send_message', 'list_agents'] as const) {
+      expect(frozenWire, name).toContain(name)
+      expect((await call(h, captain, name)).isError, name).toBe(false)
     }
-    // The recovery tools are nevertheless registered on the Agent, and no Team
-    // face was installed.
-    expect(h.ctx.tools.get('get_team_preset', captain)).toBeDefined()
-    expect((await applied(h.ctx, captain)).persona).not.toBe('Captain prompt A')
-    expect((await applied(h.ctx, captain)).tools).not.toContain('spawn_team_member')
+    expect(h.spyBodies).toContain('send_message')
+    expect(h.spyBodies).toContain('list_agents')
+    expect((await call(h, captain, DENIED_TOOL)).text).toContain(UNRESTORABLE)
 
     await h.release()
+    await waitForPersona(h, captain, 'Captain prompt A')
+    expect(await wireTools(h.ctx, captain)).not.toContain('run_code')
+    expect((await call(h, captain, DENIED_TOOL)).text).toContain(POLICY_DENIES)
   })
 
   it('never reads a PTC header that lists only run_code as proof of No team, and cannot widen with it', async () => {
@@ -655,7 +634,7 @@ describe('the PTC presentation fold (removed in 0.2.2-rc.1)', () => {
     expect(await wireTools(h.ctx, captain)).toEqual(before)
     expect((await applied(h.ctx, captain)).tools).not.toContain('spawn_team_member')
     expect(h.spyBodies).not.toContain('spawn_teammate')
-    expect(h.spawnTeammate).not.toHaveBeenCalled()
+    expect(h.startActivation).not.toHaveBeenCalled()
 
     await h.release()
   })
@@ -720,11 +699,10 @@ describe('fork and child lineage under a quarantined captain', () => {
     // creation transaction is vetoed instead of quarantining after the fact.
     await expect(h.ctx.agents.create({
       sessionId: SessionId('member-child'),
-      parentAgent: captain,
       meta: { parentSession: captain.session.id, origin: 'subagent' },
       agentOptions: { provider: 'fixture', model: 'fixture' },
     })).rejects.toThrow(PARENT_FROZEN)
-    expect(h.spawnTeammate).not.toHaveBeenCalled()
+    expect(h.startActivation).not.toHaveBeenCalled()
     await h.release()
   })
 
@@ -937,7 +915,7 @@ describe('permission-state loss', () => {
       expect(result.text, name).toContain(UNRESTORABLE)
     }
     expect(h.spyBodies).not.toContain('spawn_teammate')
-    expect(h.spawnTeammate).not.toHaveBeenCalled()
+    expect(h.startActivation).not.toHaveBeenCalled()
     await h.release()
   })
 
@@ -1007,38 +985,31 @@ describe('RESIDUAL WINDOW: a Team task whose captain never assembled a request',
     await h.release()
   })
 
-  it('refuses the custom policy on a PTC deployment instead of reopening the denied code transport', async () => {
-    // The old PTC fold installed a native surface for the Team and released it on
-    // reload, which created the residual window this case used to prove: a
-    // running task handed `run_code` back after its Team was deselected. The fold
-    // no longer exists, so the custom Team is refused from the start and there is
-    // no applied policy for a status edge to widen.
+  it('keeps native tools and the custom policy until its teammate settles across deselection and remount', async () => {
     const h = await setup({ teams: [definition('A', 'alpha')], selections: SELECTED, ptc: true })
     const captain = await h.create('s1')
-    await settlePlugin()
+    await waitForPersona(h, captain, 'Captain prompt A')
+    expect(await wireTools(h.ctx, captain)).not.toContain('run_code')
+    // Native requests record the Team marker even when the deployment defaults
+    // to PTC, so a later remount can prove this task's frozen policy.
+    await completeOneTurn(h, captain)
+    expect(h.headerTools(captain)).toContain('spawn_team_member')
 
-    expect((await applied(h.ctx, captain)).persona).not.toBe('Captain prompt A')
-    expect(await wireTools(h.ctx, captain)).toEqual(['run_code'])
-    const denied = await call(h, captain, 'run_code', { code: 'return 1', description: 'probe' })
-    expect(denied.isError).toBe(true)
-    expect(denied.text).toContain('native Agent preset')
-
-    // The refused application never installed a policy, so deselecting mid-task
-    // cannot widen anything: the guard stays in place and the transport stays
-    // refused across the same status edges the old window needed.
     h.teammates('s1', [teammate('running')])
     h.selections([])
     await settlePlugin()
-    const after = await call(h, captain, 'run_code', { code: 'return 1', description: 'probe' })
-    expect(after.isError).toBe(true)
-    expect(after.text).toContain('native Agent preset')
-    expect(await wireTools(h.ctx, captain)).toEqual(['run_code'])
-    expect(await wireTools(h.ctx, captain)).not.toContain('spawn_team_member')
-    expect((await applied(h.ctx, captain)).tools).not.toContain('spawn_team_member')
+    expect((await applied(h.ctx, captain)).persona).toBe('Captain prompt A')
+    expect((await call(h, captain, DENIED_TOOL)).text).toContain(POLICY_DENIES)
+    await h.remount()
+    await waitForRefusal(h, captain, DENIED_TOOL, 'selection has since been cleared')
+    expect(await wireTools(h.ctx, captain)).not.toContain('run_code')
+    expect((await call(h, captain, 'get_team_preset')).isError).toBe(false)
 
     h.teammates('s1', [teammate('inactive')])
     h.rosterEvent(captain)
-    await settlePlugin()
+    await waitForAllowed(h, captain, DENIED_TOOL)
+    expect((await applied(h.ctx, captain)).persona).toBe('')
+    expect(await wireTools(h.ctx, captain)).not.toContain('run_code')
     await h.release()
   })
 
@@ -1102,7 +1073,7 @@ describe('the recovery set stays a recovery set', () => {
     expect(h.config.teams.get()[0]?.captain.tools).not.toContain(DENIED_TOOL)
     // Nothing that creates an Agent or runs code runs its body.
     for (const name of ESCALATION_TOOLS) expect(h.spyBodies, name).not.toContain(name)
-    expect(h.spawnTeammate).not.toHaveBeenCalled()
+    expect(h.startActivation).not.toHaveBeenCalled()
     await h.release()
   })
 })
