@@ -143,7 +143,9 @@ Installing asks for confirmation first, naming the package, the file and the sup
 
 `Patched` plus **active** means it worked. **No `dsh web` restart and no page reload are needed** — the running server republishes that plugin's browser bundle and the page reloads it in place, so the tag appears within about a second.
 
-Once installed, subagents a Team created carry a `Preset` tag on their dsh-context Fleet card and on their dsh-better-sidebar task card. Ordinary subagents do not.
+Once installed, subagents a Team created carry a `Preset` tag on their dsh-context Fleet card and on their dsh-better-sidebar task card. Ordinary subagents do not. In the capture below the summoned `executor` carries that tag right next to its name:
+
+![A summoned member carrying the Preset tag in the task manager](../images/guide/10-card-badge.png)
 
 > Safety: the original file is backed up before it is replaced, and removing the patch restores it and deletes the backup. Installation is only allowed when the target still holds the **published bytes**; anything already edited by someone else is refused.
 
