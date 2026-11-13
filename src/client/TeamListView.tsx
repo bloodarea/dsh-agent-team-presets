@@ -38,6 +38,11 @@ export interface TeamListViewProps {
   readonly teamCategories?: readonly { readonly teamId: string; readonly categoryId: string }[]
   /** Opens the page that manages the Team preset categories. */
   readonly onManageCategories?: () => void
+  /**
+   * How many shipped presets this deployment was offered but no longer holds,
+   * when none of them are in the list. Zero or undefined renders no hint.
+   */
+  readonly missingBuiltins?: number | undefined
 }
 
 /**
@@ -73,6 +78,18 @@ export function TeamListView(props: TeamListViewProps) {
         <h2 className={css.title}>{t('title')}</h2>
         <p className={css.intro}>{t('description')}</p>
       </header>
+
+      {/* An offered-then-missing shipped set is not something the install pass
+          repairs: the marker keeps a deleted preset deleted. Explain the empty
+          page instead of leaving the reader with no way back. */}
+      {(props.missingBuiltins ?? 0) === 0 ? null : (
+        <div className={css.restoreHint} role="status">
+          <span>{t('restoreMissingHint').replace('{count}', String(props.missingBuiltins))}</span>
+          <Button size="sm" variant="outline" disabled={disabled} onClick={() => { setConfirmRestore(true) }}>
+            {t('restoreDefaults')}
+          </Button>
+        </div>
+      )}
 
       {/* Two groups: creating and importing on the left, maintenance on the
           right, so one action row reads as a toolbar instead of a text run. */}

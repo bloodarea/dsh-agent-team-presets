@@ -16,6 +16,7 @@ import { TeamImportDialog } from './TeamImportDialog.tsx'
 import { TeamListView } from './TeamListView.tsx'
 import { TeamSkillsView } from './TeamSkillsView.tsx'
 import { CardPatchView } from './CardPatchView.tsx'
+import { BUILTIN_TEAM_IDS } from '../builtin-teams.ts'
 import { defaultImportResolution, executionStateOf, unnamedTeamsOf } from './team-presets-controller.ts'
 import type {
   ExternalUpdateNotice, TeamPresetImportPlan, TeamPresetsInjected,
@@ -201,6 +202,11 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
   // silent failure.
   const disabled = !state.writable || state.formIssue !== undefined
   const teamList = state.teams
+  // The install pass never re-adds a preset it once offered, so an empty shipped
+  // set is a state this page must explain rather than hide. Counting only the
+  // complete case keeps the hint off the page for a reader who deleted one Team.
+  const heldIds = new Set(teamList.map(entry => entry.id))
+  const missingBuiltins = BUILTIN_TEAM_IDS.every(id => !heldIds.has(id)) ? BUILTIN_TEAM_IDS.length : 0
   // Only the team and agent views address a Team; the categories page stands alone.
   const addressed = view.kind === 'team' || view.kind === 'agent' ? view.teamId : undefined
   const found = addressed === undefined ? undefined : teamList.find(entry => entry.id === addressed)
@@ -301,6 +307,7 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
             importError={importError}
             categories={categoriesForList}
             onManageCategories={() => { setView({ kind: 'categories' }) }}
+            missingBuiltins={missingBuiltins}
             teamCategories={state.teamCategories}
             onOpen={openTeam}
             onCreate={() => { openTeam(props.createTeam()) }}

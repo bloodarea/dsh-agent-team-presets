@@ -44,6 +44,7 @@ export type TeamPresetsLocaleKey =
   | 'task.expand' | 'task.collapse' | 'status.pending' | 'status.in_progress' | 'status.completed'
   | 'importPreset' | 'exportPreset' | 'importNote' | 'importConfirm' | 'cancel' | 'close'
   | 'restoreDefaults' | 'restoreDefaultsHint' | 'defaultsRestored' | 'defaultsUnchanged'
+  | 'restoreMissingHint'
   | 'importConflictTitle' | 'importTeamConflict' | 'importTeamReplace' | 'importTeamRename' | 'importNewTeamName'
   | 'importCaptainConflict' | 'importCaptainReplace' | 'importCaptainRename'
   | 'importMemberConflict' | 'importMemberReplace' | 'importMemberRename'
@@ -313,6 +314,7 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   restoreDefaultsHint: 'Puts every preset this plugin ships back to its shipped name, description, prompts, colors, and roster. The model routes and tool permissions you configured stay as they are, and teams you created yourself are not touched.',
   defaultsRestored: 'Default presets restored in this draft. Save to apply them.',
   defaultsUnchanged: 'The default presets already match what this plugin ships; nothing was staged.',
+  restoreMissingHint: 'This deployment was offered the {count} built-in Team presets, but none of them are in the list. Unless you deleted them yourself, click "Restore built-in presets" to bring them back, then save.',
   importConfirm: 'Import',
   cancel: 'Cancel',
   close: 'Close',
@@ -654,6 +656,7 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   restoreDefaultsHint: '把插件自带的预设全部恢复到出厂的名称、说明、提示词、颜色和成员名单；你为它们配置的模型路由与工具权限保持不变，你自己创建的团队完全不受影响。',
   defaultsRestored: '默认预设已恢复到草稿，保存后生效。',
   defaultsUnchanged: '默认预设与插件出厂状态一致，无需恢复。',
+  restoreMissingHint: '这个部署曾经拿到过插件自带的 {count} 个团队预设，但它们现在都不在列表里。如果不是你主动删除的，点「恢复内置预设」可以把它们找回来，然后记得保存。',
   importConfirm: '导入',
   cancel: '取消',
   close: '关闭',

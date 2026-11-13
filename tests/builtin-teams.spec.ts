@@ -25,6 +25,7 @@ import {
   WORKFLOW_TEAM_ID,
   builtinTeamDefinition,
   restoreBuiltinTeams,
+  missingSeededBuiltinTeams,
   seedBuiltinTeams,
 } from '../src/builtin-teams.ts'
 import {
@@ -281,6 +282,35 @@ describe('installing the shipped presets once', () => {
     const seeded = seedBuiltinTeams([own], [])
     expect(seeded.teams.map(team => team.id)).toEqual(['team-1', ...IDS])
     expect(seeded.teams[0]).toBe(own)
+  })
+})
+
+describe('reporting a shipped set that went missing after it was offered', () => {
+  it('reports nothing on a deployment that was never offered a preset', () => {
+    // A fresh install has no marker yet; the install pass adds them in the same
+    // startup, so warning here would be noise about a state nobody can see.
+    expect(missingSeededBuiltinTeams([], [])).toEqual([])
+  })
+
+  it('reports nothing while every marked preset is still in the list', () => {
+    const held = BUILTIN_TEAMS.map(builtinTeamDefinition)
+    expect(missingSeededBuiltinTeams(held, IDS)).toEqual([])
+  })
+
+  it('names exactly the marked presets that are gone, in catalog order', () => {
+    // The settings document was replaced or edited: the marker survived, the
+    // presets did not, and the install pass deliberately does not re-add them.
+    const remaining = [builtinTeamDefinition(builtinEntry(RESEARCH_TEAM_ID)!)]
+    expect(missingSeededBuiltinTeams(remaining, IDS)).toEqual(
+      IDS.filter(id => id !== RESEARCH_TEAM_ID),
+    )
+  })
+
+  it('treats a marker without a list as the whole shipped set going missing', () => {
+    // The reported state: the marker survived, the Team list is empty.
+    expect(missingSeededBuiltinTeams([], IDS)).toEqual([...IDS])
+    // One mark is enough to describe the loss; the pass adds the unmarked rest.
+    expect(missingSeededBuiltinTeams([], [PLANNING_TEAM_ID])).toEqual([PLANNING_TEAM_ID])
   })
 })
 

@@ -20,7 +20,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import type {} from '@deepseek-ai/dsh-settings'
-import { cloneMetadata, seedBuiltinTeams } from './builtin-teams.ts'
+import { cloneMetadata, missingSeededBuiltinTeams, seedBuiltinTeams } from './builtin-teams.ts'
 import { builtinEntry } from './team-catalog.ts'
 import type { Config } from './config.ts'
 import { withoutCaptainRoutes } from './config.ts'
@@ -80,6 +80,18 @@ export function teamSettingsReconcile(ctx: Context, config: Config, namespace: s
           // user edited keeps every edit, and one the user deleted stays deleted
           // because its identity was marked when it was first offered.
           const installed = seedBuiltinTeams(cleaned, seeded)
+          // The marker keeps a deleted preset deleted, so a Team list that lost
+          // its shipped presets some other way (a hand edit, a restored settings
+          // file, a rollback) stays empty until the reader restores them. Say so
+          // once per startup instead of leaving an unexplained empty page.
+          const missingShipped = missingSeededBuiltinTeams(installed.teams, installed.seeded)
+          if (missingShipped.length > 0) {
+            ctx.logger.warn(
+              'agent-team-presets: %d shipped Team preset(s) are marked as offered but missing from the Team list (%s); open Settings → Agent Team presets and click "Restore built-in presets", then save',
+              missingShipped.length,
+              missingShipped.join(', '),
+            )
+          }
           // Grouping rows naming a deleted category or a deleted custom Team are
           // dead: drop them here so the page never has to explain a row it
           // cannot resolve. A row naming a shipped identity survives, because a

@@ -75,7 +75,7 @@ Each row has **Export / Duplicate / Delete**. Above the list:
 - **New Team** — start from blank;
 - **Import preset** — read a JSON document someone shared;
 - **Manage categories** — create, rename, reorder, delete your own groups;
-- **Restore defaults** — put the nine built-in Teams back to their shipped content (your own model routes and tool policies are preserved).
+- **Restore defaults** — put the nine built-in Teams back to their shipped content (your own model routes and tool policies are preserved). It stages a draft, so **click Save afterwards** or a restart discards it.
 
 Click **Save** when you are done, or **Discard changes** to leave the page untouched.
 
@@ -164,6 +164,8 @@ The conversation header then shows a **Team** button: the captain plus every sum
 | Symptom | Cause and fix |
 | --- | --- |
 | No Team entry in the composer | "Enable agent team collaboration" in the model menu is off |
+| The Team list is empty — no built-in Team at all | The plugin never re-adds a preset it has already offered (that is what keeps a Team you deleted deleted). The page shows a notice at the top: click its "Restore built-in presets", then **Save**, and they come back |
+| "Restore built-in presets" did nothing after a restart | It only stages a draft; the save was never clicked |
 | Selected a Team but the captain behaves the same | A Team is adopted at the Session's next task boundary; a running task is never rewritten mid-flight |
 | A member uses the Session model instead of mine | Its provider/model is still `Follow session`; pick a concrete model |
 | A Team Skill does nothing for a role | Skills are bound **per role**; assign it on the member page's "Assigned skills" |

@@ -807,3 +807,24 @@ select.select:disabled {
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, var(--dsw-alias-bg-layer-2));
   border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 34%, transparent);
 }
+
+/* An offered-then-missing shipped set: the empty list needs an explanation and
+   a way back in the same box, so the reader is not left with neither. */
+.restoreHint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-state-warn-stroke);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.restoreHint span {
+  flex: 1;
+  min-width: 0;
+}

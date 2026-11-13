@@ -192,6 +192,28 @@ export function seedBuiltinTeams(teams: readonly TeamPreset[], seeded: readonly 
 }
 
 /**
+ * The shipped presets a deployment was offered but no longer holds.
+ *
+ * The marker exists so a deleted preset stays deleted, which also means a Team
+ * list that lost its shipped presets for any other reason — a hand edit, a
+ * restored settings file, a rollback — never gets them back on its own. This
+ * reads that state instead of changing it: the caller warns, and the reader can
+ * decide to restore. A preset the deployment was never offered is not reported,
+ * because the install pass will add it on this same startup.
+ * @param teams - the stored Team list.
+ * @param seeded - identities the deployment was already offered.
+ * @returns the shipped identities that are marked as offered yet absent.
+ */
+export function missingSeededBuiltinTeams(
+  teams: readonly TeamPreset[],
+  seeded: readonly string[],
+): string[] {
+  const held = new Set(teams.map(team => team.id))
+  const known = new Set(seeded)
+  return BUILTIN_TEAMS.filter(entry => known.has(entry.id) && !held.has(entry.id)).map(entry => entry.id)
+}
+
+/**
  * Whether two slots carry the same stored fields.
  * @param a - left slot.
  * @param b - right slot.

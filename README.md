@@ -241,7 +241,7 @@ A fresh installation seeds nine editable Teams across two series:
 | **独立代码与安全审计**<br>`builtin-audit` | Captain, vulnerability-expert, security-auditor, compliance-inspector | Independent read-only review of specified code, vulnerabilities, security configurations, and dependency compliance. |
 | **科研协作**<br>`builtin-research` | Captain, domain-researcher, experiment-analyst, rigor-reviewer | Literature review, experiment design, scientific computing, data analysis, and academic rigor inspection. |
 
-Default presets are seeded once per profile. Deleting or editing a built-in preset is respected across restarts. **Restore defaults** restores shipped fields and official rosters while preserving local member model routes and tool policies.
+Default presets are seeded once per profile. Deleting or editing a built-in preset is respected across restarts, which also means a Team list that lost its shipped presets some other way (a hand-edited or restored settings file) does not get them back by itself: the Host logs a warning and the page shows a notice pointing at **Restore defaults**. That button stages a draft, so save afterwards. Restoring brings back shipped fields and official rosters while preserving local member model routes and tool policies.
 
 <a id="metadata-categories-search"></a>
 ## Display metadata, categories, and search
