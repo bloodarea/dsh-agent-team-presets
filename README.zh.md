@@ -2,9 +2,11 @@
 
 <img src="banner_zh.png" alt="为 DeepSeek Harness 配置可复用的智能体团队预设" width="100%">
 
-*横幅为概念示意，实际插件界面见[界面预览](#screenshots)；队长使用当前会话选择的模型。*
+*横幅为概念示意；插件界面在[新手必读](docs/guide/getting-started.zh.md)里逐屏讲解；队长使用当前会话选择的模型。*
 
 [English](<README.md>) | 中文
+
+> **第一次用这个插件？** 先看图文教程，每一屏、每个按钮都讲到：**[新手必读](docs/guide/getting-started.zh.md)**。
 
 > **社区插件 v0.3.0** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.0)
 >
@@ -19,20 +21,7 @@
 - **源码补丁同样公开。** `contrib/agent-card-badges` 提供同一改动的源码补丁，可自行应用到匹配版本并重新构建，或提交给上游。
 - **没有不可逆操作。** 替换前先备份发布版，卸载时还原并删除备份；如果目标插件的浏览器包既不是发布版也不是本插件的替换包，操作会被拒绝并说明原因，而不是强行覆盖。
 
-### 0.2.1 更新内容
-
-- **成员就是标准 subagent。** `spawn_team_member` 改用 `ctx.subagents.startActivation` 创建成员，并在成员快照里预写子会话身份，因此成员自己的模型路由、角色提示词、团队上下文与严格工具策略仍然对它**第一次**模型请求生效。
-- **不再需要 Agent Teams bundle。** 树归属与执行状态改从 subagent 运行时的 catalog、在线 Agent 与创建准入记录读取，不再依赖已移除的 Team 名册、消息与成员接口。
-- **卸载只停止本插件启动的那些实例。** 每次创建的回执都会保留并在卸载时释放；rc.2 没有针对单个冷恢复成员的选择性释放能力，因此这类成员只中断当前工作，其 Agent 作用域内的策略一直保留到 Agent 销毁。
-- **会话头部重新显示团队。** 按官方 `agent-team` 客户端源码复刻 rc.1 的头部动作：队长与本次会话已召唤成员的名册，每行带实时状态与所用模型。队长行只读，成员行可跳到该成员会话；下方是共享任务区，逐条给状态、依赖、写入范围与可展开描述。仅当部署的团队开关打开、且本会话已选预设时渲染。
-- **对 0.2.2-rc.2 宿主的适配。** 名册改按本会话的成员快照与团队选择读取（不再依赖被移除的 Team 投影）；样式里的阴影 token 改为 `--dsw-elevation-stroke-color`；远端契约测试同时接受惰性 `spec` 与内联 schema 两种产物形态。
-
-### 0.2.0 更新内容
-
-- **PTC 会话可以用自定义工具策略了。** 在 PTC 预设下应用自定义白名单时，插件把宿主自带的 native 工具执行器注册到该会话的 Agent 作用域并从不释放：部署级执行器与其他会话仍走 PTC，注册归该 Agent 所有并随其销毁。代价是明确的 —— 该会话此后不再使用 `run_code`，直到它结束。挂载失败、或挂载后工具面仍暴露 PTC 传输时会拒绝应用，且因为从未释放，会话保留原有工具面。
-- **名额耗尽时能看出是谁占的。** 召唤被拒时现在会报 `N/M` 个 roster 槽位被占用、按名字列出创建从未成功的占位，并说明宿主 roster 只追加、无移除 API —— 让"永远不能再召唤"的团队与"暂时忙"的团队可区分。
-
-沿用 0.1.9：输入区与单个成员单独对话、`agent.model.select()` 成员路由、按步工具激活、内置排障 Skill。
+更早的版本与完整变更记录见 [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) 页面。
 
 <a id="project-introduction"></a>
 ## 项目介绍
@@ -87,7 +76,7 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 - [项目介绍](#project-introduction)
 - [为什么需要这个插件？](#why-this-plugin)
 - [主要功能](#features)
-- [界面预览](#screenshots)
+- [新手必读（图文）](docs/guide/getting-started.zh.md)
 - [环境要求](#requirements)
 - [安装与升级](#use-this-package)
 - [配置与使用团队](#configure-a-team)
@@ -106,90 +95,7 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="screenshots"></a>
 ## 界面预览
 
-前几张截图展示 0.1.9 输入区与「与单个成员单独对话」；其余展示设置页团队管理、私有技能库与早期输入区流程。图中所有提供方、模型、团队与成员名称都来自隔离演示环境的占位数据，不是真实部署。
-
-**在输入区浏览与筛选团队**
-
-![会话输入区的团队选择器](<docs/shots/0.2-composer-team-picker.png>)
-
-**悬浮团队即可展开成员面板：队长、成员、模型路由与角色描述**
-
-![会话输入区的团队选择器与成员面板](<docs/shots/0.2-composer-member-panel.png>)
-
-悬浮不会改变当前选择。队长一行带「队长」徽标并显示「会话模型」；每个成员一行显示自己的提供方与模型，未配置路由时显示「会话模型」。
-
-**点击成员即与其单独对话：触发器标出成员，会话模型改为该成员路由**
-
-![在输入区与单个成员单独对话](<docs/shots/0.2-composer-member-selected.png>)
-
-该成员的角色卡、工具权限、Team Skill 与模型路由会注入本会话。触发器显示「团队 · 成员」，模型控件切换为该成员配置的路由（图中为 `Example Fast`）。
-
-**点击队长则按常规方式选用团队：不改动会话模型**
-
-![在输入区选择队长](<docs/shots/0.2-composer-captain-selected.png>)
-
-队长始终跟随会话，因此点选队长只更换团队与角色卡，模型保持不变：上图仍保留上一次成员选择带来的 `Example Fast`。
-
-**管理已保存的团队：标签页、搜索框、来源与系列筛选（设置页沿用 v0.1.8 版式）**
-
-![设置中的团队列表](<docs/shots/teams-list.png>)
-
-**私有 Team Skill 技能库：来源色标与操作入口**
-
-![团队技能库列表](<docs/shots/skills-library.png>)
-
-**为成员角色分配专属 Team Skill**
-
-![成员专属技能分配九宫格](<docs/shots/member-skill-grid.png>)
-
-**技能详情：文件树、内容预览与本地副本管理**
-
-![技能详情页面](<docs/shots/skill-git-release-hygiene.png>)
-
-**带持有者列表的技能删除强阻断弹窗**
-
-![技能删除阻断弹窗](<docs/shots/skill-delete-dialog.png>)
-
-**管理团队预设自定义分类**
-
-![团队分类管理页面](<docs/shots/category-manager.png>)
-
-**团队编辑页：展示元数据、分类选择与状态提醒**
-
-![团队编辑页面](<docs/shots/team-editor.png>)
-
-<details>
-<summary>更多设置截图（模型路由、下拉交互、系统提示词与工具策略）</summary>
-
-**团队编辑页中的分类下拉弹层**
-
-![分类下拉弹层](<docs/shots/category-select-popup.png>)
-
-**筛选自定义来源的团队**
-
-![自定义来源筛选](<docs/shots/teams-custom-source.png>)
-
-**配置成员模型与推理强度**
-
-![成员模型设置](<docs/images/04-member-route.png>)
-
-**模型选择器**
-
-![模型选择器](<docs/images/05-model-picker.png>)
-
-**队长与成员系统提示词**
-
-![队长系统提示词](<docs/images/06-captain-system-prompt.png>)
-
-![成员系统提示词](<docs/images/07-member-system-prompt.png>)
-
-**工具策略控件**
-
-![默认工具策略](<docs/images/08-tools-default.png>)
-
-![自定义工具策略](<docs/images/09-tools-custom.png>)
-
-</details>
+界面截图随图文教程一起维护，全部取自只安装本插件的隔离实例：**[新手必读](docs/guide/getting-started.zh.md)**。
 
 <a id="requirements"></a>
 ## 环境要求

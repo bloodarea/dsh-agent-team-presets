@@ -2,9 +2,11 @@
 
 <img src="banner.png" alt="Reusable Agent Team presets for DeepSeek Harness" width="100%">
 
-*Concept illustration. See [Screenshots](#screenshots) for the plugin interface; the captain uses the conversation's selected model.*
+*Concept illustration. The plugin interface is documented screen by screen in [Getting started](docs/guide/getting-started.md); the captain uses the conversation's selected model.*
 
 English | [中文](<README.zh.md>)
+
+> **New to this plugin?** Start with the illustrated walkthrough — every screen, every button: **[Getting started](docs/guide/getting-started.md)**.
 
 > **Community plugin v0.3.0** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.0)
 >
@@ -19,20 +21,7 @@ English | [中文](<README.zh.md>)
 - **The source patches are published too.** `contrib/agent-card-badges` carries the same change as patches for the matching target versions, for building them yourself or sending them upstream.
 - **Nothing irreversible.** The published bundle is backed up before it is replaced, remove restores it and deletes the backup, and a target whose bundle matches neither build is refused with the reason instead of being overwritten.
 
-### What changed in 0.2.1
-
-- **Members are ordinary subagents.** `spawn_team_member` creates a member with `ctx.subagents.startActivation` under a reserved child identity recorded with its frozen snapshot, so the member's own route, persona, team context, and strict tool policy still reach its very first request.
-- **No Agent Teams bundle is required.** Tree membership and execution state are read from the subagent runtime — its catalog, live Agents, and admission records — instead of the removed Team roster, messaging, and member APIs.
-- **Teardown stops the epochs this plugin started.** Each creation receipt is retained and released on unload; a cold-restored member, which rc.2 offers no selective disposal for, is interrupted and keeps its Agent-owned policy until the Agent is disposed.
-- **The conversation header shows the Team again.** The rc.1 header action is reproduced from the official `agent-team` client source: a roster of the captain and the members this Session summoned, each row carrying live status and the model it runs on. The captain row is read-only, a member row opens that member's conversation, and the shared-task section lists each task with its status, dependency, write scope and an expandable description. It renders only when the deployment's Team switch is on and this Session selected a preset.
-- **Adaptation to the 0.2.2-rc.2 host.** The roster reads this Session's member snapshots and Team selection instead of the removed Team projection, the shipped stylesheet's elevation token was renamed to `--dsw-elevation-stroke-color`, and the remote-contract tests accept both the lazy `spec` and the inlined schema form the generator emits.
-
-### What changed in 0.2.0
-
-- **Custom tool policies work on a PTC Session.** Applying a custom allow-list on a PTC preset registers the Harness native tool executor on that Session's Agent scope and never releases it; the deployment executor and every other Session keep PTC, and the Agent owns the registration for its whole life. The trade-off is explicit: that Session stops using `run_code` until it ends. A mount that fails, or a surface that still exposes the PTC transport, is refused without releasing anything, so a refused Session keeps its previous surface.
-- **A spent member allowance is diagnosable.** The creation refusal now reports `N of M` roster slots occupied, names the occupants whose creation never became usable, and states that the Host roster is append-only with no removal API — so a Team that will never summon again is distinguishable from a busy one.
-
-Carried over from 0.1.9: individual member chat from the composer, the Harness 0.2.2-rc.1 adaptation (`agent.model.select()` routes, per-step tool admission), and the built-in troubleshooting skill.
+Older releases, with the full list of changes, are on the [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) page.
 
 <a id="project-introduction"></a>
 ## Overview
@@ -87,7 +76,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 - [Overview](#project-introduction)
 - [Why this plugin?](#why-this-plugin)
 - [Features](#features)
-- [Screenshots](#screenshots)
+- [Getting started (illustrated)](docs/guide/getting-started.md)
 - [Requirements](#requirements)
 - [Install and upgrade](#use-this-package)
 - [Configure and use a Team](#configure-a-team)
@@ -106,90 +95,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 <a id="screenshots"></a>
 ## Screenshots
 
-The first screenshots show the 0.1.9 composer with individual member chat. The rest illustrate the settings interface, Team Skill management, and the earlier composer flow. Every provider, model, Team, and member name below is placeholder data from an isolated demo profile, not a real deployment.
-
-**Browse and filter Teams in the composer**
-
-![Composer Team picker](<docs/shots/0.2-composer-team-picker.png>)
-
-**Hover a Team to open its member panel: captain, members, model route, and description**
-
-![Composer Team picker with the member panel](<docs/shots/0.2-composer-member-panel.png>)
-
-Hovering a row never changes the selection. The captain row carries the `captain` badge and `session model`; each member row shows its own provider and model, or `session model` when it follows the Session.
-
-**Click a member to talk to it alone: the trigger names it and the Session model follows its route**
-
-![Talking to one member in the composer](<docs/shots/0.2-composer-member-selected.png>)
-
-The member's role card, tool policy, Team Skills, and model route are injected into this Session. The Team trigger reads `Team · member`, and the model control switches to the member's configured route — `Example Fast` here.
-
-**Click the captain to select the Team normally: the Session model is left alone**
-
-![Selecting a captain in the composer](<docs/shots/0.2-composer-captain-selected.png>)
-
-The captain always follows the Session, so selecting it changes the Team and the role card but never the model. The chip above keeps `Example Fast` from the previous member selection.
-
-**Manage Teams: tabs, search, source and series filters (settings layout carried over from v0.1.8)**
-
-![Team list in Settings](<docs/shots/teams-list.png>)
-
-**Private Team Skill library with origin badges and actions**
-
-![Team Skill library](<docs/shots/skills-library.png>)
-
-**Assign Team Skills to a member role**
-
-![Member Team Skill assignment grid](<docs/shots/member-skill-grid.png>)
-
-**Skill details: file tree, editor, and local copy actions**
-
-![Team Skill detail view](<docs/shots/skill-git-release-hygiene.png>)
-
-**Guarded skill deletion with blocking holders modal**
-
-![Skill delete blocker dialog](<docs/shots/skill-delete-dialog.png>)
-
-**Manage custom preset categories**
-
-![Team preset categories page](<docs/shots/category-manager.png>)
-
-**Team editor: display metadata, category picker, and status notices**
-
-![Team editor](<docs/shots/team-editor.png>)
-
-<details>
-<summary>More screenshots (model routing, custom dropdowns, prompts, and tool policies)</summary>
-
-**Category dropdown in Team editor**
-
-![Category select popup](<docs/shots/category-select-popup.png>)
-
-**Filter Teams by custom source**
-
-![Custom source filter](<docs/shots/teams-custom-source.png>)
-
-**Configure member models and reasoning effort**
-
-![Member model settings](<docs/images/04-member-route.png>)
-
-**Model picker**
-
-![Model picker](<docs/images/05-model-picker.png>)
-
-**Captain and member system prompts**
-
-![Captain system prompt](<docs/images/06-captain-system-prompt.png>)
-
-![Member system prompt](<docs/images/07-member-system-prompt.png>)
-
-**Tool policy controls**
-
-![Default tool policy](<docs/images/08-tools-default.png>)
-
-![Custom tool policy](<docs/images/09-tools-custom.png>)
-
-</details>
+Interface screenshots live with the walkthrough, taken live from an isolated instance that had only this plugin installed: **[docs/guide/getting-started.md](docs/guide/getting-started.md)**.
 
 <a id="requirements"></a>
 ## Requirements

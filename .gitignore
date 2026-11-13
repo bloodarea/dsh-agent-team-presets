@@ -10,6 +10,9 @@ node_modules/
 /docs/internal/
 /docs/**/*.md
 /docs/**/*.html
+# ...except the public beginner guide, which ships with the package.
+!/docs/guide/
+!/docs/guide/*.md
 /CHANGELOG.md
 /contrib/awesome-dsh-plugin/PR.md
 
