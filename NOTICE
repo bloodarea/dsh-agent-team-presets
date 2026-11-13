@@ -36,3 +36,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Third-party browser bundles (optional card-patch assets)
+=======================================================
+
+`assets/card-patches/*.client.js.gz` are MODIFIED builds of two third-party
+plugins, produced by this project from their published sources plus a small
+registration service that lets a card render content contributed by another
+plugin. They are never installed automatically: the settings page's
+"Integrations" tab replaces a target's installed bundle only when the user
+confirms it, keeps the original as a backup, and can restore it. Upstream
+license texts are shipped beside them under `assets/card-patches/licenses/`.
+
+1. dsh-context 0.84.0
+   https://github.com/bowenliang123/dsh-context
+   revision aa98b1231d5f0f8e833391f198e65e14e73b3323
+   Licensed under the Apache License, Version 2.0 (see
+   assets/card-patches/licenses/dsh-context-LICENSE).
+   Changes: a new client module registers an optional `contextAgentCardBadges`
+   registry, and the shared Agent card renders components registered with it.
+   No other behaviour was changed.
+
+2. dsh-better-sidebar 0.32.0
+   https://github.com/omdsh-dev/DSH-better-sidebar
+   tag v0.32.0
+   Licensed under the MIT License (see
+   assets/card-patches/licenses/dsh-better-sidebar-LICENSE).
+   Changes: a new client module registers an optional
+   `betterSidebarAgentCardBadges` registry, and the tasks graph and tasks tree
+   render components registered with it. No other behaviour was changed.

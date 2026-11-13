@@ -15,6 +15,7 @@ import type { AgentSlot } from './TeamEditorView.tsx'
 import { TeamImportDialog } from './TeamImportDialog.tsx'
 import { TeamListView } from './TeamListView.tsx'
 import { TeamSkillsView } from './TeamSkillsView.tsx'
+import { CardPatchView } from './CardPatchView.tsx'
 import { defaultImportResolution, executionStateOf, unnamedTeamsOf } from './team-presets-controller.ts'
 import type {
   ExternalUpdateNotice, TeamPresetImportPlan, TeamPresetsInjected,
@@ -140,10 +141,10 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
   const { t } = props
   const state = props.useTeamPresets(snapshot => snapshot)
   const [view, setView] = useState<View>({ kind: 'list' })
-  // Two pages share one settings section: the Team presets and the private Team
-  // Skill library. The library tab is offered only when the deployment mounts the
-  // service, so a build without it simply has one page.
-  const [tab, setTab] = useState<'teams' | 'skills'>('teams')
+  // Three pages share one settings section: the Team presets, the private Team
+  // Skill library, and the optional card-patch integrations. A page whose
+  // service this build does not have is simply absent from the tab bar.
+  const [tab, setTab] = useState<'teams' | 'skills' | 'links'>('teams')
   const [importError, setImportError] = useState<TeamPresetsLocaleKey | undefined>(undefined)
   const [importPlan, setImportPlan] = useState<TeamPresetImportPlan | undefined>(undefined)
   // Each inspection replaces the pending dialog, whose choices must not survive it.
@@ -161,8 +162,26 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
         <div role="tablist" className={css.tabs}>
           <TabButton active={false} onClick={() => { setTab('teams') }}>{t('tabTeams')}</TabButton>
           <TabButton active onClick={() => { setTab('skills') }}>{t('tabSkills')}</TabButton>
+          {props.cardPatches === undefined
+            ? null
+            : <TabButton active={false} onClick={() => { setTab('links') }}>{t('tabLinks')}</TabButton>}
         </div>
         <TeamSkillsView controller={props.skills} t={t as unknown as Parameters<typeof TeamSkillsView>[0]['t']} />
+      </div>
+    )
+  }
+
+  if (tab === 'links' && props.cardPatches !== undefined) {
+    return (
+      <div>
+        <div role="tablist" className={css.tabs}>
+          <TabButton active={false} onClick={() => { setTab('teams') }}>{t('tabTeams')}</TabButton>
+          {props.skills === undefined
+            ? null
+            : <TabButton active={false} onClick={() => { setTab('skills') }}>{t('tabSkills')}</TabButton>}
+          <TabButton active onClick={() => { setTab('links') }}>{t('tabLinks')}</TabButton>
+        </div>
+        <CardPatchView controller={props.cardPatches} t={t} />
       </div>
     )
   }
@@ -257,6 +276,7 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
       <div role="tablist" className={css.tabs}>
         <TabButton active={tab === 'teams'} onClick={() => { setTab('teams') }}>{t('tabTeams')}</TabButton>
         {props.skills === undefined ? null : <TabButton active={tab === 'skills'} onClick={() => { setTab('skills') }}>{t('tabSkills')}</TabButton>}
+        {props.cardPatches === undefined ? null : <TabButton active={tab === 'links'} onClick={() => { setTab('links') }}>{t('tabLinks')}</TabButton>}
       </div>
       <div className={css.page}>
         {active.kind === 'categories' && (

@@ -1,0 +1,343 @@
+diff --git a/src/client/SubagentView.tsx b/src/client/SubagentView.tsx
+index b43f2d3..835407f 100644
+--- a/src/client/SubagentView.tsx
++++ b/src/client/SubagentView.tsx
+@@ -64,6 +64,7 @@ import { diagnosticAddressOf } from './context-diagnostics-ui.tsx'
+ import type { ContextDiagnosticTarget } from './context-diagnostics.ts'
+ import { buildTasksModel, type TasksAgentNode, type TasksFoldNode, type TasksWorkflowNode } from './tasks-model.ts'
+ import { TasksGraph } from './TasksGraph.tsx'
++import type { AgentCardBadgeComponent } from './agent-card-badges.tsx'
+ import { TasksTree } from './TasksTree.tsx'
+ import { JobsDrawer, JobOutputWindow } from './JobsDrawer.tsx'
+ import { AnchoredPopover } from './AnchoredPopover.tsx'
+@@ -286,6 +287,7 @@ type PagePopover =
+  *   jump-notify hook fired right before `openSubagent`.
+  */
+ export function SubagentView(props: {
++  AgentCardBadges?: AgentCardBadgeComponent
+   sessionId: string
+   active: boolean
+   ctx: Context
+@@ -787,6 +789,7 @@ export function SubagentView(props: {
+         mode === 'graph'
+           ? (
+             <TasksGraph
++              {...(props.AgentCardBadges === undefined ? {} : { AgentCardBadges: props.AgentCardBadges })}
+               nodes={model}
+               folded={folded}
+               rootId={rootId}
+@@ -803,6 +806,7 @@ export function SubagentView(props: {
+           )
+           : (
+             <TasksTree
++              {...(props.AgentCardBadges === undefined ? {} : { AgentCardBadges: props.AgentCardBadges })}
+               nodes={model}
+               folded={folded}
+               collapsedIds={collapsedIds}
+diff --git a/src/client/TasksGraph.tsx b/src/client/TasksGraph.tsx
+index 979b608..0cd8435 100644
+--- a/src/client/TasksGraph.tsx
++++ b/src/client/TasksGraph.tsx
+@@ -57,6 +57,7 @@ import {
+   foldTally, TaskLine, WorkflowGlyph, workflowMeta,
+ } from './tasks-shared.tsx'
+ import { CardBar, CardTop, phaseClass, type CardKind } from './tasks-card.tsx'
++import { agentCardSessionId, type AgentCardBadgeComponent } from './agent-card-badges.tsx'
+ import { localeSignature, t } from './locales.ts'
+ import css from './tasks-graph.module.css'
+ import canvasCss from './tasks-canvas.module.css'
+@@ -119,6 +120,7 @@ interface PhaseFrame {
+ }
+ 
+ export interface TasksGraphProps {
++  AgentCardBadges?: AgentCardBadgeComponent
+   nodes: readonly TasksNode[]
+   folded: boolean
+   /** Re-fit trigger: the topology root id (a reroot re-centers). */
+@@ -657,7 +659,7 @@ export function TasksGraph(props: TasksGraphProps): ReactNode {
+             if (node.kind === 'workflow') {
+               return renderWorkflowNode(node, style, onWorkflowInfo, clickAllowed)
+             }
+-            return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed, onFoldNode)
++            return renderAgentNode(node, style, onNodeInfo, onOpenTask, clickAllowed, onFoldNode, props.AgentCardBadges)
+           })}
+         </div>
+         <div className={css.controls} data-graph-controls>
+@@ -707,6 +709,7 @@ function renderAgentNode(
+   onOpenTask: (taskId: string, anchor: HTMLElement) => void,
+   clickAllowed: () => boolean,
+   onFold?: (node: TasksAgentNode) => void,
++  AgentCardBadges?: AgentCardBadgeComponent,
+ ): ReactNode {
+   const settled = node.state === 'done' || node.state === 'error'
+   return (
+@@ -732,6 +735,7 @@ function renderAgentNode(
+       }}
+     >
+       <AgentCardContents
++        {...(AgentCardBadges === undefined ? {} : { AgentCardBadges })}
+         key={localeSignature()}
+         node={node}
+         onOpenTask={onOpenTask}
+@@ -743,11 +747,13 @@ function renderAgentNode(
+ 
+ /** Position changes do not rebuild the card's text, badges or task controls. */
+ const AgentCardContents = memo(function AgentCardContents(props: {
++  AgentCardBadges?: AgentCardBadgeComponent
+   node: TasksAgentNode
+   onOpenTask: (taskId: string, anchor: HTMLElement) => void
+   onFold: ((node: TasksAgentNode) => void) | undefined
+ }): ReactNode {
+-  const { node, onOpenTask, onFold } = props
++  const { node, onOpenTask, onFold, AgentCardBadges } = props
++  const badgeSessionId = agentCardSessionId(node)
+   const settled = node.state === 'done' || node.state === 'error'
+   /**
+    * Whether this card offers its own fold chevron. A WAITING member counts:
+@@ -778,6 +784,8 @@ const AgentCardContents = memo(function AgentCardContents(props: {
+     <>
+       <CardTop
+         kind={agentCardKind(node)}
++        badges={AgentCardBadges !== undefined && badgeSessionId !== undefined
++          ? <AgentCardBadges sessionId={badgeSessionId} /> : null}
+         depth={node.depth}
+         {...(node.phase === undefined ? {} : { phase: node.phase })}
+         {...(chip === undefined ? {} : { chip })}
+diff --git a/src/client/TasksTree.tsx b/src/client/TasksTree.tsx
+index 33396d4..974f3f0 100644
+--- a/src/client/TasksTree.tsx
++++ b/src/client/TasksTree.tsx
+@@ -27,6 +27,7 @@ import {
+   stateLabel, TaskLine, WorkflowGlyph, workflowMeta,
+ } from './tasks-shared.tsx'
+ import { FoldToggleButton, ViewModeToggle } from './TasksGraph.tsx'
++import { agentCardSessionId, type AgentCardBadgeComponent } from './agent-card-badges.tsx'
+ import { useAutoAnimateRef } from './use-auto-animate.ts'
+ import { t } from './locales.ts'
+ import css from './tasks-graph.module.css'
+@@ -51,6 +52,7 @@ function TreeLevel(props: { items: readonly ReactNode[] }): ReactNode {
+ }
+ 
+ export interface TasksTreeProps {
++  AgentCardBadges?: AgentCardBadgeComponent
+   nodes: readonly TasksNode[]
+   folded: boolean
+   /**
+@@ -163,6 +165,8 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
+     const children = childrenOf.get(node.id) ?? []
+     /** The mode chip this row shows (also decides what the mono line holds). */
+     const chip = node.kind === 'agent' ? agentChip(node) : undefined
++    const badgeSessionId = node.kind === 'agent' ? agentCardSessionId(node) : undefined
++    const AgentCardBadges = props.AgentCardBadges
+     /**
+      * The row's own wrapper is the child of its parent's level: it draws the
+      * elbow that connects it to that level's thread, and the LAST sibling stops
+@@ -301,6 +305,8 @@ export function TasksTree(props: TasksTreeProps): ReactNode {
+                   the name, instead of a mono line that repeated it on every row.
+                 */}
+                 {chip !== undefined && <span className={css.treeChip}>{chip}</span>}
++                {AgentCardBadges !== undefined && badgeSessionId !== undefined
++                  ? <AgentCardBadges sessionId={badgeSessionId} /> : null}
+               </span>
+               {/* With the chip carrying the mode, the mono line holds what is
+                   left: the node's own state (and, for the root, its identity). */}
+diff --git a/src/client/agent-card-badges.tsx b/src/client/agent-card-badges.tsx
+new file mode 100644
+index 0000000..18c319d
+--- /dev/null
++++ b/src/client/agent-card-badges.tsx
+@@ -0,0 +1,90 @@
++import { Component, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
++
++export type AgentCardBadgeComponent = ComponentType<{ sessionId: string }>
++
++export interface AgentCardBadgesService {
++  readonly version: 1
++  register(entry: { id: string; Component: AgentCardBadgeComponent }): () => void
++}
++
++type Entry = { id: string; Component: AgentCardBadgeComponent; revision: number }
++
++class BadgeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
++  state = { failed: false }
++
++  static getDerivedStateFromError(): { failed: boolean } {
++    return { failed: true }
++  }
++
++  componentDidCatch(error: unknown): void {
++    console.error('[agent-card-badges] contribution failed', error)
++  }
++
++  render(): ReactNode {
++    return this.state.failed ? null : this.props.children
++  }
++}
++
++export function createAgentCardBadges(): {
++  service: AgentCardBadgesService
++  Badges: AgentCardBadgeComponent
++  dispose: () => void
++} {
++  let entries: readonly Entry[] = []
++  let revision = 0
++  let disposed = false
++  const listeners = new Set<() => void>()
++  const notify = (): void => { for (const listener of [...listeners]) listener() }
++  const getSnapshot = (): readonly Entry[] => entries
++  const subscribe = (listener: () => void): (() => void) => {
++    if (disposed) return () => {}
++    listeners.add(listener)
++    return () => { listeners.delete(listener) }
++  }
++  const service: AgentCardBadgesService = {
++    version: 1,
++    register(entry) {
++      if (disposed) throw new Error('Agent card badges service is disposed')
++      if (entry.id.trim() === '') throw new Error('Agent card badge id must not be empty')
++      if (entries.some(current => current.id === entry.id)) {
++        throw new Error(`Agent card badge already registered: ${entry.id}`)
++      }
++      const registered = { id: entry.id, Component: entry.Component, revision: ++revision }
++      entries = [...entries, registered]
++      notify()
++      return () => {
++        if (!entries.includes(registered)) return
++        entries = entries.filter(current => current !== registered)
++        notify()
++      }
++    },
++  }
++  function Badges({ sessionId }: { sessionId: string }): ReactNode {
++    const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
++    if (snapshot.length === 0) return null
++    return (
++      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flex: '0 1 auto', minWidth: 0, maxWidth: 90, height: '1em', maxHeight: 16, overflow: 'hidden', whiteSpace: 'nowrap' }}>
++        {snapshot.map(entry => (
++          <BadgeBoundary key={`${entry.id}:${entry.revision}:${sessionId}`}>
++            <entry.Component sessionId={sessionId} />
++          </BadgeBoundary>
++        ))}
++      </span>
++    )
++  }
++  return {
++    service,
++    Badges,
++    dispose() {
++      if (disposed) return
++      disposed = true
++      entries = []
++      notify()
++      listeners.clear()
++    },
++  }
++}
++
++export function agentCardSessionId(node: { id: string; childAddress?: { childSessionId: string } }): string | undefined {
++  return node.childAddress?.childSessionId ?? (node.id.startsWith('wfmember:') ? undefined : node.id)
++}
+diff --git a/src/client/builtins/index.ts b/src/client/builtins/index.ts
+index 1b55738..0aa1d09 100644
+--- a/src/client/builtins/index.ts
++++ b/src/client/builtins/index.ts
+@@ -9,6 +9,7 @@
+ import type { Context } from '../../context-types.ts'
+ import type { BetterSidebarService } from '../service.ts'
+ import { builtinTabs } from './tabs.tsx'
++import type { AgentCardBadgeComponent } from '../agent-card-badges.tsx'
+ import { builtinViewers } from './viewers.tsx'
+ 
+ /**
+@@ -21,9 +22,10 @@ import { builtinViewers } from './viewers.tsx'
+ export function registerBuiltins(
+   ctx: Context,
+   service: BetterSidebarService,
++  AgentCardBadges?: AgentCardBadgeComponent,
+ ): () => void {
+   const disposers: (() => void)[] = []
+-  for (const tab of builtinTabs(ctx)) {
++  for (const tab of builtinTabs(ctx, AgentCardBadges)) {
+     disposers.push(service.registerTab(tab))
+   }
+   for (const viewer of builtinViewers()) {
+diff --git a/src/client/builtins/tabs.tsx b/src/client/builtins/tabs.tsx
+index 9e48b51..8eda7f3 100644
+--- a/src/client/builtins/tabs.tsx
++++ b/src/client/builtins/tabs.tsx
+@@ -31,6 +31,7 @@ import { CommitModelSettings } from '../changes/CommitModelSettings.tsx'
+ import { ChangesTab, opCountOf } from '../changes/ChangesTab.tsx'
+ import { DiffTab } from '../DiffTab.tsx'
+ import { SubagentView } from '../SubagentView.tsx'
++import type { AgentCardBadgeComponent } from '../agent-card-badges.tsx'
+ import { consumeSidechatSeed, SideChatView, sidechatThreadIdOf } from '../SideChatView.tsx'
+ import { LazyTerminalBottom } from '../terminal-lazy.tsx'
+ import { INSTANCE_FIELD, closeBottomTerminal, webTerminals } from '../terminal-client.ts'
+@@ -102,7 +103,7 @@ function SideChatTab(props: TabComponentProps) {
+ }
+ 
+ /** The 6 built-in tab descriptors (the host owns the right-Sidebar terminal and browser). */
+-export function builtinTabs(ctx: Context): readonly TabDescriptor[] {
++export function builtinTabs(ctx: Context, AgentCardBadges?: AgentCardBadgeComponent): readonly TabDescriptor[] {
+   return [
+     {
+       id: 'editor',
+@@ -265,6 +266,7 @@ export function builtinTabs(ctx: Context): readonly TabDescriptor[] {
+       },
+       component: ({ ctx, store, scope, visible, onSubagentJump }) => (
+         <SubagentView
++          {...(AgentCardBadges === undefined ? {} : { AgentCardBadges })}
+           sessionId={scope.sessionId}
+           ctx={ctx}
+           store={store}
+diff --git a/src/client/index.tsx b/src/client/index.tsx
+index 7b06e92..f8e0914 100644
+--- a/src/client/index.tsx
++++ b/src/client/index.tsx
+@@ -17,6 +17,7 @@ import { disposeSidechatSurfaces } from './sidechat-surface.ts'
+ import { revalidateChunksOnReactivate, setChunkModuleSystem } from './chunk-loader.ts'
+ import { registerBuiltins } from './builtins/index.ts'
+ import { Sidebar } from './Sidebar.tsx'
++import { createAgentCardBadges } from './agent-card-badges.tsx'
+ import { RenderBoundary } from './RenderBoundary.tsx'
+ import { createNativeTabRecords } from './native/tab-adapter.tsx'
+ import { registerNativeSurface } from './native/index.ts'
+@@ -174,6 +175,9 @@ export function apply(ctx: Context): void {
+   // are ready by the time the sidebar renders.
+   const service = createBetterSidebarService(sidebarStore)
+   ctx.provide('betterSidebar', service)
++  const agentCardBadges = createAgentCardBadges()
++  ctx.provide('betterSidebarAgentCardBadges', agentCardBadges.service)
++  ctx.effect(() => agentCardBadges.dispose, 'dsh-better-sidebar: agent card badges')
+   ctx.effect(() => () => { disposeSidechatSurfaces(service) }, 'dsh-better-sidebar: sidechat surface adapters')
+   // The native right-Sidebar surface: the plugin's content is registered as
+   // DSH tab types (one per descriptor) and every open routes there, so the
+@@ -225,7 +229,7 @@ export function apply(ctx: Context): void {
+   // service (eating our own dogfood). The disposer unregisters them on
+   // fiber disposal (HMR-safe).
+   ctx.effect(
+-    () => registerBuiltins(ctx, service),
++    () => registerBuiltins(ctx, service, agentCardBadges.Badges),
+     'dsh-better-sidebar: register built-in tabs and viewers',
+   )
+   // The quote chip's input-trigger source ("add selection to conversation"):
+diff --git a/src/client/tasks-card.tsx b/src/client/tasks-card.tsx
+index 72d8555..8002275 100644
+--- a/src/client/tasks-card.tsx
++++ b/src/client/tasks-card.tsx
+@@ -87,6 +87,7 @@ export function phaseClass(index: number): string | undefined {
+ 
+ /** The top segment: the node's identity. */
+ export function CardTop(props: {
++  badges?: ReactNode
+   kind: CardKind
+   /** Folded member count, for the aggregate's badge. */
+   count?: number
+@@ -136,6 +137,7 @@ export function CardTop(props: {
+           </span>
+         )}
+         {chip !== undefined && chip !== '' && <span className={css.kindChip}>{chip}</span>}
++        {props.badges}
+       </span>
+       <span className={clsx(css.cardName, props.extraClass)} title={props.name}>{props.name}</span>
+       {props.meta !== undefined && props.meta !== '' && (

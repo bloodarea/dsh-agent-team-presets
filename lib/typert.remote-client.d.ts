@@ -5,13 +5,17 @@ import type {
   TypertRemoteInfo,
   TypertRemoteMethod,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { TeamExecutionSnapshot, TeamRosterValue, TeamSkillDeleteView, TeamSkillDependencies, TeamSkillDetailView, TeamSkillImportFile, TeamSkillImportFolderView, TeamSkillLibraryView, TeamSkillRefusalView, TeamSkillScanView, ToolCatalogValue } from 'dsh-agent-team-presets/types'
+import type { CardPatchResult, CardPatchTargetView, TeamExecutionSnapshot, TeamRosterValue, TeamSkillDeleteView, TeamSkillDependencies, TeamSkillDetailView, TeamSkillImportFile, TeamSkillImportFolderView, TeamSkillLibraryView, TeamSkillRefusalView, TeamSkillScanView, ToolCatalogValue } from 'dsh-agent-team-presets/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespace$7465616d50726573657473 {
+    cardPatches: () => Promise<RemoteResult<CardPatchTargetView[]>>
     catalog: () => Promise<RemoteResult<ToolCatalogValue>>
     execution: (signal?: AbortSignal) => RemoteStreamHandle<TeamExecutionSnapshot, never>
+    installCardPatch: (id: string) => Promise<RemoteResult<CardPatchResult>>
+    isPresetMember: (sessionId: string) => Promise<RemoteResult<boolean>>
     roster: (sessionId: string) => Promise<RemoteResult<TeamRosterValue>>
+    uninstallCardPatch: (id: string) => Promise<RemoteResult<CardPatchResult>>
   }
   interface TypertRemoteNamespace$7465616d536b696c6c73 {
     assignRole: (teamId: string, roleId: string, assetId: string) => Promise<RemoteResult<{ ok: boolean; detail: string; unverified?: readonly string[]; library: TeamSkillLibraryView; }>>
@@ -31,9 +35,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     writeFile: (assetId: string, path: string, text: string) => Promise<RemoteResult<TeamSkillDetailView | TeamSkillRefusalView>>
   }
   interface TypertRemoteMap {
+    'teamPresets/cardPatches': () => Promise<RemoteResult<CardPatchTargetView[]>>
     'teamPresets/catalog': () => Promise<RemoteResult<ToolCatalogValue>>
     'teamPresets/execution': (signal?: AbortSignal) => RemoteStreamHandle<TeamExecutionSnapshot, never>
+    'teamPresets/installCardPatch': (id: string) => Promise<RemoteResult<CardPatchResult>>
+    'teamPresets/isPresetMember': (sessionId: string) => Promise<RemoteResult<boolean>>
     'teamPresets/roster': (sessionId: string) => Promise<RemoteResult<TeamRosterValue>>
+    'teamPresets/uninstallCardPatch': (id: string) => Promise<RemoteResult<CardPatchResult>>
     'teamSkills/assignRole': (teamId: string, roleId: string, assetId: string) => Promise<RemoteResult<{ ok: boolean; detail: string; unverified?: readonly string[]; library: TeamSkillLibraryView; }>>
     'teamSkills/createSkill': (skillId: string, description: string) => Promise<RemoteResult<TeamSkillDetailView | TeamSkillRefusalView>>
     'teamSkills/deleteAsset': (assetId: string) => Promise<RemoteResult<TeamSkillDeleteView>>
@@ -57,9 +65,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 
 export declare const TYPERT_REMOTE: TypertRemoteInfo<{
+  readonly 'teamPresets/cardPatches': TypertRemoteMethod<{  }, CardPatchTargetView[]>
   readonly 'teamPresets/catalog': TypertRemoteMethod<{  }, ToolCatalogValue>
   readonly 'teamPresets/execution': TypertRemoteMethod<{  }, TeamExecutionSnapshot, 'stream'>
+  readonly 'teamPresets/installCardPatch': TypertRemoteMethod<{ readonly 'id': string }, CardPatchResult>
+  readonly 'teamPresets/isPresetMember': TypertRemoteMethod<{ readonly 'sessionId': string }, boolean>
   readonly 'teamPresets/roster': TypertRemoteMethod<{ readonly 'sessionId': string }, TeamRosterValue>
+  readonly 'teamPresets/uninstallCardPatch': TypertRemoteMethod<{ readonly 'id': string }, CardPatchResult>
   readonly 'teamSkills/assignRole': TypertRemoteMethod<{ readonly 'teamId': string; readonly 'roleId': string; readonly 'assetId': string }, { ok: boolean; detail: string; unverified?: readonly string[]; library: TeamSkillLibraryView; }>
   readonly 'teamSkills/createSkill': TypertRemoteMethod<{ readonly 'skillId': string; readonly 'description': string }, TeamSkillDetailView | TeamSkillRefusalView>
   readonly 'teamSkills/deleteAsset': TypertRemoteMethod<{ readonly 'assetId': string }, TeamSkillDeleteView>

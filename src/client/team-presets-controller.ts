@@ -1727,6 +1727,8 @@ export interface TeamRosterInjected {
 export interface TeamPresetsInjected {
   /** Team Skill panel state, absent when this build ships no library service. */
   skills?: import('./team-skills-controller.ts').TeamSkillsController
+  /** Card-patch integrations page state. */
+  cardPatches?: import('./card-patches-controller.ts').CardPatchesController
   hooks: {
     /** Page state bound by the renderer as `useTeamPresets`. */
     teamPresets: SnapshotStore<TeamPresetsState>

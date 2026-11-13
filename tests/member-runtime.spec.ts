@@ -158,6 +158,38 @@ function intent(lead: Agent, overrides: Partial<MemberIntent> = {}): MemberInten
   }
 }
 
+describe('preset identity for external agent cards', () => {
+  it('recognizes cold and failed preset children by exact Session id, without claiming an Agent', async () => {
+    const h = await harness({ seed: [recordFor(), recordFor({
+      memberName: 'failed-reviewer', childSessionId: 'failed-child', lifecycle: 'failed',
+    })] })
+    expect(await h.members.isPresetMember('child')).toBe(true)
+    expect(await h.members.isPresetMember('failed-child')).toBe(true)
+    for (const id of ['lead', 'reviewer', 'ordinary-child', 'child/grandchild', 'wfmember:run:1', '']) {
+      expect(await h.members.isPresetMember(id), id).toBe(false)
+    }
+    expect(h.members.installedCount).toBe(0)
+    await h.members.close()
+  })
+
+  it('answers through the write path, so a member created after an empty read is picked up', async () => {
+    const h = await harness()
+    expect(await h.members.isPresetMember('reserved-child')).toBe(false)
+    // The reserved identity is what the real creation path persists BEFORE the
+    // child exists; a cached "no" would hide the badge for a live member.
+    const prepared = await h.members.prepare(intent(h.lead, { childId: 'reserved-child' }))
+    expect(prepared.kind).toBe('ready')
+    expect(await h.members.isPresetMember('reserved-child')).toBe(true)
+    await h.members.close()
+  })
+
+  it('reports unavailable identity storage rather than claiming an ordinary child', async () => {
+    const h = await harness({ store: false })
+    await expect(h.members.isPresetMember('child')).rejects.toThrow(/durable|storage/i)
+    await h.members.close()
+  })
+})
+
 describe('claiming one child', () => {
   it('leaves a native Agent with no snapshot and no member marker entirely alone', async () => {
     const h = await harness()

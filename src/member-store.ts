@@ -164,6 +164,16 @@ export interface MemberStore {
   values(): MemberRecord[]
 
   /**
+   * Identify one member instance by its child Session identity.
+   *
+   * Card chrome asks this per rendered card, so the answer is served from an
+   * index maintained as records are written rather than by scanning the table.
+   * @param childSessionId - the child Session identity a card stands for.
+   * @returns whether a stored snapshot created that exact child.
+   */
+  hasChild(childSessionId: string): boolean
+
+  /**
    * Insert or replace one snapshot durably.
    * @param record - the full record to store.
    * @returns resolution after the medium holds the record.
@@ -244,10 +254,20 @@ export async function openMemberStore(ctx: Context): Promise<MemberStore> {
   }
   const domain = await facility.open(memberDomainSpec)
   const table = domain.table('members')
+  // One entry per stored snapshot, so a card's identity question stays O(1)
+  // however many members the Team has summoned.
+  const childIds = new Set<string>()
+  for (const [, record] of table.entries()) {
+    if (record.childSessionId !== undefined) childIds.add(record.childSessionId)
+  }
   return {
     get: (rootSessionId, memberName) => table.get(memberRecordKey(rootSessionId, memberName)),
     values: () => [...table.entries()].map(([, record]) => record),
-    put: async (record) => { await table.put(memberRecordKey(record.rootSessionId, record.memberName), record) },
+    hasChild: childSessionId => childIds.has(childSessionId),
+    put: async (record) => {
+      await table.put(memberRecordKey(record.rootSessionId, record.memberName), record)
+      if (record.childSessionId !== undefined) childIds.add(record.childSessionId)
+    },
     close: () => {
       const closing = domain.close()
       // Publish the release BEFORE it settles, so an activation that mounts

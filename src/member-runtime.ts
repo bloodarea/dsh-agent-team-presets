@@ -436,6 +436,22 @@ export class MemberRuntime {
   }
 
   /**
+   * Identify a preset-created child by its durable Session id, including cold
+   * and failed instances. A reserved id cannot produce a badge until the target
+   * plugin actually renders a card for that Session.
+   * @param sessionId - the real child Session identity, never a graph node id.
+   * @returns whether a stored creation snapshot owns this exact child.
+   */
+  async isPresetMember(sessionId: string): Promise<boolean> {
+    await this.ready
+    const state = this.state
+    if (state?.kind !== 'ready') {
+      throw new Error(state?.reason ?? NO_STORE_REASON)
+    }
+    return sessionId !== '' && state.store.hasChild(sessionId)
+  }
+
+  /**
    * Read the snapshot one Agent was installed from.
    * @param agent - a live Agent.
    * @returns its frozen record, or undefined when this Agent is not managed here.

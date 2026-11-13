@@ -1,7 +1,7 @@
 {
   "name": "dsh-agent-team-presets",
   "description": "Reusable Agent Team presets for DeepSeek Harness: a captain plus members with their own prompt, model, reasoning effort, and tools.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "keywords": [
     "agent-presets",
     "agent-teams",
@@ -155,6 +155,7 @@
     "cordis.patch.yml",
     "locale",
     "assets/skills",
+    "assets/card-patches",
     "LICENSE",
     "NOTICE",
     "README.md"

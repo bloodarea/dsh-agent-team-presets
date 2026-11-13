@@ -134,6 +134,15 @@ export interface MemberStore {
      */
     values(): MemberRecord[];
     /**
+     * Identify one member instance by its child Session identity.
+     *
+     * Card chrome asks this per rendered card, so the answer is served from an
+     * index maintained as records are written rather than by scanning the table.
+     * @param childSessionId - the child Session identity a card stands for.
+     * @returns whether a stored snapshot created that exact child.
+     */
+    hasChild(childSessionId: string): boolean;
+    /**
      * Insert or replace one snapshot durably.
      * @param record - the full record to store.
      * @returns resolution after the medium holds the record.

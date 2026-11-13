@@ -596,3 +596,46 @@ export interface TeamSkillScanView {
   readonly entries: readonly TeamSkillScanEntry[]
 }
 
+
+/** What this plugin can say about one card-patch target's installed bundle. */
+export type CardPatchFileState =
+  /** The target package is not installed in this profile. */
+  | 'absent'
+  /** The target is installed, but not at the version this build patches. */
+  | 'unsupported'
+  /** The installed bundle is exactly the package's own build. */
+  | 'pristine'
+  /** The installed bundle is exactly this build's replacement. */
+  | 'patched'
+  /** The installed bundle matches neither, so it holds an edit this plugin cannot reproduce. */
+  | 'foreign'
+
+/** One card-patch target as the settings page shows it. */
+export interface CardPatchTargetView {
+  /** Stable identity. */
+  readonly id: string
+  /** Package the row is about. */
+  readonly packageName: string
+  /** Upstream revision the prebuilt replacement came from. */
+  readonly source: string
+  /** The version this build ships a replacement for. */
+  readonly supportedVersion: string
+  /** Installed version, when the package is present. */
+  readonly installedVersion?: string
+  /** Installed bundle state. */
+  readonly state: CardPatchFileState
+  /** Why the row cannot be acted on, when `state` refuses. */
+  readonly detail?: string
+}
+
+/** One install or restore the Host performed, or refused. */
+export interface CardPatchResult {
+  /** Whether the bundle file was replaced. */
+  readonly ok: boolean
+  /** The target that was acted on. */
+  readonly id: string
+  /** Bundle state after the attempt; unchanged when it was refused. */
+  readonly state: CardPatchFileState
+  /** Why nothing changed, or what an operator should know about a success. */
+  readonly detail?: string
+}

@@ -46,9 +46,12 @@
   "files": [
     "src/css-modules.d.ts",
     "src/types.ts",
+    "src/client/card-patches-controller.ts",
     "src/presets.ts",
     "src/preset-transfer.ts",
     "src/client/index.ts",
+    "src/client/agent-card-badges.tsx",
+    "src/client/CardPatchView.tsx",
     "src/client/appearance.ts",
     "src/client/locales.ts",
     "src/client/preset-file.ts",

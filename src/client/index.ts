@@ -19,11 +19,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ComposerTeamSelect } from './ComposerTeamSelect.tsx'
 import { TeamRosterAction } from './TeamRosterAction.tsx'
+import { registerAgentCardBadgeAdapters } from './agent-card-badges.tsx'
 import { teamAppearance } from './appearance.ts'
 import type { RosterAppearanceRegistry } from './appearance.ts'
 import { TeamPresetsSection } from './TeamPresetsSection.tsx'
 import { TeamPresetsController, TEAM_PRESETS_NS } from './team-presets-controller.ts'
 import { TeamSkillsController } from './team-skills-controller.ts'
+import { CardPatchesController } from './card-patches-controller.ts'
 import { en, NS, zh } from './locales.ts'
 import type { TeamPresetsLocaleKey } from './locales.ts'
 
@@ -98,18 +100,21 @@ async function applyUi(ctx: ClientContext): Promise<() => Promise<void>> {
   // injected UI scope: a scope created for a fixed dependency set may not spawn a
   // further injection, and failing that way takes the whole browser entry down.
   const skills = new TeamSkillsController(ctx)
+  const cardPatches = new CardPatchesController(ctx)
+  const disposeCardBadges = registerAgentCardBadgeAdapters(ctx)
   const ui = ctx.inject(
     ['remote.teamPresets', 'slots', 'locale', 'configForms', 'remote.session', 'remote.settings', 'sessions', 'uiWorkspace'],
-    scope => registerUi(scope, skills),
+    scope => registerUi(scope, skills, cardPatches),
   )
   try {
     await ui
   } catch (error: unknown) {
     await ui.dispose()
+    await disposeCardBadges()
     await disposeRemote()
     throw error
   }
-  return async () => { await ui.dispose(); await disposeRemote() }
+  return async () => { await ui.dispose(); await disposeCardBadges(); await disposeRemote() }
 }
 
 /**
@@ -133,7 +138,7 @@ function openTeammateOf(ctx: ClientContext): (sessionId: SessionId, childSession
   }
 }
 
-function registerUi(ctx: ClientContext, skills: TeamSkillsController): void {
+function registerUi(ctx: ClientContext, skills: TeamSkillsController, cardPatches: CardPatchesController): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'agent-team-presets: dictionaries')
 
@@ -141,6 +146,7 @@ function registerUi(ctx: ClientContext, skills: TeamSkillsController): void {
   // The management panel drives the Host service; if the deployment ships no
   // store the controller reports that instead of pretending the library is empty.
   ctx.effect(() => () => { skills.dispose() }, 'agent-team-presets: skills controller')
+  ctx.effect(() => () => { cardPatches.dispose() }, 'agent-team-presets: card patches controller')
   ctx.effect(() => () => { controller.dispose() }, 'agent-team-presets: form subscription')
   controller.loadCatalogue()
   for (const event of CATALOGUE_INVALIDATIONS) {
@@ -156,7 +162,7 @@ function registerUi(ctx: ClientContext, skills: TeamSkillsController): void {
     order: 25,
     label: () => t('nav'),
     locale: NS,
-    inject: () => ({ ...controller.inject(), skills }),
+    inject: () => ({ ...controller.inject(), skills, cardPatches }),
   }, TeamPresetsSection)), 'agent-team-presets: settings page')
 
   // The Agent Teams roster draws each captain and member card with the color

@@ -1,0 +1,216 @@
+diff --git a/src/client/agent-card-badges.tsx b/src/client/agent-card-badges.tsx
+new file mode 100644
+index 0000000..68f6ff6
+--- /dev/null
++++ b/src/client/agent-card-badges.tsx
+@@ -0,0 +1,86 @@
++import { Component, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
++
++export type AgentCardBadgeComponent = ComponentType<{ sessionId: string }>
++
++export interface AgentCardBadgesService {
++  readonly version: 1
++  register(entry: { id: string; Component: AgentCardBadgeComponent }): () => void
++}
++
++type Entry = { id: string; Component: AgentCardBadgeComponent; revision: number }
++
++class BadgeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
++  state = { failed: false }
++
++  static getDerivedStateFromError(): { failed: boolean } {
++    return { failed: true }
++  }
++
++  componentDidCatch(error: unknown): void {
++    console.error('[agent-card-badges] contribution failed', error)
++  }
++
++  render(): ReactNode {
++    return this.state.failed ? null : this.props.children
++  }
++}
++
++export function createAgentCardBadges(): {
++  service: AgentCardBadgesService
++  Badges: AgentCardBadgeComponent
++  dispose: () => void
++} {
++  let entries: readonly Entry[] = []
++  let revision = 0
++  let disposed = false
++  const listeners = new Set<() => void>()
++  const notify = (): void => { for (const listener of [...listeners]) listener() }
++  const getSnapshot = (): readonly Entry[] => entries
++  const subscribe = (listener: () => void): (() => void) => {
++    if (disposed) return () => {}
++    listeners.add(listener)
++    return () => { listeners.delete(listener) }
++  }
++  const service: AgentCardBadgesService = {
++    version: 1,
++    register(entry) {
++      if (disposed) throw new Error('Agent card badges service is disposed')
++      if (entry.id.trim() === '') throw new Error('Agent card badge id must not be empty')
++      if (entries.some(current => current.id === entry.id)) {
++        throw new Error(`Agent card badge already registered: ${entry.id}`)
++      }
++      const registered = { id: entry.id, Component: entry.Component, revision: ++revision }
++      entries = [...entries, registered]
++      notify()
++      return () => {
++        if (!entries.includes(registered)) return
++        entries = entries.filter(current => current !== registered)
++        notify()
++      }
++    },
++  }
++  function Badges({ sessionId }: { sessionId: string }): ReactNode {
++    const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
++    if (snapshot.length === 0) return null
++    return (
++      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flex: '0 1 auto', minWidth: 0, maxWidth: 90, height: '1em', maxHeight: 16, overflow: 'hidden', whiteSpace: 'nowrap' }}>
++        {snapshot.map(entry => (
++          <BadgeBoundary key={`${entry.id}:${entry.revision}:${sessionId}`}>
++            <entry.Component sessionId={sessionId} />
++          </BadgeBoundary>
++        ))}
++      </span>
++    )
++  }
++  return {
++    service,
++    Badges,
++    dispose() {
++      if (disposed) return
++      disposed = true
++      entries = []
++      notify()
++      listeners.clear()
++    },
++  }
++}
+diff --git a/src/client/components/agentGraph.tsx b/src/client/components/agentGraph.tsx
+index 40a353d..c30b620 100644
+--- a/src/client/components/agentGraph.tsx
++++ b/src/client/components/agentGraph.tsx
+@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
+ import { IconWorkspaceTreeOutlineRegular, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+ import { CATS } from '../categories'
+ import type { AgentHeads } from '../agentHeads'
++import type { AgentCardBadgeComponent } from '../agent-card-badges'
+ import { makeAgentHeads } from '../agentHeads'
+ import { billedTokensOf, displayCurrencyOf, formatCost, toCurrency, type CostCurrency } from '../cost'
+ import { avatarLabelsOf, avatarNameOf, type CommsAgent, type CommsRole } from '../commsModel'
+@@ -72,6 +73,7 @@ export function makeAgentGraph(
+   ctx: ClientCtx,
+   kit: ViewKit,
+   heads: AgentHeads = makeAgentHeads(),
++  AgentCardBadges?: AgentCardBadgeComponent,
+ ): (props: AgentGraphProps) => ReactElement | null {
+   const { t, fmt, catLabel } = kit
+ 
+@@ -297,6 +299,7 @@ export function makeAgentGraph(
+                     <AgentCard
+                       key={node.id}
+                       node={node}
++                      {...(AgentCardBadges === undefined ? {} : { AgentCardBadges })}
+                       x={point.x}
+                       y={point.y}
+                       width={layout.cardW}
+@@ -348,6 +351,7 @@ function fallbackLabel(byId: ReadonlyMap<string, AgentNode>): (id: string) => st
+ }
+ 
+ interface CardProps {
++  AgentCardBadges?: AgentCardBadgeComponent
+   node: AgentNode
+   x: number
+   y: number
+@@ -415,6 +419,7 @@ function AgentCard(props: CardProps): ReactElement {
+           : null}
+         <div className="lc-agent-label" title={props.memberName ?? node.label}>{props.memberName ?? node.label}</div>
+         {node.isCurrent ? <span className="lc-agents-badge lc-agent-self-badge">{props.t('agents.self')}</span> : null}
++        {props.AgentCardBadges === undefined ? null : <props.AgentCardBadges sessionId={node.id} />}
+       </div>
+       {props.memberName !== undefined ? <div className="lc-agent-duty" title={node.label}>{node.label}</div> : null}
+       <div className="lc-agent-metric">
+diff --git a/src/client/components/contextView.tsx b/src/client/components/contextView.tsx
+index 7fd404b..6b6b782 100644
+--- a/src/client/components/contextView.tsx
++++ b/src/client/components/contextView.tsx
+@@ -27,6 +27,7 @@ import { agentSelfOf, providerModelLabelOf } from '../agentTree'
+ import { makeContextBrowser } from './browser'
+ import type { CatFocus } from './browser'
+ import { makeAgentGraph } from './agentGraph'
++import type { AgentCardBadgeComponent } from '../agent-card-badges'
+ import { Donut } from './donut'
+ import { makeCurrentComposition } from './currentComposition'
+ import { EVENT_KINDS, makeEventList } from './events'
+@@ -103,6 +104,7 @@ export function makeContextView(
+   kit: ViewKit,
+   settings: ContextSettings,
+   heads: AgentHeads,
++  AgentCardBadges?: AgentCardBadgeComponent,
+ ): (props: ContextViewProps) => ReactElement {
+   const { t, catLabel } = kit
+   const StackedBar = makeStackedBar(kit)
+@@ -123,7 +125,7 @@ export function makeContextView(
+   const DetailNote = makeDetailNote(kit)
+   const ContextBrowser = makeContextBrowser(kit, StackedBar, settings)
+   const Skeletons = makeCardSkeletons(kit)
+-  const AgentGraph = makeAgentGraph(ctx, kit, heads)
++  const AgentGraph = makeAgentGraph(ctx, kit, heads, AgentCardBadges)
+   const ErrorBoundary = makeErrorBoundary(t)
+ 
+   function ContextViewBody(props: ContextViewProps): ReactElement {
+diff --git a/src/client/components/fleetView.tsx b/src/client/components/fleetView.tsx
+index 020f939..04cfec7 100644
+--- a/src/client/components/fleetView.tsx
++++ b/src/client/components/fleetView.tsx
+@@ -13,6 +13,7 @@ import { useContextSession } from '../sessionData'
+ import type { ViewKit } from '../viewkit'
+ import type { FleetDetail, FleetMemberInfo } from '../../shared/types'
+ import { makeAgentGraph } from './agentGraph'
++import type { AgentCardBadgeComponent } from '../agent-card-badges'
+ import { makeDetailNote } from './detailNote'
+ import { LoadingLane } from './skeleton'
+ import { IconChecklistOutlineRegular, IconSendOutlineRegular, IconWorkspaceTreeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+@@ -26,10 +27,11 @@ export function makeFleetView(
+   ctx: ClientCtx,
+   kit: ViewKit,
+   heads: AgentHeads,
++  AgentCardBadges?: AgentCardBadgeComponent,
+ ): (props: SessionStandardProps) => ReactElement {
+   const { t } = kit
+   const UpgradeGate = makeUpgradeGate(kit)
+-  const AgentGraph = makeAgentGraph(ctx, kit, heads)
++  const AgentGraph = makeAgentGraph(ctx, kit, heads, AgentCardBadges)
+   const DetailNote = makeDetailNote(kit)
+   const ErrorBoundary = makeErrorBoundary(t)
+   const rich = makeRichText(kit)
+diff --git a/src/client/index.ts b/src/client/index.ts
+index 6bdf137..a5a403a 100644
+--- a/src/client/index.ts
++++ b/src/client/index.ts
+@@ -23,6 +23,7 @@ import { registerCostRefresh, resetCostRefresh } from './costRefresh'
+ import { watchPlacement } from './placement'
+ import { watchSidebarContextTab } from './sidebar'
+ import { makeViewKit } from './viewkit'
++import { createAgentCardBadges } from './agent-card-badges'
+ 
+ import './styles/tailwind.css'
+ import './styles/base.css'
+@@ -87,8 +88,11 @@ function apply(ctx: ClientCtx): void {
+   watchHistoryFaces(ctx)
+   const settings = createContextSettings()
+   const heads = makeAgentHeads()
+-  const ContextView = makeContextView(ctx, kit, settings, heads)
+-  const FleetView = makeFleetView(ctx, kit, heads)
++  const badges = createAgentCardBadges()
++  ctx.provide('contextAgentCardBadges', badges.service)
++  ctx.effect(() => badges.dispose, 'dsh-context: agent card badges')
++  const ContextView = makeContextView(ctx, kit, settings, heads, badges.Badges)
++  const FleetView = makeFleetView(ctx, kit, heads, badges.Badges)
+ 
+   ctx.effect(() => watchPlacement(settings, {
+     tab: () => ctx.slots.inject('conversation.view', () => ctx.slots.register(

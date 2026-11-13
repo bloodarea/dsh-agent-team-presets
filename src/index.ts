@@ -475,6 +475,7 @@ export function apply(ctx: Context, config: Config): void {
   // durable member snapshots and the live Agent registry instead of Settings.
   ctx.plugin(TeamPresetsToolCatalog, {
     monitor,
+    isPresetMember: sessionId => members.isPresetMember(sessionId),
     roster: (sessionId) => {
       // The Lead carries the Session, so it is a member of its own Team: the
       // roster leads with it and only then lists the teammates it summoned.

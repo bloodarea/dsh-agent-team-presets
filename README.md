@@ -6,11 +6,20 @@
 
 English | [中文](<README.zh.md>)
 
-> **Community plugin v0.2.1** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.2.1)
+> **Community plugin v0.3.0** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.0)
 >
-> This release adapts the plugin to **DeepSeek Harness 0.2.2-rc.2**, whose Team subsystem no longer creates teammates. Members are now created through the standard subagent runtime, and no Agent Teams bundle is required. This is a breaking host requirement: keep 0.2.0 on 0.2.2-rc.1. Prebuilt artifacts are included.
+> This release adds optional **Preset** tags on other plugins' subagent cards, installed from the new **Integrations** settings page. It still requires **DeepSeek Harness 0.2.2-rc.2** and keeps the member runtime and header roster from 0.2.1. Prebuilt artifacts are included.
 
-### What's new in 0.2.1
+### What's new in 0.3.0
+
+- **Preset tags on subagent cards.** Members this plugin created are marked on dsh-context's Fleet cards and on dsh-better-sidebar's task cards. The integration is an adapter: it activates only for a target that exposes the optional card service and stays dormant otherwise, so neither package becomes a dependency.
+- **A new Integrations settings page.** *Settings → Agent Team presets → Integrations* lists every supported target with the version this build patches, the installed version, the upstream revision the replacement was built from, and its current state, and offers install and remove behind a confirmation dialog.
+- **The replacements ship with the plugin.** Both bundles are built from the pinned upstream sources plus a small registration service, and each is recorded with the sha256 of the published bundle and of the replacement, so a swap never overwrites bytes this plugin did not produce.
+- **Install takes effect immediately.** After the swap the Host republishes that browser bundle and the running page reloads the plugin in place, so the tag appears within about a second — no `dsh web` restart and no page reload.
+- **The source patches are published too.** `contrib/agent-card-badges` carries the same change as patches for the matching target versions, for building them yourself or sending them upstream.
+- **Nothing irreversible.** The published bundle is backed up before it is replaced, remove restores it and deletes the backup, and a target whose bundle matches neither build is refused with the reason instead of being overwritten.
+
+### What changed in 0.2.1
 
 - **Members are ordinary subagents.** `spawn_team_member` creates a member with `ctx.subagents.startActivation` under a reserved child identity recorded with its frozen snapshot, so the member's own route, persona, team context, and strict tool policy still reach its very first request.
 - **No Agent Teams bundle is required.** Tree membership and execution state are read from the subagent runtime — its catalog, live Agents, and admission records — instead of the removed Team roster, messaging, and member APIs.
@@ -71,6 +80,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 - **Agent-facing tools:** root sessions provide `list_team_skills`, `assign_team_skill`, `unassign_team_skill`, and `remove_team_skill` alongside `get_team_preset` and `update_team_preset`.
 - **Live settings feedback:** see whether a Team is idle, busy, or awaiting an update in an online Session.
 - **Theme integration:** robust light and dark mode adaptation across all cards, dialogs, inputs, and dropdowns.
+- **Subagent card badges:** tag the subagents a Team created on the Fleet and Tasks cards, through an optional card service each target plugin may expose.
 
 ## Contents
 
@@ -84,6 +94,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 - [Display metadata, categories, and search](#metadata-categories-search)
 - [Private Team Skills and per-agent isolation](#team-skills)
 - [Share presets](#share-presets)
+- [Subagent card badges](#agent-card-badges)
 - [Agent-facing tools](#agent-facing-tools)
 - [Tool permissions and security](#tool-permissions)
 - [Troubleshooting and limitations](#known-limitations-and-deferred-work)
@@ -189,7 +200,7 @@ The captain always follows the Session, so selecting it changes the Team and the
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.2.1`) and the Harness version (`0.2.2-rc.2`, for example) are separate version lines.
+The plugin version (`0.3.0`) and the Harness version (`0.2.2-rc.2`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -231,8 +242,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### Option 3 — reproducible pin (no update prompts)
 
 ```text
-dsh-agent-team-presets@0.2.1
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.2.1
+dsh-agent-team-presets@0.3.0
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.3.0
 ```
 
 A fixed version or tag reproduces exactly one release. **A `#tag` GitHub spec is only ever compared against that same tag, so the market never reports an update for it — upgrading means editing the spec by hand.** Use this form only when you need a frozen install.
@@ -253,7 +264,7 @@ npm view dsh-agent-team-presets version
 
 ### Verify and upgrade safely
 
-After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.2.1`, and a running component.
+After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.3.0`, and a running component.
 
 - Back up profile settings, Team definitions, and Session selections before upgrading.
 - When migrating from a development link, remove `@deepseek-ai/dsh-experimental-agent-team-presets` first before enabling the community package.
@@ -389,6 +400,36 @@ Traditional skills in Harness are typically registered into the global environme
 - **Local fields:** Model routes, reasoning effort, tool permissions, and local category bindings are **never exported**. Documents containing them are rejected on import.
 - **Name collisions:** Choose between replacing the existing preset or creating a renamed copy. Replacement preserves local routes and tool policies on matched roles.
 - Review imported prompts before executing tasks, especially when using documents from third parties.
+
+<a id="agent-card-badges"></a>
+## Subagent card badges
+
+Cards in **dsh-context** (Fleet view, top bar) and **dsh-better-sidebar** (Tasks page, right sidebar) can mark the subagents this plugin created with a small `Preset` tag. The integration is an adapter:
+
+- **Opt-in by target.** Each target must expose its optional card-badge service (`contextAgentCardBadges` / `betterSidebarAgentCardBadges`, protocol version 1). This plugin registers into a service only when it appears, does not require either package, and keeps working unchanged when neither is installed.
+- **Exact identity.** A tag appears only for a card whose real child Session id matches a durable member snapshot written before creation, so ordinary subagents and workflow placeholder nodes stay unmarked. The lookup reads stored records and never resumes or reads a card's Agent.
+- **Layout neutral.** The tag is one inline, theme-token chip with fixed height; it adds no card row and clips inside the existing badge area.
+
+### Install it from Settings
+
+Neither target published such a service at the time of writing, so this plugin ships **prebuilt replacement bundles** for the exact versions listed below and offers them in **Settings → Agent Team presets → Integrations**:
+
+| Target | Version this build patches | What the row offers |
+| --- | --- | --- |
+| `dsh-context` | 0.84.0 | Install patch / Remove patch |
+| `dsh-better-sidebar` | 0.32.0 | Install patch / Remove patch |
+
+Each row reports its own state, and the page never guesses: `not installed`, `version not supported`, `not patched`, `patched`, `modified by something else`. "Install patch" asks for confirmation, backs up the target's `lib/client.js`, then writes this plugin's build of the same source. "Remove patch" restores that backup and deletes it.
+
+**No restart and no page reload.** The running server's `client-hmr` transport stat-polls every client bundle, republishes the changed one (`clientModules.rebuilt`), and the page reloads that plugin in place — the row turns `active` within about a second, and the badge appears on the cards. If a row stays `patched` without going `active`, reload the page once.
+
+Safety rules worth knowing:
+
+- A target whose bundle matches neither the published build nor this plugin's replacement is refused, because overwriting it would destroy an edit this plugin cannot reproduce.
+- Only the one pinned version per target is patchable; installing a newer target version makes the row report `version not supported` until a build for it ships here.
+- Upgrading a patched target replaces its bundle, which silently removes the patch — the row then reports `not patched` again.
+
+If you would rather not use the bundled builds, the same change is available as source patches in [`contrib/agent-card-badges`](contrib/agent-card-badges/README.md) for applying to the matching target and rebuilding it yourself, and as upstream-ready changes for the target maintainers.
 
 <a id="agent-facing-tools"></a>
 ## Agent-facing tools

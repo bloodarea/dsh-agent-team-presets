@@ -9,7 +9,8 @@
 import { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import type { TeamExecutionMonitor } from './execution.ts';
-import type { TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue } from './types.ts';
+import type { CardPatchEnvironment } from './card-patches.ts';
+import type { CardPatchResult, CardPatchTargetView, TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         /** Remote catalog of restrictable tools for the Team presets settings page. */
@@ -30,12 +31,21 @@ export interface TeamPresetsToolCatalogConfig {
      * reports an empty roster instead of inventing members.
      */
     readonly roster?: (sessionId: string) => TeamRosterValue;
+    /** Exact child ownership from durable preset creation snapshots. */
+    readonly isPresetMember?: (sessionId: string) => Promise<boolean>;
+    /**
+     * File-system facts card-patch operations act through. Omitted means the
+     * running profile, which is what every real deployment wants.
+     */
+    readonly cardPatches?: CardPatchEnvironment;
 }
 /** Remote catalog of the deployment's inherited and Team tool names. */
 export default class TeamPresetsToolCatalog extends TypertRemoteService {
     static inject: string[];
     private readonly monitor;
     private readonly rosterSource;
+    private readonly memberIdentitySource;
+    private readonly cardPatchEnvironment;
     /**
      * @param ctx - Host context carrying the tool registry and Typert gateway.
      * @param config - the preset runtime's execution monitor, when it is mounted.
@@ -73,5 +83,42 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
      * @returns the roster, empty when this Session summoned no preset member.
      */
     roster(sessionId: string): Promise<TeamRosterValue>;
+    /**
+     * Read preset ownership for a card without loading or resuming its Agent.
+     * @param sessionId - the card's real child Session identity.
+     * @returns whether this plugin recorded creation of that exact child.
+     */
+    isPresetMember(sessionId: string): Promise<boolean>;
+    /**
+     * Tell the Web composition to republish one package's browser bundle.
+     *
+     * The `client-hmr` transport already stat-polls every bundle, so this is only
+     * an accelerator: it makes the page reload the replaced plugin in the same
+     * second instead of up to one poll interval later. A Host composition without
+     * that service still converges through the poll.
+     * @param packageName - the package whose bundle file just changed.
+     */
+    private publishClientBundle;
+    /**
+     * Read every supported card patch and its installed bundle state.
+     *
+     * The list is the catalog this build ships, not what happens to be installed,
+     * so the settings page can name a target that is missing or pinned to another
+     * version instead of hiding it.
+     * @returns one row per supported target, in catalog order.
+     */
+    cardPatches(): Promise<CardPatchTargetView[]>;
+    /**
+     * Replace one target's browser bundle with this build's prebuilt replacement.
+     * @param id - the target identity from {@link cardPatches}.
+     * @returns the outcome, or a refusal naming why nothing changed.
+     */
+    installCardPatch(id: string): Promise<CardPatchResult>;
+    /**
+     * Restore one target's published browser bundle from this plugin's backup.
+     * @param id - the target identity from {@link cardPatches}.
+     * @returns the outcome, or a refusal naming why nothing changed.
+     */
+    uninstallCardPatch(id: string): Promise<CardPatchResult>;
     execution(signal: AbortSignal): AsyncIterable<TeamExecutionSnapshot>;
 }

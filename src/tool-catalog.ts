@@ -15,7 +15,11 @@ import { GET_TEAM_PRESET_DESCRIPTION, SPAWN_TEAM_MEMBER_DESCRIPTION, UPDATE_TEAM
 import { IMPLICIT_TOOLS } from './presets.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TeamExecutionMonitor } from './execution.ts'
-import type { TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue, ToolChoice, ToolSource } from './types.ts'
+import { CARD_PATCH_TARGETS, findCardPatchTarget, installCardPatch, targetState, uninstallCardPatch } from './card-patches.ts'
+import type { CardPatchEnvironment } from './card-patches.ts'
+import type {
+  CardPatchResult, CardPatchTargetView, TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue, ToolChoice, ToolSource,
+} from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -38,6 +42,13 @@ export interface TeamPresetsToolCatalogConfig {
    * reports an empty roster instead of inventing members.
    */
   readonly roster?: (sessionId: string) => TeamRosterValue
+  /** Exact child ownership from durable preset creation snapshots. */
+  readonly isPresetMember?: (sessionId: string) => Promise<boolean>
+  /**
+   * File-system facts card-patch operations act through. Omitted means the
+   * running profile, which is what every real deployment wants.
+   */
+  readonly cardPatches?: CardPatchEnvironment
 }
 
 /**
@@ -121,6 +132,8 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
   static inject = ['tools', 'typert']
   private readonly monitor: TeamExecutionMonitor | undefined
   private readonly rosterSource: ((sessionId: string) => TeamRosterValue) | undefined
+  private readonly memberIdentitySource: ((sessionId: string) => Promise<boolean>) | undefined
+  private readonly cardPatchEnvironment: CardPatchEnvironment | undefined
 
   /**
    * @param ctx - Host context carrying the tool registry and Typert gateway.
@@ -130,6 +143,8 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
     super(ctx, 'teamPresetsToolCatalog', { namespace: 'teamPresets' })
     this.monitor = config.monitor
     this.rosterSource = config.roster
+    this.memberIdentitySource = config.isPresetMember
+    this.cardPatchEnvironment = config.cardPatches
   }
 
   /**
@@ -203,6 +218,81 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
   @Remote
   async roster(sessionId: string): Promise<TeamRosterValue> {
     return this.rosterSource?.(sessionId) ?? { members: [] }
+  }
+
+  /**
+   * Read preset ownership for a card without loading or resuming its Agent.
+   * @param sessionId - the card's real child Session identity.
+   * @returns whether this plugin recorded creation of that exact child.
+   */
+  @Remote
+  async isPresetMember(sessionId: string): Promise<boolean> {
+    return this.memberIdentitySource?.(sessionId) ?? false
+  }
+
+  /**
+   * Tell the Web composition to republish one package's browser bundle.
+   *
+   * The `client-hmr` transport already stat-polls every bundle, so this is only
+   * an accelerator: it makes the page reload the replaced plugin in the same
+   * second instead of up to one poll interval later. A Host composition without
+   * that service still converges through the poll.
+   * @param packageName - the package whose bundle file just changed.
+   */
+  private publishClientBundle(packageName: string): void {
+    const modules = this.ctx.get('clientModules' as never) as { rebuilt?: (id: string) => unknown } | undefined
+    if (modules?.rebuilt === undefined) return
+    try {
+      modules.rebuilt(packageName)
+    } catch (error: unknown) {
+      // The poll is the backstop, so a refused publication is logged, not fatal.
+      this.ctx.logger.warn('agent-team-presets: could not republish %s: %s', packageName, String(error))
+    }
+  }
+
+  /**
+   * Read every supported card patch and its installed bundle state.
+   *
+   * The list is the catalog this build ships, not what happens to be installed,
+   * so the settings page can name a target that is missing or pinned to another
+   * version instead of hiding it.
+   * @returns one row per supported target, in catalog order.
+   */
+  @Remote
+  async cardPatches(): Promise<CardPatchTargetView[]> {
+    return CARD_PATCH_TARGETS.map(target => targetState(target, this.cardPatchEnvironment))
+  }
+
+  /**
+   * Replace one target's browser bundle with this build's prebuilt replacement.
+   * @param id - the target identity from {@link cardPatches}.
+   * @returns the outcome, or a refusal naming why nothing changed.
+   */
+  @Remote
+  async installCardPatch(id: string): Promise<CardPatchResult> {
+    const target = findCardPatchTarget(id)
+    if (target === undefined) {
+      return { ok: false, id, state: 'absent', detail: `this build ships no card patch for "${id}"` }
+    }
+    const result = installCardPatch(target, this.cardPatchEnvironment)
+    if (result.ok) this.publishClientBundle(target.packageName)
+    return result
+  }
+
+  /**
+   * Restore one target's published browser bundle from this plugin's backup.
+   * @param id - the target identity from {@link cardPatches}.
+   * @returns the outcome, or a refusal naming why nothing changed.
+   */
+  @Remote
+  async uninstallCardPatch(id: string): Promise<CardPatchResult> {
+    const target = findCardPatchTarget(id)
+    if (target === undefined) {
+      return { ok: false, id, state: 'absent', detail: `this build ships no card patch for "${id}"` }
+    }
+    const result = uninstallCardPatch(target, this.cardPatchEnvironment)
+    if (result.ok) this.publishClientBundle(target.packageName)
+    return result
   }
 
   @Remote({ mode: 'stream' })
