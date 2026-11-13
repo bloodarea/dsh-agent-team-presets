@@ -15,7 +15,7 @@ import { GET_TEAM_PRESET_DESCRIPTION, SPAWN_TEAM_MEMBER_DESCRIPTION, UPDATE_TEAM
 import { IMPLICIT_TOOLS } from './presets.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { TeamExecutionMonitor } from './execution.ts'
-import { CARD_PATCH_TARGETS, findCardPatchTarget, installCardPatch, targetState, uninstallCardPatch } from './card-patches.ts'
+import { catalogIdentities, catalogTargetsFor, installCardPatch, resolveInstalledTarget, resolveTargetView, uninstallCardPatch } from './card-patches.ts'
 import type { CardPatchEnvironment } from './card-patches.ts'
 import type {
   CardPatchResult, CardPatchTargetView, TeamExecutionSnapshot, TeamRosterValue, ToolCatalogValue, ToolChoice, ToolSource,
@@ -260,7 +260,9 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
    */
   @Remote
   async cardPatches(): Promise<CardPatchTargetView[]> {
-    return CARD_PATCH_TARGETS.map(target => targetState(target, this.cardPatchEnvironment))
+    // One row per identity: the catalog may hold several versions of a target,
+    // and which one is relevant depends on what is installed right now.
+    return catalogIdentities().map(id => resolveTargetView(catalogTargetsFor(id), this.cardPatchEnvironment))
   }
 
   /**
@@ -270,10 +272,8 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
    */
   @Remote
   async installCardPatch(id: string): Promise<CardPatchResult> {
-    const target = findCardPatchTarget(id)
-    if (target === undefined) {
-      return { ok: false, id, state: 'absent', detail: `this build ships no card patch for "${id}"` }
-    }
+    const { target, view } = resolveInstalledTarget(id, this.cardPatchEnvironment)
+    if (target === undefined) return { ok: false, id, state: view.state, ...view.detail === undefined ? {} : { detail: view.detail } }
     const result = installCardPatch(target, this.cardPatchEnvironment)
     if (result.ok) this.publishClientBundle(target.packageName)
     return result
@@ -286,10 +286,10 @@ export default class TeamPresetsToolCatalog extends TypertRemoteService {
    */
   @Remote
   async uninstallCardPatch(id: string): Promise<CardPatchResult> {
-    const target = findCardPatchTarget(id)
-    if (target === undefined) {
-      return { ok: false, id, state: 'absent', detail: `this build ships no card patch for "${id}"` }
-    }
+    // Restore must resolve the same entry the row was classified against: a
+    // different version's pristine hash could never match the backup.
+    const { target, view } = resolveInstalledTarget(id, this.cardPatchEnvironment)
+    if (target === undefined) return { ok: false, id, state: view.state, ...view.detail === undefined ? {} : { detail: view.detail } }
     const result = uninstallCardPatch(target, this.cardPatchEnvironment)
     if (result.ok) this.publishClientBundle(target.packageName)
     return result

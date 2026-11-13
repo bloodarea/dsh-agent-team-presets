@@ -59,13 +59,15 @@ export interface CardPatchTarget {
 }
 
 /**
- * The supported targets.
+ * The versions compiled into this build.
  *
- * Each entry is fixed to one upstream version on purpose: the replacement is a
- * whole-bundle build, so a different version's bundle would silently change
- * behaviour that was never reviewed here.
+ * Each entry is a finished artifact: the replacement is a whole-bundle build, so
+ * a different version's bundle would silently change behaviour that was never
+ * reviewed here. Newer versions are added by `tools/card-patches.mjs`, which
+ * verifies the rebuild first and then writes them to the shipped catalog
+ * overlay; nothing here needs to change for that.
  */
-export const CARD_PATCH_TARGETS: readonly CardPatchTarget[] = [
+const COMPILED_TARGETS: readonly CardPatchTarget[] = [
   {
     id: 'dsh-context',
     packageName: 'dsh-context',
@@ -87,6 +89,150 @@ export const CARD_PATCH_TARGETS: readonly CardPatchTarget[] = [
     patchedSha256: 'd0a9f0257e80fb3fdf6eb06a587b5b5aa985e1cfbaaf7a187ee381da0a8ac7ba',
   },
 ]
+
+/** Version of the shipped catalog overlay document; a different one is ignored. */
+export const CARD_PATCH_CATALOG_VERSION = 1
+
+/** The shipped overlay: entries a build produced for versions this code predates. */
+function shippedCatalogFile(): string {
+  return join(shippedAssets(), 'catalog.json')
+}
+
+/** One validated overlay entry, or a message naming what is wrong with it. */
+function catalogString(row: Record<string, unknown>, field: string, pattern: RegExp, hint: string): string {
+  const value = row[field]
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    throw new Error(`${field} ${hint}: ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+/**
+ * Validate one overlay entry.
+ *
+ * The overlay is data, not code, so it may be edited by hand or written by an
+ * older tool; every field is checked against the same shape the compiled
+ * entries use. An entry that fails is a reason to ignore the whole document,
+ * because acting on part of it would make "what does this build support"
+ * depend on JSON key order.
+ * @param candidate - one parsed entry.
+ * @returns the normalized target.
+ * @throws when any field is unusable.
+ */
+export function normalizeCatalogTarget(candidate: unknown): CardPatchTarget {
+  if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('the entry is not an object')
+  }
+  const row = candidate as Record<string, unknown>
+  const pristineSha256 = catalogString(row, 'pristineSha256', /^[0-9a-f]{64}$/, 'must be 64 lowercase hex characters')
+  const patchedSha256 = catalogString(row, 'patchedSha256', /^[0-9a-f]{64}$/, 'must be 64 lowercase hex characters')
+  if (pristineSha256 === patchedSha256) {
+    throw new Error('pristineSha256 and patchedSha256 must differ, or the replacement would be the published build')
+  }
+  const source = row['source']
+  if (typeof source !== 'string' || source.trim() === '' || /\s/.test(source)) {
+    throw new Error(`source must be one non-empty token: ${JSON.stringify(source)}`)
+  }
+  return {
+    id: catalogString(row, 'id', /^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'must be lowercase words joined by hyphens'),
+    packageName: catalogString(row, 'packageName', /^[a-z0-9][a-z0-9._-]*$/, 'must be a bare package name'),
+    version: catalogString(row, 'version', /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/, 'must be a semver version'),
+    source,
+    asset: catalogString(row, 'asset', /^[a-z0-9][a-z0-9._-]*\.client\.js\.gz$/, 'must be a bare `<name>.client.js.gz` file name'),
+    service: catalogString(row, 'service', /^[A-Za-z_$][A-Za-z0-9_$]*$/, 'must be a JavaScript identifier'),
+    pristineSha256,
+    patchedSha256,
+  }
+}
+
+/**
+ * Parse a shipped catalog overlay document.
+ * @param text - the document text.
+ * @returns every entry it declares.
+ * @throws when the document or any entry is unusable.
+ */
+export function parseCardPatchCatalog(text: string): readonly CardPatchTarget[] {
+  const document: unknown = JSON.parse(text)
+  if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+    throw new Error('the catalog is not an object')
+  }
+  const version = (document as { version?: unknown }).version
+  if (version !== CARD_PATCH_CATALOG_VERSION) {
+    throw new Error(`the catalog version is ${JSON.stringify(version)}, not ${CARD_PATCH_CATALOG_VERSION}`)
+  }
+  const targets = (document as { targets?: unknown }).targets
+  if (!Array.isArray(targets)) throw new Error('the catalog has no targets array')
+  return targets.map(normalizeCatalogTarget)
+}
+
+/**
+ * Combine the compiled baseline with the shipped overlay.
+ *
+ * Entries are keyed by identity *and* version, not by identity alone: keeping
+ * the already-supported versions is the whole point of shipping a replacement
+ * per version, so rebuilding 0.84.1 must not drop 0.84.0 for the installations
+ * still on it. Only the exact pair is replaced when the same version is rebuilt.
+ * Compiled order is kept, because that is the order the settings page lists.
+ * @param baseline - entries compiled into this build.
+ * @param overlay - entries read from the shipped catalog.
+ * @returns the merged catalog.
+ */
+export function mergeCatalogTargets(
+  baseline: readonly CardPatchTarget[],
+  overlay: readonly CardPatchTarget[],
+): readonly CardPatchTarget[] {
+  const key = (entry: CardPatchTarget): string => `${entry.id}@${entry.version}`
+  const byKey = new Map(overlay.map(entry => [key(entry), entry]))
+  const merged = baseline.map(entry => byKey.get(key(entry)) ?? entry)
+  // Numeric collation, so appending 0.9.0 after 0.10.0 is impossible: "newest
+  // last" is what the settings row and the resolver rely on.
+  const order: Intl.CollatorOptions = { numeric: true }
+  for (const [entryKey, entry] of [...byKey].sort(([left], [right]) => left.localeCompare(right, 'en', order))) {
+    if (!baseline.some(current => key(current) === entryKey)) merged.push(entry)
+  }
+  return merged
+}
+
+/**
+ * The distinct target identities, in catalog order.
+ * @param targets - the catalog to read.
+ * @returns one identity per target, first occurrence order.
+ */
+export function catalogIdentities(targets: readonly CardPatchTarget[] = CARD_PATCH_TARGETS): readonly string[] {
+  return [...new Set(targets.map(target => target.id))]
+}
+
+/**
+ * Every catalog entry for one identity.
+ * @param id - the target identity.
+ * @param targets - the catalog to read.
+ * @returns its entries, oldest build first.
+ */
+export function catalogTargetsFor(id: string, targets: readonly CardPatchTarget[] = CARD_PATCH_TARGETS): readonly CardPatchTarget[] {
+  return targets.filter(target => target.id === id)
+}
+
+/**
+ * Read the shipped overlay, or nothing when it is absent or unusable.
+ *
+ * A broken overlay must not take the whole settings page down: it is optional
+ * data, so a refusal here falls back to the versions compiled into this build
+ * and says so in the log.
+ * @returns the overlay entries.
+ */
+function readShippedCatalog(): readonly CardPatchTarget[] {
+  const file = shippedCatalogFile()
+  if (!existsSync(file)) return []
+  try {
+    return parseCardPatchCatalog(readFileSync(file, 'utf8'))
+  } catch (error: unknown) {
+    console.warn(`[team-presets] ignoring the shipped card-patch catalog: ${error instanceof Error ? error.message : String(error)}`)
+    return []
+  }
+}
+
+/** Every version this build can patch: the compiled baseline plus the overlay. */
+export const CARD_PATCH_TARGETS: readonly CardPatchTarget[] = mergeCatalogTargets(COMPILED_TARGETS, readShippedCatalog())
 
 /**
  * The file-system facts one patch operation depends on.
@@ -188,7 +334,9 @@ export function targetState(
     id: target.id,
     packageName: target.packageName,
     source: target.source,
+    service: target.service,
     supportedVersion: target.version,
+    supportedVersions: [target.version],
   }
   const directory = env.resolvePackage(target.packageName)
   if (directory === undefined) {
@@ -327,5 +475,89 @@ export function uninstallCardPatch(
  * @returns the entry, or undefined for an id this build does not ship.
  */
 export function findCardPatchTarget(id: string): CardPatchTarget | undefined {
-  return CARD_PATCH_TARGETS.find(target => target.id === id)
+  // The catalog appends in build order, so the last entry for an identity is the
+  // newest version this build can patch.
+  return catalogTargetsFor(id).at(-1)
+}
+
+/**
+ * Classify one identity by the version that is actually installed.
+ *
+ * Several catalog entries may exist for the same target, one per supported
+ * upstream version; which one is relevant depends entirely on the installed
+ * package, so the choice belongs here rather than at each call site. A version
+ * this build has no replacement for reports `unsupported` and names the
+ * versions it does ship, which is what tells an operator whether to update the
+ * target plugin or this one.
+ * @param entries - every catalog entry for one identity, oldest first.
+ * @param env - the file-system facts to read through.
+ * @returns the row the settings page renders.
+ */
+export function resolveTargetView(
+  entries: readonly CardPatchTarget[],
+  env: CardPatchEnvironment = realCardPatchEnvironment,
+): CardPatchTargetView {
+  const newest = entries.at(-1)
+  if (newest === undefined) throw new Error('a card-patch target needs at least one catalog entry')
+  const supportedVersions = entries.map(entry => entry.version)
+  const base = {
+    id: newest.id,
+    packageName: newest.packageName,
+    source: newest.source,
+    service: newest.service,
+    supportedVersion: newest.version,
+    supportedVersions,
+  }
+  const directory = env.resolvePackage(newest.packageName)
+  if (directory === undefined) {
+    return { ...base, state: 'absent', detail: 'this plugin is not installed in the running profile' }
+  }
+  const installed = installedVersion(directory)
+  if (installed === undefined) {
+    return { ...base, state: 'absent', detail: 'its package.json could not be read' }
+  }
+  const target = entries.find(entry => entry.version === installed)
+  if (target === undefined) {
+    return {
+      ...base,
+      installedVersion: installed,
+      state: 'unsupported',
+      detail: `this build ships a replacement for ${supportedVersions.join(', ')}, not ${installed}`,
+    }
+  }
+  return { ...targetState(target, env), supportedVersions }
+}
+
+/**
+ * Resolve the catalog entry that matches the installed version of one target.
+ * @param id - the target identity.
+ * @param env - the file-system facts to read through.
+ * @param targets - the catalog to read.
+ * @returns the entry to patch, when this build has one for that exact version.
+ */
+export function resolveInstalledTarget(
+  id: string,
+  env: CardPatchEnvironment = realCardPatchEnvironment,
+  targets: readonly CardPatchTarget[] = CARD_PATCH_TARGETS,
+): { target?: CardPatchTarget, view: CardPatchTargetView } {
+  const entries = catalogTargetsFor(id, targets)
+  if (entries.length === 0) {
+    const absent = {
+      id,
+      packageName: id,
+      source: 'unknown',
+      service: id,
+      supportedVersion: '',
+      supportedVersions: [],
+      state: 'absent' as const,
+      detail: `this build ships no card patch for "${id}"`,
+    }
+    return { view: absent }
+  }
+  const view = resolveTargetView(entries, env)
+  if (view.state === 'absent' || view.state === 'unsupported') return { view }
+  const target = entries.find(entry => entry.version === view.supportedVersion)
+  // `exactOptionalPropertyTypes` forbids assigning `undefined` to an optional
+  // property, so the "no matching entry" case is its own return.
+  return target === undefined ? { view } : { target, view }
 }

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "id": "dsh-better-sidebar",
+      "packageName": "dsh-better-sidebar",
+      "version": "0.32.1",
+      "source": "omdsh-dev/DSH-better-sidebar@06d21351a50b60063010c178590fc24ecd76fb74",
+      "asset": "dsh-better-sidebar-0.32.1.client.js.gz",
+      "service": "betterSidebarAgentCardBadges",
+      "pristineSha256": "c5f6a461ce092fc6fc9cba0b04fa51e4504d8d44b1e1023858c64b1f696272fd",
+      "patchedSha256": "faa8afbae9b7fe15b5e31ace6de8c06ba71404e3a8220406dc82f0cc3dcb09fa"
+    },
+    {
+      "id": "dsh-context",
+      "packageName": "dsh-context",
+      "version": "0.84.1",
+      "source": "bowenliang123/dsh-context@d81325ec6bab9dae9bf83e7a866ac74119504e18",
+      "asset": "dsh-context-0.84.1.client.js.gz",
+      "service": "contextAgentCardBadges",
+      "pristineSha256": "120a8d30ae6bca61a3c61e682c99d5a0472b2b495d277d644721fd9ce6e6fa88",
+      "patchedSha256": "8e36a42625b02b560d204bb3eb6dd01ccbdf88b3088f48f9428758d8d99f4f29"
+    }
+  ]
+}

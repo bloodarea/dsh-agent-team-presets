@@ -119,6 +119,19 @@ interface RowProps {
 }
 
 /**
+ * The versions a row can patch, as text.
+ *
+ * A Host that predates the multi-version catalog sends no `supportedVersions`,
+ * and the page must still render the single version it does report: the client
+ * bundle reloads on its own while the Host only changes on restart.
+ * @param target - the row.
+ * @returns the versions, comma separated.
+ */
+function versionsOf(target: CardPatchTargetView): string {
+  return (target.supportedVersions ?? [target.supportedVersion]).join(', ')
+}
+
+/**
  * Render one target with its state and the action that state allows.
  * @param props - the row facts and the action callback.
  * @returns the row.
@@ -141,7 +154,7 @@ function Row({ target, live, busy, phase, t, onAct }: RowProps) {
       </div>
       <dl className={css.meta}>
         <dt>{t('patchSupported')}</dt>
-        <dd>{target.supportedVersion}</dd>
+        <dd>{versionsOf(target)}</dd>
         <dt>{t('patchInstalledVersion')}</dt>
         <dd>{target.installedVersion ?? '—'}</dd>
         <dt>{t('patchSource')}</dt>
@@ -208,7 +221,7 @@ function ConfirmDialog({ target, action, t, onCancel, onConfirm }: ConfirmProps)
         <dt>{t('patchFile')}</dt>
         <dd><code>{`${target.packageName}/lib/client.js`}</code></dd>
         <dt>{t('patchSupported')}</dt>
-        <dd>{target.supportedVersion}</dd>
+        <dd>{versionsOf(target)}</dd>
       </dl>
     </Modal>
   )

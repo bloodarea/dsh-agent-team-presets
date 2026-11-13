@@ -37,6 +37,11 @@ export interface TeamListViewProps {
     }[];
     /** Opens the page that manages the Team preset categories. */
     readonly onManageCategories?: () => void;
+    /**
+     * How many shipped presets this deployment was offered but no longer holds,
+     * when none of them are in the list. Zero or undefined renders no hint.
+     */
+    readonly missingBuiltins?: number | undefined;
 }
 /**
  * Render the Team list.

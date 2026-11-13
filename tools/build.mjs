@@ -113,6 +113,21 @@ await withBuildWorkspace(stageRoot, async (stage) => {
   const base = ts.readConfigFile(join(harness, 'tsconfig.base.json'), ts.sys.readFile)
   if (base.error) throw new Error(ts.flattenDiagnosticMessageText(base.error.messageText, '\n'))
   const paths = Object.fromEntries(Object.entries(base.config.compilerOptions.paths).map(([key, values]) => [key, values.map(value => resolve(stage, value))]))
+  // A Host package's Remote face is a generated build output
+  // (`lib/typert.remote-client.d.ts`), so the checkout's own tsconfig maps only
+  // the package root. A Client source that must name the namespace it calls —
+  // `ctx.remote.settings`, `ctx.remote.session` — imports that subpath, and it
+  // only resolves once the package has been built. Mapping it here keeps a stock
+  // checkout buildable instead of asking every operator to edit theirs.
+  for (const [specifier, values] of Object.entries(base.config.compilerOptions.paths)) {
+    if (!specifier.startsWith('@deepseek-ai/') || specifier.includes('*')) continue
+    const source = resolve(stage, values[0])
+    const match = /^(.*?)\/src(?:\/|$)/.exec(source)
+    if (match === null) continue
+    const face = join(match[1], 'lib', 'typert.remote-client.d.ts')
+    const key = specifier + '/remote'
+    if (paths[key] === undefined && existsSync(face)) paths[key] = [face]
+  }
   const reactTypes = dirname(scopedRequire.resolve('@types/react/package.json'))
   Object.assign(paths, {
     '@deepseek-ai/dsh-client-ui-agent-team/client': [join(stage, 'packages/client/ui-agent-team/src/client/index.ts')],

@@ -15,7 +15,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync, gunzipSync } from 'node:zlib'
 import {
-  CARD_PATCH_TARGETS, findCardPatchTarget, installCardPatch, targetState, uninstallCardPatch,
+  CARD_PATCH_TARGETS, catalogTargetsFor, findCardPatchTarget, installCardPatch, mergeCatalogTargets,
+  parseCardPatchCatalog, resolveTargetView, targetState, uninstallCardPatch,
 } from '../src/card-patches.ts'
 import type { CardPatchEnvironment, CardPatchTarget } from '../src/card-patches.ts'
 
@@ -201,10 +202,10 @@ describe('restoring the published bundle', () => {
 })
 
 describe('shipped catalog', () => {
-  it('names one supported version per target and resolves by id', () => {
+  it('names one supported version per shipped target and resolves by id', () => {
     for (const target of CARD_PATCH_TARGETS) {
       expect(target.version).not.toBe('')
-      expect(findCardPatchTarget(target.id)).toBe(target)
+      expect(catalogTargetsFor(target.id)).toContain(target)
     }
     expect(findCardPatchTarget('no-such-plugin')).toBeUndefined()
   })
@@ -218,5 +219,80 @@ describe('shipped catalog', () => {
       expect(bundle.includes(target.service), `${target.id} registers ${target.service}`).toBe(true)
       expect(target.pristineSha256).not.toBe(target.patchedSha256)
     }
+  })
+})
+
+/**
+ * Several upstream versions of one target may be shipped at once: a rebuild for
+ * a newer release must not take the patch away from installations that have not
+ * upgraded yet. These cases pin that promise and the classification it drives.
+ */
+describe('multiple supported versions of one target', () => {
+  /** A tiny catalog entry for one version of the fixture target. */
+  function version(version: string): CardPatchTarget {
+    const pristine = Buffer.from(`/* published ${version} */\n`)
+    const patched = Buffer.from(`/* patched ${version} */\n`)
+    return {
+      id: 'dsh-context',
+      packageName: 'dsh-context',
+      version,
+      source: `example/context@v${version}`,
+      asset: `dsh-context-${version}.client.js.gz`,
+      service: 'contextAgentCardBadges',
+      pristineSha256: sha(pristine),
+      patchedSha256: sha(patched),
+    }
+  }
+
+  /** A profile with one installed version and one bundle state. */
+  function installed(version: string, seed: 'pristine' | 'patched'): CardPatchEnvironment {
+    const root = workspace()
+    mkdirSync(join(root, 'package', 'lib'), { recursive: true })
+    writeFileSync(join(root, 'package', 'package.json'), JSON.stringify({ name: 'dsh-context', version }))
+    const bytes = seed === 'pristine' ? `/* published ${version} */\n` : `/* patched ${version} */\n`
+    writeFileSync(join(root, 'package', 'lib', 'client.js'), bytes)
+    return {
+      resolvePackage: name => name === 'dsh-context' ? join(root, 'package') : undefined,
+      backupDirectory: () => join(root, 'backups'),
+      assetDirectory: () => root,
+    }
+  }
+
+  it('keeps the older version when the newer one is added', () => {
+    const merged = mergeCatalogTargets([version('0.84.0')], [version('0.84.1')])
+    expect(merged.map(target => target.version)).toEqual(['0.84.0', '0.84.1'])
+  })
+
+  it('replaces only the version that was rebuilt', () => {
+    const rebuilt = { ...version('0.84.0'), patchedSha256: 'e'.repeat(64) }
+    const merged = mergeCatalogTargets([version('0.84.0')], [rebuilt])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]?.patchedSha256).toBe('e'.repeat(64))
+  })
+
+  it('classifies the row by the installed version, not the newest one', () => {
+    const entries = [version('0.84.0'), version('0.84.1')]
+    const view = resolveTargetView(entries, installed('0.84.0', 'pristine'))
+    expect(view).toMatchObject({
+      state: 'pristine',
+      supportedVersion: '0.84.0',
+      supportedVersions: ['0.84.0', '0.84.1'],
+      installedVersion: '0.84.0',
+    })
+  })
+
+  it('reports a version it ships no replacement for, naming the ones it does', () => {
+    const view = resolveTargetView([version('0.84.0'), version('0.84.1')], installed('0.85.0', 'pristine'))
+    expect(view.state).toBe('unsupported')
+    expect(view.detail).toContain('0.84.0, 0.84.1')
+    expect(view.detail).toContain('0.85.0')
+  })
+
+  it('refuses an overlay document with one unusable entry instead of applying half of it', () => {
+    const document = JSON.stringify({
+      version: 1,
+      targets: [{ ...version('0.84.1'), patchedSha256: 'not-a-hash' }],
+    })
+    expect(() => parseCardPatchCatalog(document)).toThrow(/patchedSha256/)
   })
 })

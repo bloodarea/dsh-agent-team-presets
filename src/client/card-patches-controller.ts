@@ -39,7 +39,13 @@ interface TeamPresetsNamespace {
   uninstallCardPatch(id: string): Promise<{ readonly ok: true; readonly value: CardPatchResult } | { readonly ok: false; readonly error: { readonly message?: string } }>
 }
 
-/** Services a patched target registers, by target identity. */
+/**
+ * Fallback services, used only before the Host's rows have arrived.
+ *
+ * Once a row exists its own `service` field is authoritative: the Host derives
+ * it from the catalog entry that matches the installed version, so a target
+ * added by a shipped catalog never needs a code change here.
+ */
 const SERVICES: Readonly<Record<string, string>> = {
   'dsh-context': 'contextAgentCardBadges',
   'dsh-better-sidebar': 'betterSidebarAgentCardBadges',
@@ -139,9 +145,14 @@ export class CardPatchesController {
    * alone changes nothing until the server restarts and the page reloads.
    * @returns the live target identities, in catalog order.
    */
-  private liveTargets(): string[] {
-    return Object.entries(SERVICES)
-      .filter(([, service]) => this.ctx.get(service as never) !== undefined)
+  private liveTargets(targets: readonly CardPatchTargetView[] = this.state.targets): string[] {
+    // `target.service` is authoritative once the Host sends it; a Host from
+    // before the multi-version catalog sends none, so the fallback still applies.
+    const pairs: ReadonlyArray<readonly [string, string | undefined]> = targets.length > 0
+      ? targets.map(target => [target.id, target.service ?? SERVICES[target.id]] as const)
+      : Object.entries(SERVICES)
+    return pairs
+      .filter(([, service]) => service !== undefined && this.ctx.get(service as never) !== undefined)
       .map(([id]) => id)
   }
 
@@ -158,7 +169,7 @@ export class CardPatchesController {
     }
     try {
       const targets = unwrap(await remote.cardPatches())
-      this.state = { ...this.state, status: 'ready', targets, live: this.liveTargets() }
+      this.state = { ...this.state, status: 'ready', targets, live: this.liveTargets(targets) }
     } catch (error: unknown) {
       this.state = { ...this.state, status: 'unavailable', live: this.liveTargets() }
       console.warn('[team-presets] could not read card patch state:', error)

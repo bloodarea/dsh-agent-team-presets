@@ -12,6 +12,10 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ConfigForm, SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// The `settings` and `session` namespaces are declared by the API controllers
+// that serve them; without these imports neither is on the Client Remote map.
+import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
+import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 import { toolMode, withSelection } from '../presets.ts'
 import { cloneMetadata, restoreBuiltinTeams } from '../builtin-teams.ts'
 import { builtinEntry } from '../team-catalog.ts'

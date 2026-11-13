@@ -49,13 +49,13 @@ describe('declared host support', () => {
 
   it('is satisfied by the runtime this release was verified on, prerelease included', async () => {
     const fields = await manifest()
-    expect(evaluatePluginCompatibility(fields, {}, '0.2.2-rc.2')).toBeUndefined()
+    expect(evaluatePluginCompatibility(fields, {}, '0.2.2-rc.3')).toBeUndefined()
   })
 
   it('refuses what it was not verified on, instead of silently widening the claim', async () => {
     const fields = await manifest()
     const range = await declaredRange()
-    for (const runtime of ['0.1.9', '0.2.0-rc.2', '0.2.1-rc.3', '0.2.2-rc.1', '0.3.0', '1.0.0']) {
+    for (const runtime of ['0.1.9', '0.2.0-rc.2', '0.2.1-rc.3', '0.2.2-rc.1', '0.2.2-rc.2', '0.3.0', '1.0.0']) {
       expect(evaluatePluginCompatibility(fields, {}, runtime)?.requirements).toEqual({ 'engines.dsh': range })
     }
   })
@@ -80,7 +80,8 @@ describe('declared host support', () => {
     // invisible to the modern check but would silently over-promise here.
     const peersOnly = { ...fields }
     delete peersOnly['engines']
-    expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.2-rc.2')).toBeUndefined()
+    expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.2-rc.3')).toBeUndefined()
+    expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.2-rc.2')).toBeDefined()
     expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.2-rc.1')).toBeDefined()
     expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.1')).toBeDefined()
     expect(evaluatePluginCompatibility(peersOnly, {}, '0.3.0')).toBeDefined()
@@ -129,7 +130,7 @@ describe('the vendored rule agrees with the installed Host', () => {
     // `engines.dsh`; that projection must therefore agree exactly.
     const peersOnly = { ...fields }
     delete peersOnly['engines']
-    expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.2-rc.2')).toBeUndefined()
-    expect(installedCompatibility(peersOnly, '0.2.2-rc.2')).toBeUndefined()
+    expect(evaluatePluginCompatibility(peersOnly, {}, '0.2.2-rc.3')).toBeUndefined()
+    expect(installedCompatibility(peersOnly, '0.2.2-rc.3')).toBeUndefined()
   })
 })

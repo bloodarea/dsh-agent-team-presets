@@ -23,7 +23,9 @@ function row(state: CardPatchTargetView['state'], detail?: string): CardPatchTar
     id: 'dsh-context',
     packageName: 'dsh-context',
     source: 'example/context@abc',
+    service: 'contextAgentCardBadges',
     supportedVersion: '0.84.0',
+    supportedVersions: ['0.84.0', '0.84.1'],
     installedVersion: '0.84.0',
     state,
     ...detail === undefined ? {} : { detail },
@@ -131,6 +133,22 @@ describe('CardPatchesController', () => {
     await controller.install('dsh-context')
     expect(controller.getSnapshot().result).toMatchObject({ ok: false, id: 'dsh-context' })
     expect(controller.getSnapshot().result?.detail).toContain('Remote')
+    controller.dispose()
+  })
+
+  it('takes the service name from the Host row, so a new target needs no client change', async () => {
+    const custom: CardPatchTargetView = {
+      ...row('patched'),
+      id: 'another-target',
+      packageName: 'another-target',
+      service: 'anotherTargetAgentCardBadges',
+    }
+    const { ctx } = harness([custom], { ok: true, id: 'another-target', state: 'patched' })
+    const controller = new CardPatchesController(ctx, FAST)
+    await vi.waitFor(() => { expect(controller.getSnapshot().status).toBe('ready') })
+    ctx.provide('anotherTargetAgentCardBadges', { version: 1, register: () => () => {} })
+    await controller.refresh()
+    expect(controller.getSnapshot().live).toEqual(['another-target'])
     controller.dispose()
   })
 

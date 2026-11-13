@@ -45,13 +45,55 @@ export interface CardPatchTarget {
     /** sha256 of the prebuilt replacement; the only state one may restore from. */
     readonly patchedSha256: string;
 }
+/** Version of the shipped catalog overlay document; a different one is ignored. */
+export declare const CARD_PATCH_CATALOG_VERSION = 1;
 /**
- * The supported targets.
+ * Validate one overlay entry.
  *
- * Each entry is fixed to one upstream version on purpose: the replacement is a
- * whole-bundle build, so a different version's bundle would silently change
- * behaviour that was never reviewed here.
+ * The overlay is data, not code, so it may be edited by hand or written by an
+ * older tool; every field is checked against the same shape the compiled
+ * entries use. An entry that fails is a reason to ignore the whole document,
+ * because acting on part of it would make "what does this build support"
+ * depend on JSON key order.
+ * @param candidate - one parsed entry.
+ * @returns the normalized target.
+ * @throws when any field is unusable.
  */
+export declare function normalizeCatalogTarget(candidate: unknown): CardPatchTarget;
+/**
+ * Parse a shipped catalog overlay document.
+ * @param text - the document text.
+ * @returns every entry it declares.
+ * @throws when the document or any entry is unusable.
+ */
+export declare function parseCardPatchCatalog(text: string): readonly CardPatchTarget[];
+/**
+ * Combine the compiled baseline with the shipped overlay.
+ *
+ * Entries are keyed by identity *and* version, not by identity alone: keeping
+ * the already-supported versions is the whole point of shipping a replacement
+ * per version, so rebuilding 0.84.1 must not drop 0.84.0 for the installations
+ * still on it. Only the exact pair is replaced when the same version is rebuilt.
+ * Compiled order is kept, because that is the order the settings page lists.
+ * @param baseline - entries compiled into this build.
+ * @param overlay - entries read from the shipped catalog.
+ * @returns the merged catalog.
+ */
+export declare function mergeCatalogTargets(baseline: readonly CardPatchTarget[], overlay: readonly CardPatchTarget[]): readonly CardPatchTarget[];
+/**
+ * The distinct target identities, in catalog order.
+ * @param targets - the catalog to read.
+ * @returns one identity per target, first occurrence order.
+ */
+export declare function catalogIdentities(targets?: readonly CardPatchTarget[]): readonly string[];
+/**
+ * Every catalog entry for one identity.
+ * @param id - the target identity.
+ * @param targets - the catalog to read.
+ * @returns its entries, oldest build first.
+ */
+export declare function catalogTargetsFor(id: string, targets?: readonly CardPatchTarget[]): readonly CardPatchTarget[];
+/** Every version this build can patch: the compiled baseline plus the overlay. */
 export declare const CARD_PATCH_TARGETS: readonly CardPatchTarget[];
 /**
  * The file-system facts one patch operation depends on.
@@ -102,3 +144,28 @@ export declare function uninstallCardPatch(target: CardPatchTarget, env?: CardPa
  * @returns the entry, or undefined for an id this build does not ship.
  */
 export declare function findCardPatchTarget(id: string): CardPatchTarget | undefined;
+/**
+ * Classify one identity by the version that is actually installed.
+ *
+ * Several catalog entries may exist for the same target, one per supported
+ * upstream version; which one is relevant depends entirely on the installed
+ * package, so the choice belongs here rather than at each call site. A version
+ * this build has no replacement for reports `unsupported` and names the
+ * versions it does ship, which is what tells an operator whether to update the
+ * target plugin or this one.
+ * @param entries - every catalog entry for one identity, oldest first.
+ * @param env - the file-system facts to read through.
+ * @returns the row the settings page renders.
+ */
+export declare function resolveTargetView(entries: readonly CardPatchTarget[], env?: CardPatchEnvironment): CardPatchTargetView;
+/**
+ * Resolve the catalog entry that matches the installed version of one target.
+ * @param id - the target identity.
+ * @param env - the file-system facts to read through.
+ * @param targets - the catalog to read.
+ * @returns the entry to patch, when this build has one for that exact version.
+ */
+export declare function resolveInstalledTarget(id: string, env?: CardPatchEnvironment, targets?: readonly CardPatchTarget[]): {
+    target?: CardPatchTarget;
+    view: CardPatchTargetView;
+};

@@ -48,18 +48,20 @@ plugin. They are never installed automatically: the settings page's
 confirms it, keeps the original as a backup, and can restore it. Upstream
 license texts are shipped beside them under `assets/card-patches/licenses/`.
 
-1. dsh-context 0.84.0
+1. dsh-context 0.84.0 and 0.84.1
    https://github.com/bowenliang123/dsh-context
-   revision aa98b1231d5f0f8e833391f198e65e14e73b3323
+   revisions aa98b1231d5f0f8e833391f198e65e14e73b3323 (0.84.0) and
+   d81325ec6bab9dae9bf83e7a866ac74119504e18 (0.84.1)
    Licensed under the Apache License, Version 2.0 (see
    assets/card-patches/licenses/dsh-context-LICENSE).
    Changes: a new client module registers an optional `contextAgentCardBadges`
    registry, and the shared Agent card renders components registered with it.
    No other behaviour was changed.
 
-2. dsh-better-sidebar 0.32.0
+2. dsh-better-sidebar 0.32.0 and 0.32.1
    https://github.com/omdsh-dev/DSH-better-sidebar
-   tag v0.32.0
+   tags v0.32.0 and v0.32.1 (commit
+   06d21351a50b60063010c178590fc24ecd76fb74)
    Licensed under the MIT License (see
    assets/card-patches/licenses/dsh-better-sidebar-LICENSE).
    Changes: a new client module registers an optional

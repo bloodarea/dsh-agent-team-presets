@@ -8,13 +8,18 @@
 
 > **第一次用这个插件？** 先看图文教程，每一屏、每个按钮都讲到：**[新手必读](docs/guide/getting-started.zh.md)**。
 
-> **社区插件 v0.3.1** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.1)
+> **社区插件 v0.3.2** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.2)
 >
-> 本版给其他插件的子代理卡片加上可选的**「预设」标签**，从新增的**插件联动**设置页安装。宿主仍要求 **DeepSeek Harness 0.2.2-rc.2**，成员运行时与会话头部名册沿用 0.2.1。仓库包含预构建产物，安装时无需构建。
+> 本版让**同一个目标插件的多个版本同时可用**：升级 **dsh-context** 或 **dsh-better-sidebar** 不会再把「预设」标签弄丢；同时为 **dsh-context 0.84.1** 与 **dsh-better-sidebar 0.32.1** 提供重编后的替换包。宿主要求收紧为 **DeepSeek Harness 0.2.2-rc.3**——这是实测过的版本，`0.2.2-rc.2` 及更旧会被明确拒绝，而不是含糊声称兼容。
 
-### 0.3.1 更新内容
+### 0.3.2 更新内容
 
-仅文档改动。界面截图移入图文教程[新手必读](docs/guide/getting-started.zh.md)，两份 README 保留 banner、只保留当前版本说明，插件市场展示的截图换成新的，并清理了 0.1.9/0.2 时期的旧截图。插件行为没有任何变化。
+- **多个上游版本并存。** 补丁目录按「目标 + 版本」索引，每一行按**实际安装的版本**判定状态，插件联动页会列出本版为该目标准备的全部版本，而不只是最新那个。
+- **新增 `dsh-context` 0.84.1、`dsh-better-sidebar` 0.32.1 的替换包**：用同一份小补丁从上游源码重编，并逐一校验（必须真的注册卡片服务、体积必须落在允许区间、两个哈希都记录在案）。`0.84.0` 与 `0.32.0` 的条目保留，还没升级的 profile 依然能打补丁。
+- **随包目录文件。** `assets/card-patches/catalog.json` 会覆盖合并到插件内置的版本清单，因此「多支持一个版本」变成加数据，而不是改代码。
+- **重建管线。** `tools/card-patches.mjs` 会克隆上游 tag、应用源码补丁（`git apply` → `--3way` → fuzz）、用目标自己的工具链构建、校验后才发布；`apply` / `revert` 负责带备份地装进/撤出 profile。仅仓库内使用，不随 npm 包发布。
+- **修掉一个陈旧产物。** 0.3.1 的 `lib/` 是在「内置预设丢失提示」那次改动之前编的，导致该提示与恢复入口从未真正到达用户；0.3.2 补上了。
+- **宿主支持收紧到 `0.2.2-rc.3`**（`engines.dsh` 与 DSH 相关 peer 范围同步）。上一版声称支持 rc.2，但产物是对着更晚的契约编的；现在 rc.2 及更旧会被带原因地拒绝，而不是过度承诺。
 
 更早的版本与完整变更记录见 [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) 页面。
 
@@ -95,13 +100,13 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 <a id="requirements"></a>
 ## 环境要求
 
-- **DeepSeek Harness `>=0.2.2-rc.2 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.2`**；0.2.2-rc.1 及更旧版本会被拒绝。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
+- **DeepSeek Harness `>=0.2.2-rc.3 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.3`**；0.2.2-rc.2 及更旧版本会被拒绝。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
 - **自定义工具白名单在 PTC 下通过给该会话一个自己的 native 面来工作。** 宿主无法在释放执行器后恢复继承，所以插件从不主动释放：在 PTC 预设下它把宿主自带的 native 工具执行器挂到该会话的 Agent 作用域，部署级执行器保持原样。代价是明确的：该会话此后不再使用 `run_code`，而其他会话与「所有工具」模式继续走 PTC。若挂载失败、或挂载后工具面仍暴露 PTC 传输，则应用被拒绝且不留残留 —— 因为从未释放过任何执行器。
 - **无需 Agent Teams bundle。** 成员通过部署自带的可继续执行 subagent 后端创建；原生消息、任务工具与 Web 名册不受本插件影响。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.3.1`）和 Harness 版本（如 `0.2.2-rc.2`）是不同的版本线。
+插件版本（`0.3.2`）和 Harness 版本（如 `0.2.2-rc.3`）是不同的版本线。
 
 <a id="use-this-package"></a>
 ## 安装与升级
@@ -317,8 +322,8 @@ npm view dsh-agent-team-presets version
 
 | 目标插件 | 本版补丁适配的版本 | 该行可执行的操作 |
 | --- | --- | --- |
-| `dsh-context` | 0.84.0 | 安装补丁 / 卸载补丁 |
-| `dsh-better-sidebar` | 0.32.0 | 安装补丁 / 卸载补丁 |
+| `dsh-context` | 0.84.0、0.84.1 | 安装补丁 / 卸载补丁 |
+| `dsh-better-sidebar` | 0.32.0、0.32.1 | 安装补丁 / 卸载补丁 |
 
 每一行都会报告自己的真实状态，页面不做猜测：`未安装`、`版本不支持`、`未打补丁`、`已打补丁`、`已被其他改动修改`。「安装补丁」会先弹出确认框，备份目标插件的 `lib/client.js`，再写入本插件用同一份源码构建的替换包；「卸载补丁」从该备份还原并删除备份。
 
@@ -327,8 +332,10 @@ npm view dsh-agent-team-presets version
 几条安全规则：
 
 - 如果目标插件的浏览器包既不是发布版、也不是本插件的替换版，操作会被拒绝：覆盖它等于毁掉一份本插件无法重现的改动。
-- 每个目标只支持一个固定版本；目标升级到新版本后，该行会显示 `版本不支持`，直到本插件发布对应构建。
+- 每一行按**实际安装的版本**判定状态，并列出本版为其准备替换包的全部版本；不在列表中的版本显示 `版本不支持`。支持新版本是一次「校验后重建」，不需要改代码（见下文）。
 - 升级已打补丁的目标插件会覆盖其浏览器包，补丁随之消失，该行会重新显示 `未打补丁`。
+
+上游发版后，用 `node tools/card-patches.mjs rebuild --target <id> --version <版本> --write` 跟进：它会克隆对应版本、应用源码补丁、重新构建，并只有在重建后的包仍然注册卡片服务时才允许发布。新增版本不会挤掉旧版本；随包的 `assets/card-patches/catalog.json` 可在不改代码的情况下覆盖新版本。
 
 如果不希望使用随包构建，同样的改动也以源码补丁形式放在 [`contrib/agent-card-badges`](contrib/agent-card-badges/README.md)，可自行应用到匹配版本并重新构建。
 

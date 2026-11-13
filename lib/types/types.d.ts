@@ -602,8 +602,12 @@ export interface CardPatchTargetView {
     readonly packageName: string;
     /** Upstream revision the prebuilt replacement came from. */
     readonly source: string;
-    /** The version this build ships a replacement for. */
+    /** Service a patched target registers; the page reads it to tell "active" from "installed". */
+    readonly service: string;
+    /** The version whose replacement applies to this row (the newest supported one when none matches). */
     readonly supportedVersion: string;
+    /** Every upstream version this build ships a replacement for. */
+    readonly supportedVersions: readonly string[];
     /** Installed version, when the package is present. */
     readonly installedVersion?: string;
     /** Installed bundle state. */

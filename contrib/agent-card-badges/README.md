@@ -4,12 +4,14 @@ These source patches add an optional Client Cordis service owned by each target 
 
 **In the preset plugin itself you do not need any of this by hand.** The same change ships as prebuilt replacement bundles and is offered in *Settings → Agent Team presets → Integrations*, which installs and restores them with a backup. Use the patches below when you want to build the target yourself, review the change, or send it upstream.
 
-| Patch | Exact baseline | Service | Rendered surfaces |
-| --- | --- | --- | --- |
-| `dsh-context-0.84.0-aa98b1231d5f.patch` | dsh-context 0.84.0, commit `aa98b1231d5f0f8e833391f198e65e14e73b3323` | `contextAgentCardBadges` | Shared AgentCard header used by the fleet view and context view/sidebar |
-| `dsh-better-sidebar-0.32.0.patch` | dsh-better-sidebar 0.32.0 published source payload | `betterSidebarAgentCardBadges` | Tasks graph CardTop badge row and Tasks tree title row |
+| Patch | Baseline it was generated from | Rebuilt and shipped for | Service | Rendered surfaces |
+| --- | --- | --- | --- | --- |
+| `dsh-context-0.84.0-aa98b1231d5f.patch` | dsh-context 0.84.0, commit `aa98b1231d5f0f8e833391f198e65e14e73b3323` | 0.84.0, 0.84.1 | `contextAgentCardBadges` | Shared AgentCard header used by the fleet view and context view/sidebar |
+| `dsh-better-sidebar-0.32.0.patch` | dsh-better-sidebar 0.32.0 published source payload | 0.32.0, 0.32.1 | `betterSidebarAgentCardBadges` | Tasks graph CardTop badge row and Tasks tree title row |
 
-Context source: <https://github.com/bowenliang123/dsh-context/tree/aa98b1231d5f0f8e833391f198e65e14e73b3323>. Its published package contains the minified Client artifact, so this patch targets the matching source checkout, not `lib/client.js`. The sidebar baseline is the source shipped in the installed 0.32.0 package. Do not apply either patch to a different version without reviewing the full diff.
+Context source: <https://github.com/bowenliang123/dsh-context/tree/aa98b1231d5f0f8e833391f198e65e14e73b3323>. Its published package contains the minified Client artifact, so this patch targets the matching source checkout, not `lib/client.js`. The sidebar baseline is the source shipped in the installed 0.32.0 package.
+
+The shipped list above is produced, not hand-maintained: [`tools/card-patches.mjs`](../../tools/card-patches.mjs) rebuilds a patch against any upstream release and refuses to publish unless the result is verified. See [Following upstream releases](#following-upstream-releases).
 
 ## Contract
 
@@ -81,3 +83,69 @@ Install the resulting package through the normal plugin manager. A replaced `lib
 - Reviewed explicit renderer propagation through both context view factories, the shared context AgentCard, sidebar built-in task tab, SubagentView, TasksGraph, TasksTree, and CardTop.
 
 These checks establish source applicability and the new modules' types. They do not establish a full target build, runtime mounting, or visual acceptance in the active GUI; those require rebuilt target packages and a deployment verification.
+
+## Following upstream releases
+
+A replacement bundle is a build of the target plugin, so it is tied to one target
+version — but that tie is now machine-checked rather than manual. To support a
+new release:
+
+```sh
+node tools/card-patches.mjs plan    --target dsh-context --version 0.85.0   # what it would need
+node tools/card-patches.mjs rebuild --target dsh-context --version 0.85.0   # dry run: clone, patch, build, verify
+node tools/card-patches.mjs rebuild --target dsh-context --version 0.85.0 --write
+```
+
+`rebuild` is a dry run unless `--write` is passed. The stages are:
+
+| Stage | What it does | What it refuses |
+| --- | --- | --- |
+| acquire | clones the upstream tag (`v<version>`, or `--ref`), downloads the published `lib/client.js` of the same version | a checkout whose manifest is another version |
+| patch | `git apply`, then `git apply --3way`, then `patch --fuzz=3`; all dry-run first | a patch that applies nowhere, with the failing hunks named |
+| verify | every file listed in the recipe must still contain the identifiers the change introduces; the built bundle must carry `ctx.provide(<service>)` and stay within 0.9–1.5× the published size | a source that lost the change, or a bundle that is unwrapped, tiny, never registers the service, or is byte-identical to the published build |
+| publish | writes `assets/card-patches/<id>-<version>.client.js.gz`, the target's license, and the catalog entry | an existing asset with different bytes, because that artifact may already be installed |
+
+Exit code `2` means the patch needs adaptation: nothing was built, and the patched
+checkout is kept so the failing file can be inspected. Exit code `1` is any other
+refusal.
+
+**Versions coexist.** The catalog is keyed by target *and* version, so rebuilding
+0.85.0 keeps 0.84.0 and 0.84.1 offered. The Integrations page classifies each row
+by the version that is actually installed and lists every version the build ships
+a replacement for; a profile on an unknown version reports `version not supported`
+naming the ones that are supported.
+
+**New entries need no code change.** The pipeline writes
+`assets/card-patches/catalog.json`, which the Host merges with the versions
+compiled into `src/card-patches.ts`. A build that ships that JSON can patch a
+version it was never compiled against; the compiled list remains the fallback.
+
+**Hashes are per build, not reproducible.** Both targets embed a `@built <time>`
+comment in their own build output, so rebuilding the same version produces
+different bytes. That is why publishing refuses to replace an existing asset: the
+recorded hash has to keep describing the file users may already have installed.
+Publish each version once.
+
+`node tools/card-patches.mjs verify` re-checks the shipped catalog against the
+shipped assets offline and is worth running before a release.
+
+### Installing into a profile without rebuilding this plugin
+
+The Integrations page can only offer the versions compiled into the installed
+plugin. When the target plugin has been updated past those, the same verified
+replacement can be installed directly:
+
+```sh
+node tools/card-patches.mjs apply  --target dsh-context            # current version in the profile
+node tools/card-patches.mjs revert --target dsh-context            # put the published bundle back
+```
+
+`apply` refuses unless the installed `lib/client.js` hashes to the recorded
+`pristineSha256`, writes the replacement atomically, reads it back and checks the
+hash, and keeps the original in `$DSH_HOME/agent-team-presets/card-patches/` — the
+same backup path the plugin's own **Remove patch** button restores from. `revert`
+refuses unless the backup still matches the published build.
+
+This is a stopgap, not a substitute for shipping: the row in the settings page
+still reports `version not supported` until a build that names the new version is
+installed, because that list is compiled into the plugin.

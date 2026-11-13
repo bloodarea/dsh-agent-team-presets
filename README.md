@@ -8,13 +8,18 @@ English | [中文](<README.zh.md>)
 
 > **New to this plugin?** Start with the illustrated walkthrough — every screen, every button: **[Getting started](docs/guide/getting-started.md)**.
 
-> **Community plugin v0.3.1** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.1)
+> **Community plugin v0.3.2** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.2)
 >
-> This release adds optional **Preset** tags on other plugins' subagent cards, installed from the new **Integrations** settings page. It still requires **DeepSeek Harness 0.2.2-rc.2** and keeps the member runtime and header roster from 0.2.1. Prebuilt artifacts are included.
+> This release keeps more than one version of each supported target patchable at once, so updating **dsh-context** or **dsh-better-sidebar** no longer takes the Preset badge away, and it ships rebuilt replacements for **dsh-context 0.84.1** and **dsh-better-sidebar 0.32.1**. It requires **DeepSeek Harness 0.2.2-rc.3**: that is the release this build was verified on, and 0.2.2-rc.2 is now refused rather than claimed.
 
-### What changed in 0.3.1
+### What changed in 0.3.2
 
-Documentation only. The interface screenshots moved into an illustrated [Getting started](docs/guide/getting-started.md) walkthrough, both READMEs keep their banner and now carry only the current release notes, the screenshots the plugin market shows were refreshed, and the outdated 0.1.9/0.2 screenshot set was removed. No plugin behaviour changed.
+- **Several upstream versions stay supported.** The patch catalog is keyed by target *and* version, each row is classified from the version that is actually installed, and the Integrations page lists every version this build ships a replacement for instead of only the newest.
+- **New replacements for `dsh-context` 0.84.1 and `dsh-better-sidebar` 0.32.1**, rebuilt from their upstream sources with the same small registration patch, then verified (the service must register, the bundle must stay within its size band, both hashes are recorded). The 0.84.0 and 0.32.0 entries stay, so a profile that has not upgraded is still patchable.
+- **A shipped catalog file.** `assets/card-patches/catalog.json` is merged over the versions compiled into the plugin, so supporting another version becomes data rather than a code change.
+- **A rebuild pipeline.** `tools/card-patches.mjs` clones the upstream tag, applies the source patch (`git apply`, `--3way`, then fuzz), builds it with the target's own toolchain, verifies the result, and only then publishes; `apply` / `revert` install or remove one replacement in a profile with a backup. Repository only — not part of the npm package.
+- **Fixed a stale artifact.** 0.3.1 shipped a `lib/` built before the "a shipped preset set went missing" work, so its warning and restore path never reached users. Both are in 0.3.2.
+- **Host support narrowed to `0.2.2-rc.3`** in `engines.dsh` and the DSH peer ranges. The previous release claimed rc.2 while shipping a bundle built against a later contract; rc.2 and older are now refused with a named reason instead of being over-promised.
 
 Earlier releases and the full changelog are on the [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) page.
 
@@ -95,13 +100,13 @@ Interface screenshots live with the walkthrough, taken live from an isolated ins
 <a id="requirements"></a>
 ## Requirements
 
-- **DeepSeek Harness `>=0.2.2-rc.2 <0.3.0`.** Verified against **`0.2.2-rc.2`**; 0.2.2-rc.1 and older are refused. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
+- **DeepSeek Harness `>=0.2.2-rc.3 <0.3.0`.** Verified against **`0.2.2-rc.3`**; 0.2.2-rc.2 and older are refused. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
 - **Custom tool allow-lists work on PTC by giving that Session its own native surface.** The Host cannot restore an inherited executor after a release, so the plugin never releases one: on a PTC preset it mounts the Harness native tool executor on the Session's Agent scope and leaves the deployment executor alone. The trade-off is deliberate — that Session stops using `run_code` for the rest of its life, while other Sessions and the all-tools mode keep PTC. If mounting fails, or the surface still exposes the PTC transport afterwards, the application is refused and nothing is left behind, because no executor was ever released.
 - **No Agent Teams bundle is required.** Members are created through the deployment's continuable subagent providers, and native messaging, task tools, and the Web roster are unaffected by this plugin.
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.3.1`) and the Harness version (`0.2.2-rc.2`, for example) are separate version lines.
+The plugin version (`0.3.2`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -315,10 +320,10 @@ Cards in **dsh-context** (Fleet view, top bar) and **dsh-better-sidebar** (Tasks
 
 Neither target published such a service at the time of writing, so this plugin ships **prebuilt replacement bundles** for the exact versions listed below and offers them in **Settings → Agent Team presets → Integrations**:
 
-| Target | Version this build patches | What the row offers |
+| Target | Versions this build patches | What the row offers |
 | --- | --- | --- |
-| `dsh-context` | 0.84.0 | Install patch / Remove patch |
-| `dsh-better-sidebar` | 0.32.0 | Install patch / Remove patch |
+| `dsh-context` | 0.84.0, 0.84.1 | Install patch / Remove patch |
+| `dsh-better-sidebar` | 0.32.0, 0.32.1 | Install patch / Remove patch |
 
 Each row reports its own state, and the page never guesses: `not installed`, `version not supported`, `not patched`, `patched`, `modified by something else`. "Install patch" asks for confirmation, backs up the target's `lib/client.js`, then writes this plugin's build of the same source. "Remove patch" restores that backup and deletes it.
 
@@ -327,8 +332,10 @@ Each row reports its own state, and the page never guesses: `not installed`, `ve
 Safety rules worth knowing:
 
 - A target whose bundle matches neither the published build nor this plugin's replacement is refused, because overwriting it would destroy an edit this plugin cannot reproduce.
-- Only the one pinned version per target is patchable; installing a newer target version makes the row report `version not supported` until a build for it ships here.
+- Each row is classified by the version that is actually installed and lists every version this build ships a replacement for. A version outside that list reports `version not supported`; supporting one is a verified rebuild, not a code rewrite (see below).
 - Upgrading a patched target replaces its bundle, which silently removes the patch — the row then reports `not patched` again.
+
+New upstream releases are adopted with `node tools/card-patches.mjs rebuild --target <id> --version <version> --write`: it clones the release, applies the source patch, builds it, and refuses to publish anything unless the rebuilt bundle still registers the card service. Adding a version keeps the older ones patchable, and a shipped `assets/card-patches/catalog.json` reaches new versions without a code change.
 
 If you would rather not use the bundled builds, the same change is available as source patches in [`contrib/agent-card-badges`](contrib/agent-card-badges/README.md) for applying to the matching target and rebuilding it yourself, and as upstream-ready changes for the target maintainers.
 
