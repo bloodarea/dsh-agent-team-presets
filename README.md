@@ -8,20 +8,15 @@ English | [中文](<README.zh.md>)
 
 > **New to this plugin?** Start with the illustrated walkthrough — every screen, every button: **[Getting started](docs/guide/getting-started.md)**.
 
-> **Community plugin v0.3.0** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.0)
+> **Community plugin v0.3.1** · [Tag](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.1)
 >
 > This release adds optional **Preset** tags on other plugins' subagent cards, installed from the new **Integrations** settings page. It still requires **DeepSeek Harness 0.2.2-rc.2** and keeps the member runtime and header roster from 0.2.1. Prebuilt artifacts are included.
 
-### What's new in 0.3.0
+### What changed in 0.3.1
 
-- **Preset tags on subagent cards.** Members this plugin created are marked on dsh-context's Fleet cards and on dsh-better-sidebar's task cards. The integration is an adapter: it activates only for a target that exposes the optional card service and stays dormant otherwise, so neither package becomes a dependency.
-- **A new Integrations settings page.** *Settings → Agent Team presets → Integrations* lists every supported target with the version this build patches, the installed version, the upstream revision the replacement was built from, and its current state, and offers install and remove behind a confirmation dialog.
-- **The replacements ship with the plugin.** Both bundles are built from the pinned upstream sources plus a small registration service, and each is recorded with the sha256 of the published bundle and of the replacement, so a swap never overwrites bytes this plugin did not produce.
-- **Install takes effect immediately.** After the swap the Host republishes that browser bundle and the running page reloads the plugin in place, so the tag appears within about a second — no `dsh web` restart and no page reload.
-- **The source patches are published too.** `contrib/agent-card-badges` carries the same change as patches for the matching target versions, for building them yourself or sending them upstream.
-- **Nothing irreversible.** The published bundle is backed up before it is replaced, remove restores it and deletes the backup, and a target whose bundle matches neither build is refused with the reason instead of being overwritten.
+Documentation only. The interface screenshots moved into an illustrated [Getting started](docs/guide/getting-started.md) walkthrough, both READMEs keep their banner and now carry only the current release notes, the screenshots the plugin market shows were refreshed, and the outdated 0.1.9/0.2 screenshot set was removed. No plugin behaviour changed.
 
-Older releases, with the full list of changes, are on the [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) page.
+Earlier releases and the full changelog are on the [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) page.
 
 <a id="project-introduction"></a>
 ## Overview
@@ -106,7 +101,7 @@ Interface screenshots live with the walkthrough, taken live from an isolated ins
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use, typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.3.0`) and the Harness version (`0.2.2-rc.2`, for example) are separate version lines.
+The plugin version (`0.3.1`) and the Harness version (`0.2.2-rc.2`, for example) are separate version lines.
 
 <a id="use-this-package"></a>
 ## Install and upgrade
@@ -148,8 +143,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### Option 3 — reproducible pin (no update prompts)
 
 ```text
-dsh-agent-team-presets@0.3.0
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.3.0
+dsh-agent-team-presets@0.3.1
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.3.1
 ```
 
 A fixed version or tag reproduces exactly one release. **A `#tag` GitHub spec is only ever compared against that same tag, so the market never reports an update for it — upgrading means editing the spec by hand.** Use this form only when you need a frozen install.
@@ -170,7 +165,7 @@ npm view dsh-agent-team-presets version
 
 ### Verify and upgrade safely
 
-After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.3.0`, and a running component.
+After installation, follow the plugin manager's reload/restart prompts and navigate to **Settings → Agent team presets**. Verify that details display `dsh-agent-team-presets`, version `0.3.1`, and a running component.
 
 - Back up profile settings, Team definitions, and Session selections before upgrading.
 - When migrating from a development link, remove `@deepseek-ai/dsh-experimental-agent-team-presets` first before enabling the community package.

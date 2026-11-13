@@ -8,18 +8,13 @@
 
 > **第一次用这个插件？** 先看图文教程，每一屏、每个按钮都讲到：**[新手必读](docs/guide/getting-started.zh.md)**。
 
-> **社区插件 v0.3.0** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.0)
+> **社区插件 v0.3.1** · [标签](https://github.com/bloodarea/dsh-agent-team-presets/tree/v0.3.1)
 >
 > 本版给其他插件的子代理卡片加上可选的**「预设」标签**，从新增的**插件联动**设置页安装。宿主仍要求 **DeepSeek Harness 0.2.2-rc.2**，成员运行时与会话头部名册沿用 0.2.1。仓库包含预构建产物，安装时无需构建。
 
-### 0.3.0 更新内容
+### 0.3.1 更新内容
 
-- **子代理卡片上的「预设」标签。** 由本插件创建的成员会在 dsh-context 的编队卡片与 dsh-better-sidebar 的任务卡片上被标出。接入方式是适配器：只有目标插件提供了可选卡片服务时才激活，否则保持待命，因此两个包都不会变成依赖。
-- **新增「插件联动」设置页。** *设置 → 智能体团队预设 → 插件联动* 逐条列出目标插件、本补丁适配的版本、已安装版本、替换包的构建来源与当前状态，并在确认框后提供安装与卸载。
-- **替换包随插件分发。** 两份浏览器包都由固定上游源码加一个很小的注册服务构建，并记录「发布版」与「替换包」两侧的 sha256，所以替换永远不会覆盖本插件没有产出的字节。
-- **安装即时生效。** 写入后宿主立即重新发布该浏览器包，运行中的页面就地重新加载该插件，标签约一秒内出现 —— 不需要重启 `dsh web`，也不需要刷新页面。
-- **源码补丁同样公开。** `contrib/agent-card-badges` 提供同一改动的源码补丁，可自行应用到匹配版本并重新构建，或提交给上游。
-- **没有不可逆操作。** 替换前先备份发布版，卸载时还原并删除备份；如果目标插件的浏览器包既不是发布版也不是本插件的替换包，操作会被拒绝并说明原因，而不是强行覆盖。
+仅文档改动。界面截图移入图文教程[新手必读](docs/guide/getting-started.zh.md)，两份 README 保留 banner、只保留当前版本说明，插件市场展示的截图换成新的，并清理了 0.1.9/0.2 时期的旧截图。插件行为没有任何变化。
 
 更早的版本与完整变更记录见 [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) 页面。
 
@@ -106,7 +101,7 @@ DeepSeek Harness 原生 Agent Teams 已经具备多智能体协作能力。在�
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.3.0`）和 Harness 版本（如 `0.2.2-rc.2`）是不同的版本线。
+插件版本（`0.3.1`）和 Harness 版本（如 `0.2.2-rc.2`）是不同的版本线。
 
 <a id="use-this-package"></a>
 ## 安装与升级
@@ -148,8 +143,8 @@ dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets
 #### 方式三 —— 可复现的固定版本（收不到更新提示）
 
 ```text
-dsh-agent-team-presets@0.3.0
-dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.3.0
+dsh-agent-team-presets@0.3.1
+dsh plugin --profile <profile> add github:bloodarea/dsh-agent-team-presets#v0.3.1
 ```
 
 固定版本号或固定标签只能复现一个确定的发布。**带 `#标签` 的 GitHub 规格只会与同一个标签比对，市场永远不会提示更新——升级只能手动改规格。** 只在确实需要冻结安装时使用这种形式。
@@ -170,7 +165,7 @@ npm view dsh-agent-team-presets version
 
 ### 确认安装并安全升级
 
-安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.3.0`，且组件处于运行中状态。
+安装成功后，按插件管理器的提示重新加载或重启，打开 **设置 → 智能体团队预设**。确认插件详情显示 `dsh-agent-team-presets`、版本 `0.3.1`，且组件处于运行中状态。
 
 - 升级前备份 profile 设置、团队定义与会话选择记录。
 - 从开发链接迁移时，先通过插件管理器移除 `@deepseek-ai/dsh-experimental-agent-team-presets`，再启用社区包。
