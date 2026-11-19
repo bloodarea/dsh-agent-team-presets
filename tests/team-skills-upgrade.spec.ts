@@ -144,7 +144,12 @@ describe('upgrading a deployment that stored v0.1.6 records', () => {
       'builtin-standard/builtin-standard:executor → builtin:github-repository-presentation',
     ])
 
-    // The v0.1.7 startup installs the two method skills and reconciles again.
+    // A later startup installs the whole shipped set and reconciles again: the
+    // standard Team's record still declares nothing, so the catalog's leader,
+    // advisor, reviewer, and executor defaults arrive without touching it. The
+    // standard Team carries no specialist role, so no specialist workflow is
+    // declared for it — a declaration naming a role it does not carry would
+    // never resolve.
     await installShipped(live.store)
     await live.manager.reconcile()
     expect(bindingRows(live.manager)).toEqual([
@@ -152,8 +157,17 @@ describe('upgrading a deployment that stored v0.1.6 records', () => {
       'builtin-discovery/builtin-discovery:technical-scout → builtin:research',
       'builtin-discovery/captain → builtin:grilling',
       'builtin-research/builtin-research:evidence-scout → builtin:research',
+      'builtin-standard/builtin-standard:executor → builtin:agent-subagent-orchestration',
+      'builtin-standard/builtin-standard:executor → builtin:executor-short-task-workflow',
       'builtin-standard/builtin-standard:executor → builtin:git-release-hygiene',
       'builtin-standard/builtin-standard:executor → builtin:github-repository-presentation',
+      'builtin-standard/builtin-standard:fullstack-advisor → builtin:fullstack-advisor',
+      'builtin-standard/builtin-standard:reviewer → builtin:agent-subagent-orchestration',
+      'builtin-standard/builtin-standard:reviewer → builtin:independent-code-review-workflow',
+      'builtin-standard/captain → builtin:agent-leader-communication',
+      'builtin-standard/captain → builtin:agent-subagent-orchestration',
+      'builtin-standard/captain → builtin:leader-long-task-orchestration',
+      'builtin-standard/captain → builtin:leader-medium-task-workflow',
     ])
 
     // The seeded defaults are recorded on disk, which is what keeps a later
@@ -234,8 +248,15 @@ describe('the role slots each method skill reaches', () => {
         'builtin-discovery/builtin-discovery:technical-scout',
         'builtin-research/builtin-research:evidence-scout',
       ])
-    // Four method bindings on top of ten delivery ones: nothing else moved.
-    expect(bindingRows(live.manager)).toHaveLength(14)
+    // Nothing else moved: the lightweight Team declares 9 bindings, the
+    // standard Team 11 (leader 4, advisor 1, reviewer 2, executor 4), the
+    // fullstack Team 12 (leader 4, frontend 1, backend 1, reviewer 2, executor
+    // 4), the Discovery Team 3, the Research Team 1, and the two work-mode
+    // Teams 2 each — 40 in total.
+    expect(bindingRows(live.manager)).toHaveLength(40)
+    // Only the roles that own repository delivery carry the delivery pair: all
+    // three development Teams' executors, and a repository-specialist in each of
+    // the two work-mode Teams that has one.
     expect(bindingRows(live.manager).filter(row => row.includes('github-repository-presentation') || row.includes('git-release-hygiene')))
       .toHaveLength(10)
   })

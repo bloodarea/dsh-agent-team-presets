@@ -37,6 +37,7 @@ import { hasTeamApplicationMarker, isSessionRoot, TeamExecutionMonitor, teammate
 import { membershipOf } from './team-runtime.ts'
 import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import { registerPresetTools } from './preset-tools.ts'
+import { teamModeAdmitsTools } from './team-mode.ts'
 import { CAPTAIN_ROLE, TeamSkills, resolveSkillRoot, roleOfMember } from './team-skills/index.ts'
 import type { AgentSkillSync } from './team-skills/index.ts'
 import { TeamSkillService } from './team-skills/service.ts'
@@ -955,19 +956,39 @@ export function apply(ctx: Context, config: Config): void {
     const selection = config.selections.get().find(row => row.sessionId === agent.session.id)
     const selectedId = selection?.teamId
     const selectedRole = selectedRoleId(selection)
-    // The preset tools are the discovery path, not a Team capability: a user can
-    // ask the captain to adjust "the Team preset" before this Session selects
-    // one, and the captain must be able to read the configured Teams and ask
-    // which one. They therefore belong to every Session root, exactly as before
-    // any Team is selected.
-    if (!presetTools.has(agent)) {
-      presetTools.set(agent, registerPresetTools(ctx, agent, config, NAMESPACE, root => applications.get(root)?.teamId))
-    }
-    // The library is managed by the user through the captain, on the Session root
-    // only: a teammate able to grant itself a skill would defeat the per-Agent
-    // isolation the subsystem exists for.
-    if (!skillTools.has(agent)) {
-      skillTools.set(agent, registerTeamSkillTools(ctx, agent, skillToolDeps))
+    // The seven Team-themed tools follow the Session's Team mode, exactly as the
+    // official team_task_* tools do: with Team mode off there is no Team, no
+    // selected role and no library to manage, and the composer offers no Team
+    // control either. Registration is what carries that decision, so the two
+    // states are "installed" and "not installed" — never "registered but
+    // unreadable", which is what a step-time `when` condition would produce for
+    // the quarantine guard, the capability preflight and member routing.
+    // A deployment that composes no Agent Teams service publishes no projection.
+    // Reading that absence through `ctx.get` is the only safe way to ask: the
+    // injected property throws when the service is missing, and an unknown mode
+    // must keep the tools exactly as they were.
+    let projections: unknown
+    try { projections = ctx.get('sessionProjections') } catch { projections = undefined }
+    const teamToolsAdmitted = teamModeAdmitsTools(projections, agent)
+    if (!teamToolsAdmitted) {
+      presetTools.get(agent)?.()
+      presetTools.delete(agent)
+      skillTools.get(agent)?.()
+      skillTools.delete(agent)
+    } else {
+      // The preset tools are the discovery path, not a Team capability: a user can
+      // ask the captain to adjust "the Team preset" before this Session selects
+      // one, and the captain must be able to read the configured Teams and ask
+      // which one. They therefore belong to every admitted Session root.
+      if (!presetTools.has(agent)) {
+        presetTools.set(agent, registerPresetTools(ctx, agent, config, NAMESPACE, root => applications.get(root)?.teamId))
+      }
+      // The library is managed by the user through the captain, on the Session root
+      // only: a teammate able to grant itself a skill would defeat the per-Agent
+      // isolation the subsystem exists for.
+      if (!skillTools.has(agent)) {
+        skillTools.set(agent, registerTeamSkillTools(ctx, agent, skillToolDeps))
+      }
     }
     // The Team Skill library is managed by the user through the captain, on the
     // Session root only: a teammate able to grant itself a skill would defeat the
@@ -1341,6 +1362,16 @@ export function apply(ctx: Context, config: Config): void {
   // instead of through `agent/status`. The phase is read on the next microtask,
   // so the projection has folded the append this listener just saw, and several
   // settlements in one append batch cost one read.
+  // The Team mode itself is a Session event, so a Session that turns Agent Teams
+  // on or off mid-life gains or loses the Team-themed tools at that commit — the
+  // same edge the official team_task_* tools follow. The mode is read from the
+  // projection, which has folded this append by the next microtask.
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'team/mode') return
+    const agent = ctx.agents.get(session.id)
+    if (agent === undefined || !isSessionRoot(agent)) return
+    queueMicrotask(() => { if (!disposed) reconcile(agent) })
+  })
   ctx.on('session/event', (session, event) => {
     if (event.type !== 'subagent/catalog') return
     const agent = ctx.agents.get(session.id)

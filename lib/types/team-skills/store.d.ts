@@ -43,6 +43,17 @@ export declare class TeamSkillStore {
     private migrateLayout;
     list(): readonly TeamSkillAsset[];
     get(assetId: string): TeamSkillAsset | undefined;
+    /**
+     * Resolve one skill by its name rather than by asset identity.
+     *
+     * Several assets may legitimately share a name: the shipped copy, a local
+     * override of it, and a skill the user imported under the same name. The
+     * shipped copy wins, because a name denotes the skill the plugin ships — a
+     * user's own copy must never shadow it for a caller that only said the name.
+     * Callers that know which copy they mean pass the asset id instead.
+     * @param skillId - kebab-case skill name.
+     * @returns the shipped copy when it exists, else the best local one.
+     */
     bySkillId(skillId: string): TeamSkillAsset | undefined;
     /** Commit all nested store mutations once; failures restore memory and version folders. */
     transaction<T>(operation: () => Promise<T>): Promise<T>;

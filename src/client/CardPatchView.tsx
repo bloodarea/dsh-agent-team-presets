@@ -132,6 +132,26 @@ function versionsOf(target: CardPatchTargetView): string {
 }
 
 /**
+ * The reason one row cannot be acted on.
+ *
+ * The Host states every refusal in English. The one an operator has to act on —
+ * an installed upstream version this build predates — is restated here in the
+ * reader's own language with both versions named, because "which one do I
+ * update" is the only question that state raises, and reading it off two fields
+ * is work the row can do itself. Every other refusal keeps the Host's sentence:
+ * this view has nothing to add to those.
+ * @param target - the row.
+ * @param t - the page's copy reader.
+ * @returns the sentence to show, or undefined when the row has no reason to give.
+ */
+function reasonOf(target: CardPatchTargetView, t: Translate): string | undefined {
+  if (target.state !== 'unsupported') return target.detail
+  return t('patchUnsupportedReason')
+    .replace('{installed}', target.installedVersion ?? '—')
+    .replace('{supported}', target.supportedVersion)
+}
+
+/**
  * Render one target with its state and the action that state allows.
  * @param props - the row facts and the action callback.
  * @returns the row.
@@ -160,7 +180,7 @@ function Row({ target, live, busy, phase, t, onAct }: RowProps) {
         <dt>{t('patchSource')}</dt>
         <dd className={css.source}>{target.source}</dd>
       </dl>
-      {target.detail === undefined ? null : <p className={css.detail}>{target.detail}</p>}
+      {reasonOf(target, t) === undefined ? null : <p className={css.detail}>{reasonOf(target, t)}</p>}
       {busy && phase !== undefined ? (
         <p className={css.progress} role="status">
           {/* The same loader the plugin manager shows while it installs a plugin. */}

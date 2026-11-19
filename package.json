@@ -1,7 +1,7 @@
 {
   "name": "dsh-agent-team-presets",
   "description": "Reusable Agent Team presets for DeepSeek Harness: a captain plus members with their own prompt, model, reasoning effort, and tools.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "keywords": [
     "agent-presets",
     "agent-teams",
@@ -163,6 +163,22 @@
     "assets/card-patches",
     "LICENSE",
     "NOTICE",
-    "README.md"
+    "README.md",
+    "docs/index.md",
+    "docs/index.zh.md",
+    "docs/builtin-teams.md",
+    "docs/builtin-teams.zh.md",
+    "docs/builtin-team-skills.md",
+    "docs/builtin-team-skills.zh.md",
+    "docs/guide/install.md",
+    "docs/guide/install.zh.md",
+    "docs/guide/using-teams.md",
+    "docs/guide/using-teams.zh.md",
+    "docs/guide/team-skills.md",
+    "docs/guide/team-skills.zh.md",
+    "docs/guide/integrations.md",
+    "docs/guide/integrations.zh.md",
+    "docs/reference",
+    "docs/developer"
   ]
 }

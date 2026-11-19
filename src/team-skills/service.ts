@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { buildSkillPackage, decodeImportFiles } from './import.ts'
-import { CAPTAIN_ROLE, TeamSkillManager } from './manager.ts'
+import { CAPTAIN_ROLE, TeamSkillManager, sanctionedCopy } from './manager.ts'
 import { assertNoSymlinks } from './paths.ts'
 import { inspectSkillDirectory, TeamSkillStore } from './store.ts'
 import type {
@@ -105,12 +105,13 @@ export class TeamSkillService extends TypertRemoteService {
       fileCount: asset.files.length,
       totalBytes: asset.files.reduce((sum, file) => sum + file.size, 0),
       mcpServers: asset.dependencies.mcpServers.map(server => server.serverName),
-      // A name can legitimately exist under several origins (the official copy, a
-      // local override of it, and a user skill that happens to share the name).
-      // They never overwrite each other, so the page states the coexistence
-      // instead of pretending one won.
+      // A name can legitimately exist under several origins, but two of them are
+      // the SAME skill: the shipped copy and an override derived from it. That
+      // pair is a sanctioned copy, not a clash, and reporting it made a healthy
+      // library look broken. Anything else sharing the name is a real clash the
+      // page has to state, because nothing overwrites anything.
       clashesWith: this.config.store.list()
-        .filter(other => other.id !== asset.id && other.skillId === asset.skillId)
+        .filter(other => other.id !== asset.id && other.skillId === asset.skillId && !sanctionedCopy(asset, other))
         .map(other => other.id),
       bindings: this.config.manager.bindingSummaries(assetId),
     }
@@ -387,7 +388,13 @@ export class TeamSkillService extends TypertRemoteService {
     const issue = await this.settle()
     if (issue !== undefined) return { ok: false, reason: 'unavailable', detail: issue }
     try {
-      await this.config.store.resetOverride(assetId)
+      const reset = await this.config.store.resetOverride(assetId)
+      // "Restore to the built-in version" has to put the roles back on the
+      // shipped copy: leaving them on a copy whose content merely equals the
+      // shipped one would keep the default bound to the user's own asset.
+      if (reset.officialSkillId !== undefined) {
+        await this.config.manager.replaceAssetBindings(assetId, `builtin:${reset.officialSkillId}`)
+      }
     } catch (error: unknown) {
       return { ok: false, reason: 'reset-refused', detail: String(error) }
     }
@@ -469,7 +476,13 @@ export class TeamSkillService extends TypertRemoteService {
   async restoreBuiltinBindings(teamIds?: string[]): Promise<TeamSkillLibraryView> {
     if (await this.settle() !== undefined) return await this.library()
     try { await this.config.manager.restoreBuiltinBindings(teamIds) }
-    catch (error) { return { ...await this.library(), issue: String(error) } }
+    catch (error) {
+      // A swallowed error here reads on the page as "nothing happened", which is
+      // indistinguishable from "there was nothing to restore". Log it, and keep
+      // returning the issue so the page can name the failure too.
+      this.ctx.logger.warn('agent-team-presets: restoring built-in Team Skill bindings failed: %s', String(error))
+      return { ...await this.library(), issue: String(error) }
+    }
     this.config.resync()
     return this.library()
   }

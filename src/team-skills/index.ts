@@ -53,16 +53,35 @@ export interface AgentSkillSync {
   readonly assigned: number | undefined
 }
 
-/** The skills the package ships under `assets/skills`. */
+/**
+ * The skills the package ships under `assets/skills`.
+ *
+ * The engineering workflow skills are bound to a role by `team-catalog.ts`; the
+ * three professional-role workflows (`frontend-engineering-workflow`,
+ * `backend-architecture-workflow`, `independent-code-review-workflow`) are the
+ * progressive-loading entry points of the UI frontend engineer, the backend
+ * architect, and the independent reviewer, whose detailed methods live in each
+ * skill's `references/` folder; `grilling` and `research` are method skills the
+ * work-mode Teams bind instead.
+ */
 export const OFFICIAL_SKILL_IDS = [
+  'agent-leader-communication',
+  'leader-medium-task-workflow',
+  'leader-long-task-orchestration',
+  'agent-subagent-orchestration',
+  'fullstack-advisor',
+  'executor-short-task-workflow',
   'github-repository-presentation',
   'git-release-hygiene',
+  'frontend-engineering-workflow',
+  'backend-architecture-workflow',
+  'independent-code-review-workflow',
   'grilling',
   'research',
 ] as const
 
 /** Version stamped on the shipped assets; bumped when the packaged copies change. */
-export const OFFICIAL_SKILL_VERSION = '1'
+export const OFFICIAL_SKILL_VERSION = '5'
 
 /**
  * Resolve the private Team Skill root.

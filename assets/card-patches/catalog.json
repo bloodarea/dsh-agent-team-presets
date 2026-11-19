@@ -20,6 +20,26 @@
       "service": "contextAgentCardBadges",
       "pristineSha256": "120a8d30ae6bca61a3c61e682c99d5a0472b2b495d277d644721fd9ce6e6fa88",
       "patchedSha256": "8e36a42625b02b560d204bb3eb6dd01ccbdf88b3088f48f9428758d8d99f4f29"
+    },
+    {
+      "id": "dsh-context",
+      "packageName": "dsh-context",
+      "version": "0.85.0",
+      "source": "bowenliang123/dsh-context@2ddd31c488228c5b261e063df5858b1e062798bc",
+      "asset": "dsh-context-0.85.0.client.js.gz",
+      "service": "contextAgentCardBadges",
+      "pristineSha256": "874e58f442d61e55aea949779d2c2f34d6c6f7cf7bbc874ee42eb570f0c542e8",
+      "patchedSha256": "52e555f7bd1f36b90c9ca403b9dc93c3c3b8b7a68b0960ef98f1a40a0a293bff"
+    },
+    {
+      "id": "dsh-context",
+      "packageName": "dsh-context",
+      "version": "0.85.1",
+      "source": "bowenliang123/dsh-context@8b4fddd59d386d69611902d85d805e352a80aee6",
+      "asset": "dsh-context-0.85.1.client.js.gz",
+      "service": "contextAgentCardBadges",
+      "pristineSha256": "4f87bfd9a080d1d688a55b8e008dae4313c625edc479b0310685d0bd746324e1",
+      "patchedSha256": "efdff232dc5c9b2768f262cd3f9ed8b7604e9168190facc6770155fcbc94c954"
     }
   ]
 }

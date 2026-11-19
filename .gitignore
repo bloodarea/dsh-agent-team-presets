@@ -5,14 +5,27 @@ node_modules/
 
 # Internal working material: outdated release notes, acceptance/verification
 # reports, evidence, audits and development guides live in /docs/internal and
-# are never published. Public usage guidance belongs in the READMEs; publish a
-# reviewed, sanitized copy elsewhere when needed.
+# are never published. Public guidance lives in the READMEs and in the reviewed
+# documents under /docs — the documentation index, the guide, the reference and
+# developer pages, and the built-in Teams and Team Skills references — which are
+# exceptions below and ship with the package. Everything else under /docs is
+# internal.
 /docs/internal/
 /docs/**/*.md
 /docs/**/*.html
-# ...except the public beginner guide, which ships with the package.
+# ...except the reviewed public documents, which do ship.
 !/docs/guide/
 !/docs/guide/*.md
+!/docs/reference/
+!/docs/reference/*.md
+!/docs/developer/
+!/docs/developer/*.md
+!/docs/index.md
+!/docs/index.zh.md
+!/docs/builtin-teams.md
+!/docs/builtin-teams.zh.md
+!/docs/builtin-team-skills.md
+!/docs/builtin-team-skills.zh.md
 /CHANGELOG.md
 /contrib/awesome-dsh-plugin/PR.md
 

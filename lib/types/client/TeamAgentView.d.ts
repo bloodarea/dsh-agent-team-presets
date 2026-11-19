@@ -5,7 +5,7 @@
 import type { TeamSkillsController } from './team-skills-controller.ts';
 import type { ProviderChoice } from './team-presets-controller.ts';
 import type { TeamAgentPreset, TeamCaptainPreset, ToolChoice } from '../types.ts';
-import type { TeamPresetsLocaleKey } from './locales.ts';
+import { type TeamPresetsLocaleKey } from './locales.ts';
 /** Props of one agent's page. */
 export interface TeamAgentViewProps {
     /** The agent slot being edited. */

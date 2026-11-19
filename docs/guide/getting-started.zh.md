@@ -118,7 +118,7 @@
 这里是一个**插件私有的技能库**，和 DSH 全局技能是两套东西：
 
 - **导入文件夹 / 扫描导入目录 / 新建技能**：把 SKILL.md 连同 scripts、references 一起收进来；
-- **插件内置 / 自定义**：四个随包技能（`git-release-hygiene`、`github-repository-presentation`、`grilling`、`research`）标着「插件内置」，可以复制成自定义版本再改；
+- **插件内置 / 自定义**：十个随包技能（队长、顾问与执行者工作流，加上 `git-release-hygiene`、`github-repository-presentation`、`grilling`、`research`）标着「插件内置」，可以复制成自定义版本再改；
 - 点任一行查看内容、依赖检查与**绑定关系**。
 
 关键规则：技能**只有被分配的那个角色**才能看到。分配入口在队员页的「专属技能」，不在这个列表里 —— 这个列表只管库里有什么。

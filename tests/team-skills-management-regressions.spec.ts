@@ -165,16 +165,25 @@ describe('Team Skill management regressions', () => {
     expect(manager.assetsFor(preset.id, role)).toHaveLength(1)
   })
 
-  it('automatically binds official skills to executor on fresh install or upgrade for engineering presets', async () => {
+  it('binds the professional-role workflows and keeps the executor delivery pair', async () => {
     const { store, manager, setTeams } = await fixture()
     const fullstack = builtinTeamDefinition(BUILTIN_TEAMS.find(entry => entry.id === 'builtin-fullstack')!)
     setTeams([fullstack])
     await install(store, 'builtin:git-release-hygiene', 'builtin')
     await install(store, 'builtin:github-repository-presentation', 'builtin')
+    await install(store, 'builtin:frontend-engineering-workflow', 'builtin')
+    await install(store, 'builtin:backend-architecture-workflow', 'builtin')
+    await install(store, 'builtin:independent-code-review-workflow', 'builtin')
     await manager.reconcile()
-    const executorRole = fullstack.members.find(member => member.name === 'executor')!.id!
-    const bound = manager.assetsFor(fullstack.id, executorRole).map(a => a.skillId).sort()
-    expect(bound).toEqual(['git-release-hygiene', 'github-repository-presentation'])
+    const role = (name: string) => fullstack.members.find(member => member.name === name)!.id!
+    expect(manager.assetsFor(fullstack.id, role('ui-designer')).map(asset => asset.skillId)).toEqual(['frontend-engineering-workflow'])
+    expect(manager.assetsFor(fullstack.id, role('backend-architect')).map(asset => asset.skillId)).toEqual(['backend-architecture-workflow'])
+    expect(manager.assetsFor(fullstack.id, role('reviewer')).map(asset => asset.skillId).sort()).toEqual(['independent-code-review-workflow'])
+    // The executor keeps its delivery pair: routine implementation, debugging and
+    // testing stay its work, and the specialist roles add their own workflows
+    // beside it rather than replacing it.
+    expect(manager.assetsFor(fullstack.id, role('executor')).map(asset => asset.skillId).sort())
+      .toEqual(['git-release-hygiene', 'github-repository-presentation'])
   })
 
   it('seeds the method skills only on the discovery and research roles that own them', async () => {
@@ -253,18 +262,19 @@ describe('Team Skill management regressions', () => {
     expect(manager.list().find(row => row.teamId === preset.id)).toMatchObject({ roleId: CAPTAIN_ROLE, captain: true })
   })
 
-  it('binds a default to the override that already existed before the default was seeded', async () => {
-    // `overrideSkill` only rewrites the bindings present when the override is
-    // created. An override made first and a default seeded afterwards must
-    // still end up on the user's editable copy, or that role silently receives
-    // the built-in body and every edit the user made is ignored.
+  it('binds a default to the shipped copy even when a same-named copy exists', async () => {
+    // A declaration names the skill the plugin ships. It must not resolve onto
+    // whatever local copy happens to share that name: doing so made the default
+    // follow the user's own asset, so deleting or restoring that copy could not
+    // return the role to the shipped skill (and a same-named custom skill could
+    // capture a default it never asked for).
     const { store, manager, setTeams } = await fixture()
     const discovery = builtinTeamDefinition(BUILTIN_TEAMS.find(entry => entry.id === 'builtin-discovery')!)
     setTeams([discovery])
     await install(store, 'builtin:grilling', 'builtin')
-    const override = await store.createOverride('grilling', 'override:grilling')
+    await store.createOverride('grilling', 'override:grilling')
     await manager.reconcile()
-    expect(manager.assetsFor(discovery.id, CAPTAIN_ROLE).map(asset => asset.id)).toEqual([override.id])
+    expect(manager.assetsFor(discovery.id, CAPTAIN_ROLE).map(asset => asset.id)).toEqual(['builtin:grilling'])
   })
 
   it('keeps an explicit unbind unrevived after an override appears', async () => {
@@ -299,9 +309,11 @@ describe('Team Skill management regressions', () => {
     expect(foreign.officialSkillId).toBe('research')
   })
 
-  it('moves a role from the shipped copy to an override created after the default was seeded', async () => {
-    // The marker records that the default was OFFERED, not which copy it landed
-    // on, so it must not pin a role to a body the user has since replaced.
+  it('moves a role onto a copy when the copy is created through the service path', async () => {
+    // Creating a copy switches the roles that already hold the shipped skill:
+    // `replaceBuiltinBindings` is what does it, at creation time. Reconcile does
+    // not, or a later "restore to the built-in version" would be undone by the
+    // next pass.
     const { store, manager, setTeams } = await fixture()
     const discovery = builtinTeamDefinition(BUILTIN_TEAMS.find(entry => entry.id === 'builtin-discovery')!)
     setTeams([discovery])
@@ -309,6 +321,7 @@ describe('Team Skill management regressions', () => {
     await manager.reconcile()
     expect(manager.assetsFor(discovery.id, CAPTAIN_ROLE).map(asset => asset.id)).toEqual(['builtin:grilling'])
     await store.createOverride('grilling', 'override:grilling')
+    expect(await manager.replaceBuiltinBindings('grilling', 'override:grilling')).toBe(1)
     await manager.reconcile()
     expect(manager.assetsFor(discovery.id, CAPTAIN_ROLE).map(asset => asset.id)).toEqual(['override:grilling'])
   })

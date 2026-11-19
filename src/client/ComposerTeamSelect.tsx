@@ -22,7 +22,7 @@ import { groupTeams, matchesCategoryFilter } from './team-grouping.ts'
 import type { TeamAgentPreset, TeamPreset, TeamSeries } from '../types.ts'
 import type { ProviderChoice, TeamPresetsInjected } from './team-presets-controller.ts'
 import type { TeamSkillsState } from './team-skills-controller.ts'
-import { FORM_ISSUE_KEYS, selectionFailureText } from './locales.ts'
+import { FORM_ISSUE_KEYS, selectionFailureText, skillLabel } from './locales.ts'
 import css from './ComposerTeamSelect.module.css'
 
 /** The empty library state a build without a Team Skill service reports. */
@@ -53,6 +53,15 @@ const PANEL_GRACE_MS = 140
 const PANEL_GAP_PX = 8
 /** Space kept between the panel and the viewport edge before it flips sides. */
 const PANEL_VIEWPORT_MARGIN_PX = 8
+
+/**
+ * Role identity a binding uses for the captain slot.
+ *
+ * The shipped captain carries its own workflow skills, so the panel reads that
+ * slot too. It mirrors the Host's own sentinel rather than a member's id: the
+ * captain slot is not a member and is addressed by this name in every binding.
+ */
+const CAPTAIN_ROLE = 'captain'
 
 /** Complete props derived from the composer slot and the shared Team state. */
 export type ComposerTeamSelectProps =
@@ -169,10 +178,14 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
   const [categoryId, setCategoryId] = useState('')
 
   /**
-   * Team Skills bound to each member role of the Team whose panel is open.
+   * Team Skills bound to each role of the Team whose panel is open, keyed by the
+   * role a selection addresses: the captain slot under {@link CAPTAIN_ROLE}, and
+   * every member under its own id.
    *
    * Only the roles' own bindings count: a captain's skills are not a member's,
-   * and a skill the library does not list has nothing to show.
+   * and a skill the library does not list has nothing to show. The captain is
+   * read alongside the members because a shipped captain carries workflow skills
+   * of its own, and the row that starts a captain conversation has to say so.
    */
   const skillNamesByRole = useMemo(() => {
     const byRole = new Map<string, string[]>()
@@ -180,14 +193,19 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
     if (hoverTeamId === undefined) return byRole
     for (const asset of assets) {
       for (const binding of asset.bindings) {
-        if (binding.teamId !== hoverTeamId || binding.captain) continue
-        const names = byRole.get(binding.roleId) ?? []
+        if (binding.teamId !== hoverTeamId) continue
+        const bindingRoleId = binding.captain ? CAPTAIN_ROLE : binding.roleId
+        const names = byRole.get(bindingRoleId) ?? []
         if (!names.includes(asset.skillId)) names.push(asset.skillId)
-        byRole.set(binding.roleId, names)
+        byRole.set(bindingRoleId, names)
       }
     }
     return byRole
   }, [skillsState.library, hoverTeamId])
+
+  // The captain row opens a captain conversation, so it states the captain's own
+  // bindings exactly the way a member row states that member's.
+  const captainSkillIds = hoverTeamId === undefined ? [] : skillNamesByRole.get(CAPTAIN_ROLE) ?? []
 
   /** Cancel a pending panel close, so a hover that continues keeps the panel up. */
   const cancelHoverClose = (): void => {
@@ -503,6 +521,13 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
                   </span>
                   <span className={css.panelRoute}>{t('composePanelSessionModel')}</span>
                   {hoverTeam.captain.description.trim() === '' ? null : <span className={css.panelDesc}>{hoverTeam.captain.description}</span>}
+                  {captainSkillIds.length === 0 ? null : (
+                    <span className={css.panelSkillTags}>
+                      {captainSkillIds.map(name => (
+                        <span key={name} className={css.panelSkillTag} style={skillTagStyle(name)} title={name}>{skillLabel(name, t)}</span>
+                      ))}
+                    </span>
+                  )}
                 </button>
                 <div className={css.panelSection}>{t('composePanelMembers')}</div>
                 {hoverTeam.members.length === 0
@@ -542,7 +567,7 @@ export function ComposerTeamSelect(props: ComposerTeamSelectProps) {
                         {boundNames.length === 0 ? null : (
                           <span className={css.panelSkillTags}>
                             {boundNames.map(name => (
-                              <span key={name} className={css.panelSkillTag} style={skillTagStyle(name)}>{name}</span>
+                              <span key={name} className={css.panelSkillTag} style={skillTagStyle(name)} title={name}>{skillLabel(name, t)}</span>
                             ))}
                           </span>
                         )}

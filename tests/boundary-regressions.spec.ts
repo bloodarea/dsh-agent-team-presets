@@ -566,7 +566,7 @@ describe('complete deployment persona', () => {
     await fiber.dispose()
   }, 20000)
 
-  it('leaves an unselected Session completely untouched', async () => {
+  it('leaves an unselected Session untouched, including its Team-themed tools', async () => {
     const h = await presentationStack(await base(), 'native', false, false)
     const config = {
       teams: { get: () => [] as TeamPreset[] },
@@ -578,7 +578,41 @@ describe('complete deployment persona', () => {
     const fiber = await h.ctx.plugin(Object.assign((owner: Context) => apply(owner, config), { inject }))
     await settlePlugin()
     expect((await call(h.ctx, h.agent, 'read')).isError).toBe(false)
+    // This Session has Agent Teams off, so the seven Team-themed tools are not
+    // installed at all — the same rule the official team_task_* tools follow and
+    // the same fact the composer hides its Team control on.
+    expect(h.ctx.tools.get('get_team_preset', h.agent)).toBeUndefined()
+    expect(h.ctx.tools.get('update_team_preset', h.agent)).toBeUndefined()
+    expect(h.ctx.tools.get('list_team_skills', h.agent)).toBeUndefined()
+    await fiber.dispose()
+  }, 20000)
+
+  it('installs the Team-themed tools once the Session turns Agent Teams on', async () => {
+    const h = await presentationStack(await base(), 'native', false, false)
+    const config = {
+      teams: { get: () => [] as TeamPreset[] },
+      selections: { get: () => [] as { sessionId: string; teamId: string }[] },
+      freshProvider: 'spawn',
+      seededDefaults: { get: () => [...BUILTIN_TEAM_IDS] },
+      forkProvider: 'fork',
+    }
+    const fiber = await h.ctx.plugin(Object.assign((owner: Context) => apply(owner, config), { inject }))
+    await settlePlugin()
+    expect(h.ctx.tools.get('get_team_preset', h.agent)).toBeUndefined()
+
+    // Turning the mode on appends the event the projection folds; the plugin's
+    // own listener then adopts the Session again and the tools appear. The event
+    // is appended directly because `setEnabled` also flushes the session through
+    // the Host's native store, which this test stack does not link.
+    h.agent.session.append('team/mode', { enabled: true })
+    await settlePlugin()
     expect(h.ctx.tools.get('get_team_preset', h.agent)).toBeDefined()
+    expect(h.ctx.tools.get('list_team_skills', h.agent)).toBeDefined()
+
+    // …and turning it back off withdraws them again.
+    h.agent.session.append('team/mode', { enabled: false })
+    await settlePlugin()
+    expect(h.ctx.tools.get('get_team_preset', h.agent)).toBeUndefined()
     await fiber.dispose()
   }, 20000)
 })

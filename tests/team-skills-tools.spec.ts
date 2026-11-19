@@ -163,7 +163,11 @@ describe('assignment blockers', () => {
 })
 
 describe('name clashes between origins', () => {
-  it('reports both assets and never merges them', async () => {
+  it('makes one name mean one asset, so a binding can never be ambiguous', async () => {
+    // The English name is the identity a binding, a preset document, and the
+    // model all address. Two assets sharing it would let "bind this skill" land
+    // on whichever copy happened to sort first, so the store refuses the second
+    // install instead of merging or shadowing.
     const root = await mkdtemp(join(tmpdir(), 'team-skill-clash-'))
     roots.push(root)
     const store = new TeamSkillStore(root)
@@ -175,16 +179,11 @@ describe('name clashes between origins', () => {
     const custom = buildSkillPackage(md('git-release-hygiene'))
     if (!builtin.ok || !custom.ok) throw new Error('fixture')
     await store.install(builtin.skill, { id: 'builtin:git-release-hygiene', origin: 'builtin', version: '1' })
-    await store.install(custom.skill, { id: 'custom:git-release-hygiene', origin: 'custom', version: '1' })
-    const sameName = store.list().filter(asset => asset.skillId === 'git-release-hygiene')
-    expect(sameName.map(asset => asset.id).sort()).toEqual(['builtin:git-release-hygiene', 'custom:git-release-hygiene'])
-    // Deleting the user copy leaves the shipped one intact: no silent overwrite
-    // in either direction.
-    const manager = new TeamSkillManager(store, root, {
-      teams: () => [], activeAssetIds: () => new Set(), activeSessions: () => [],
-    })
-    await manager.open()
-    expect((await manager.remove('custom:git-release-hygiene')).ok).toBe(true)
-    expect(store.get('builtin:git-release-hygiene')).toBeDefined()
+    await expect(store.install(custom.skill, { id: 'custom:git-release-hygiene', origin: 'custom', version: '1' }))
+      .rejects.toThrow(/already belongs to builtin:git-release-hygiene/u)
+    expect(store.list().filter(asset => asset.skillId === 'git-release-hygiene').map(asset => asset.id))
+      .toEqual(['builtin:git-release-hygiene'])
+    // The shipped copy is untouched: a refused install writes nothing.
+    expect(store.get('builtin:git-release-hygiene')?.version).toBe('1')
   })
 })

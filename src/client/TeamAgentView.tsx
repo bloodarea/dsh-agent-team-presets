@@ -12,7 +12,7 @@ import { FieldPicker } from './FieldPicker.tsx'
 import type { PickerChoice } from './FieldPicker.tsx'
 import { IMPLICIT_TOOLS, toolMode } from '../presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, ToolChoice } from '../types.ts'
-import type { TeamPresetsLocaleKey } from './locales.ts'
+import { SKILL_CATEGORIES, SKILL_CATEGORY_LABELS, skillCategoryOf, skillLabel, type SkillCategoryId, type TeamPresetsLocaleKey } from './locales.ts'
 import css from './TeamPresetsSection.module.css'
 
 /** Colors offered for one agent's accent mark. */
@@ -93,6 +93,10 @@ function SkillAssignmentGrid(props: { controller: TeamSkillsController; teamId: 
   }, [props.controller])
   const assets = state.library?.assets ?? []
   const held = new Set(assets.filter(asset => asset.bindings.some(row => row.teamId === props.teamId && row.roleId === props.roleId)).map(asset => asset.id))
+  const [category, setCategory] = useState<'all' | SkillCategoryId>('all')
+  // The filter narrows what can be assigned here; it never changes what this role
+  // already holds, so the heading counts every installed skill, not the visible one.
+  const visible = category === 'all' ? assets : assets.filter(asset => skillCategoryOf(asset) === category)
   if (state.status === 'unavailable') return null
   return (
     <>
@@ -103,25 +107,40 @@ function SkillAssignmentGrid(props: { controller: TeamSkillsController; teamId: 
       <div className={css.panel}>
         <p className={css.muted} style={{ marginTop: 0 }}>{props.t('skillsAssignHint')}</p>
         {assets.length === 0 ? <p className={css.muted}>{props.t('skillsAssignEmpty')}</p> : (
-          <div className={css.skillGrid}>
-            {assets.map(asset => (
-              <label key={asset.id} className={css.skillCard}>
-                <span className={css.skillCardTop}>
-                  <span className={css.skillCardName}>{asset.skillId}</span>
-                  <input
-                    type="checkbox"
-                    checked={held.has(asset.id)}
-                    onChange={(event) => {
-                      if (event.target.checked) void props.controller.assignSkill(props.teamId, props.roleId, asset.id)
-                      else void props.controller.unassignSkill(props.teamId, props.roleId, asset.id)
-                    }}
-                  />
-                </span>
-                <span className={css.skillCardDesc}>{asset.description}</span>
-                <span className={`${css.skillCardTag} ${css.originTag} ${originToneClass(css, asset.origin)}`}>{originCopy(asset.origin, props.t)}</span>
-              </label>
-            ))}
-          </div>
+          <>
+            <select
+              className={css.select}
+              aria-label={props.t('skillsCategoryAll')}
+              value={category}
+              onChange={(event) => { setCategory(event.target.value as 'all' | SkillCategoryId) }}
+            >
+              <option value="all">{props.t('skillsCategoryAll')}</option>
+              {SKILL_CATEGORIES.map(id => (
+                <option key={id} value={id}>{props.t(SKILL_CATEGORY_LABELS[id])}</option>
+              ))}
+            </select>
+            {visible.length === 0 ? <p className={css.muted}>{props.t('skillsFilterEmpty')}</p> : (
+              <div className={css.skillGrid}>
+                {visible.map(asset => (
+                  <label key={asset.id} className={css.skillCard}>
+                    <span className={css.skillCardTop}>
+                      <span className={css.skillCardName} title={asset.skillId}>{skillLabel(asset.skillId, props.t)}</span>
+                      <input
+                        type="checkbox"
+                        checked={held.has(asset.id)}
+                        onChange={(event) => {
+                          if (event.target.checked) void props.controller.assignSkill(props.teamId, props.roleId, asset.id)
+                          else void props.controller.unassignSkill(props.teamId, props.roleId, asset.id)
+                        }}
+                      />
+                    </span>
+                    <span className={css.skillCardDesc}>{asset.description}</span>
+                    <span className={`${css.skillCardTag} ${css.originTag} ${originToneClass(css, asset.origin)}`}>{originCopy(asset.origin, props.t)}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </>
         )}
         {state.message === undefined ? null : <p className={css.muted}>{state.message}</p>}
       </div>

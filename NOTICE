@@ -37,6 +37,58 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Third-party skill documents: methodology references
+=================================================
+
+The following reference documents are DSH adaptations of material from
+brooks-lint, a code-review skill set grounded in twelve classic software
+engineering books:
+
+  hyhmrright, "brooks-lint"
+  https://github.com/hyhmrright/brooks-lint
+  commit 5beb35b040e3de97e54fa9e386d7e42d15c295c2 (vendored via
+  /home/dev/dsh-brooks-lint-dsh 0.1.0)
+
+Adapted files:
+
+  - assets/skills/independent-code-review-workflow/references/decay-risks.md
+  - assets/skills/independent-code-review-workflow/references/test-quality-review.md
+  - assets/skills/backend-architecture-workflow/references/architecture-audit.md
+  - assets/skills/backend-architecture-workflow/references/architecture-decay-risks.md
+  - assets/skills/fullstack-advisor/references/brooks-principles.md
+
+These files are Chinese rewrites, not copies. They keep the upstream
+risk taxonomy (R1-R6 and T1-T6), the four-part finding structure, and the
+"what not to flag" guards; they drop the upstream runtime protocol
+(.brooks-lint.yaml configuration, health scoring, history tracking, --fix
+and full-sweep auto-remediation, and slash-command integration), which has
+no counterpart in this plugin. The book attributions the upstream material
+carries are kept as method provenance.
+
+Upstream material is licensed under the MIT License, reproduced below.
+
+MIT License
+
+Copyright (c) 2025 hyhmrright
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 Third-party browser bundles (optional card-patch assets)
 =======================================================
 
@@ -48,10 +100,12 @@ plugin. They are never installed automatically: the settings page's
 confirms it, keeps the original as a backup, and can restore it. Upstream
 license texts are shipped beside them under `assets/card-patches/licenses/`.
 
-1. dsh-context 0.84.0 and 0.84.1
+1. dsh-context 0.84.0, 0.84.1, 0.85.0 and 0.85.1
    https://github.com/bowenliang123/dsh-context
-   revisions aa98b1231d5f0f8e833391f198e65e14e73b3323 (0.84.0) and
-   d81325ec6bab9dae9bf83e7a866ac74119504e18 (0.84.1)
+   revisions aa98b1231d5f0f8e833391f198e65e14e73b3323 (0.84.0),
+   d81325ec6bab9dae9bf83e7a866ac74119504e18 (0.84.1),
+   2ddd31c488228c5b261e063df5858b1e062798bc (0.85.0) and
+   8b4fddd59d386d69611902d85d805e352a80aee6 (0.85.1)
    Licensed under the Apache License, Version 2.0 (see
    assets/card-patches/licenses/dsh-context-LICENSE).
    Changes: a new client module registers an optional `contextAgentCardBadges`

@@ -1,7 +1,7 @@
 /** Locale bundles for the Agent Team presets page and composer control. */
 
 import type { TeamPresetImportFailure } from '../preset-transfer.ts'
-import type { TeamExecutionState } from '../types.ts'
+import type { TeamExecutionState, TeamSkillAssetView } from '../types.ts'
 import type { DefaultsRestore, TeamPresetsFormIssue, TeamSelectionFailure } from './team-presets-controller.ts'
 
 /** Locale keys this plugin renders. */
@@ -69,6 +69,7 @@ export type TeamPresetsLocaleKey =
   | 'tabLinks'
   | 'patchIntro' | 'patchUnavailable'
   | 'patchStateAbsent' | 'patchStateUnsupported' | 'patchStatePristine' | 'patchStatePatched' | 'patchStateForeign'
+  | 'patchUnsupportedReason'
   | 'patchActive' | 'patchSupported' | 'patchInstalledVersion' | 'patchSource'
   | 'patchPendingHint' | 'patchApplying' | 'patchWaiting' | 'patchInstall' | 'patchUninstall' | 'patchWorking'
   | 'patchInstallTitle' | 'patchUninstallTitle' | 'patchInstallBody' | 'patchUninstallBody'
@@ -171,6 +172,25 @@ export type TeamPresetsLocaleKey =
   | 'skillsNewTitle'
   | 'skillsVersion'
   | 'skillsOverrideOn'
+  | 'skillAgentLeaderCommunication'
+  | 'skillLeaderMediumTaskWorkflow'
+  | 'skillLeaderLongTaskOrchestration'
+  | 'skillAgentSubagentOrchestration'
+  | 'skillFullstackAdvisor'
+  | 'skillExecutorShortTaskWorkflow'
+  | 'skillGithubRepositoryPresentation'
+  | 'skillGitReleaseHygiene'
+  | 'skillGrilling'
+  | 'skillResearch'
+  | 'skillFrontendEngineeringWorkflow'
+  | 'skillBackendArchitectureWorkflow'
+  | 'skillIndependentCodeReviewWorkflow'
+  | 'skillsCategoryAll'
+  | 'skillsCategoryWorkflow'
+  | 'skillsCategoryDelivery'
+  | 'skillsCategoryMethod'
+  | 'skillsCategoryCustom'
+  | 'skillsFilterEmpty'
 
 /** Locale namespace owned by this plugin. */
 export const NS = 'settings.agentTeamPresets'
@@ -356,6 +376,7 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   patchUnavailable: 'This session cannot read the integrations state.',
   patchStateAbsent: 'not installed',
   patchStateUnsupported: 'version not supported',
+  patchUnsupportedReason: 'installed {installed}, this build supports up to {supported}',
   patchStatePristine: 'not patched',
   patchStatePatched: 'patched',
   patchStateForeign: 'modified by something else',
@@ -515,6 +536,25 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   skillsAssignHint: 'Checked skills belong to this member only. They are discovered through this Agent scope, never globally.',
   skillsAssignEmpty: 'No team skill is installed yet. Add one on the Team skills page.',
   skillsOverrideOn: 'a local override is active',
+  skillAgentLeaderCommunication: 'agent-leader-communication',
+  skillLeaderMediumTaskWorkflow: 'leader-medium-task-workflow',
+  skillLeaderLongTaskOrchestration: 'leader-long-task-orchestration',
+  skillAgentSubagentOrchestration: 'agent-subagent-orchestration',
+  skillFullstackAdvisor: 'fullstack-advisor',
+  skillExecutorShortTaskWorkflow: 'executor-short-task-workflow',
+  skillGithubRepositoryPresentation: 'github-repository-presentation',
+  skillGitReleaseHygiene: 'git-release-hygiene',
+  skillFrontendEngineeringWorkflow: 'frontend-engineering-workflow',
+  skillBackendArchitectureWorkflow: 'backend-architecture-workflow',
+  skillIndependentCodeReviewWorkflow: 'independent-code-review-workflow',
+  skillGrilling: 'grilling',
+  skillResearch: 'research',
+  skillsCategoryAll: 'All categories',
+  skillsCategoryWorkflow: 'Workflow',
+  skillsCategoryDelivery: 'Delivery',
+  skillsCategoryMethod: 'Method',
+  skillsCategoryCustom: 'Custom',
+  skillsFilterEmpty: 'No skill in this category.',
 }
 
 /** Simplified Chinese copy. */
@@ -698,6 +738,7 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   patchUnavailable: '当前会话无法读取插件联动状态。',
   patchStateAbsent: '未安装',
   patchStateUnsupported: '版本不支持',
+  patchUnsupportedReason: '已安装 {installed}，本版本最高适配 {supported}',
   patchStatePristine: '未打补丁',
   patchStatePatched: '已打补丁',
   patchStateForeign: '已被其他改动修改',
@@ -857,6 +898,118 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   skillsAssignHint: '勾选的技能只属于这名成员，通过该 Agent 的作用域发现，不会全局注册。',
   skillsAssignEmpty: '还没有安装任何团队技能，请先到「团队技能」页添加。',
   skillsOverrideOn: '已启用本地覆盖',
+  skillAgentLeaderCommunication: '队长派发与通信',
+  skillLeaderMediumTaskWorkflow: '中程任务工作流',
+  skillLeaderLongTaskOrchestration: '长程任务编排',
+  skillAgentSubagentOrchestration: '孙代理并行编排',
+  skillFullstackAdvisor: '全栈技术咨询',
+  skillExecutorShortTaskWorkflow: '执行者短程工作流',
+  skillGithubRepositoryPresentation: '仓库展示规范',
+  skillGitReleaseHygiene: 'Git 提交与发布规范',
+  skillFrontendEngineeringWorkflow: '前端工程工作流',
+  skillBackendArchitectureWorkflow: '后端架构工作流',
+  skillIndependentCodeReviewWorkflow: '独立代码审查工作流',
+  skillGrilling: '需求拷问',
+  skillResearch: '一手来源调研',
+  skillsCategoryAll: '全部分类',
+  skillsCategoryWorkflow: '工作流型',
+  skillsCategoryDelivery: '交付型',
+  skillsCategoryMethod: '方法型',
+  skillsCategoryCustom: '自定义',
+  skillsFilterEmpty: '该分类下暂无技能。',
+}
+
+/**
+ * Display names of the shipped Team Skills, keyed by the English skill id.
+ *
+ * The id is the asset's identity on every other surface — the skill catalogue
+ * the model reads, the stored binding, the preset document, and the asset
+ * directory — so the label is presentation only and never reaches the runtime or
+ * the disk. English carries the original id rather than a prose title, so an
+ * English page shows exactly the name every other surface already uses.
+ */
+export const SKILL_LABEL_KEYS: Readonly<Record<string, TeamPresetsLocaleKey>> = {
+  'agent-leader-communication': 'skillAgentLeaderCommunication',
+  'leader-medium-task-workflow': 'skillLeaderMediumTaskWorkflow',
+  'leader-long-task-orchestration': 'skillLeaderLongTaskOrchestration',
+  'agent-subagent-orchestration': 'skillAgentSubagentOrchestration',
+  'fullstack-advisor': 'skillFullstackAdvisor',
+  'executor-short-task-workflow': 'skillExecutorShortTaskWorkflow',
+  'github-repository-presentation': 'skillGithubRepositoryPresentation',
+  'git-release-hygiene': 'skillGitReleaseHygiene',
+  'frontend-engineering-workflow': 'skillFrontendEngineeringWorkflow',
+  'backend-architecture-workflow': 'skillBackendArchitectureWorkflow',
+  'independent-code-review-workflow': 'skillIndependentCodeReviewWorkflow',
+  'grilling': 'skillGrilling',
+  'research': 'skillResearch',
+}
+
+/**
+ * The name one Team Skill is shown under.
+ * @param skillId - the asset's English identity.
+ * @param t - the page's locale reader.
+ * @returns the localized label, or the English id for a skill this build does not ship.
+ */
+export function skillLabel(skillId: string, t: (key: TeamPresetsLocaleKey) => string): string {
+  const key = SKILL_LABEL_KEYS[skillId]
+  return key === undefined ? skillId : t(key)
+}
+
+/**
+ * The filter categories of a Team Skill list, in menu order.
+ *
+ * They describe the kind of work a shipped skill belongs to rather than the role
+ * that happens to hold it, so a skill keeps its category when a Team re-binds it.
+ * Everything this build does not ship — a user's own skill, and a shipped id a
+ * newer release added before this table learned about it — is "custom".
+ */
+export const SKILL_CATEGORIES = ['workflow', 'delivery', 'method', 'custom'] as const
+
+/** One filter category of a Team Skill list. */
+export type SkillCategoryId = (typeof SKILL_CATEGORIES)[number]
+
+/** Locale key of one category's label. */
+export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategoryId, TeamPresetsLocaleKey>> = {
+  workflow: 'skillsCategoryWorkflow',
+  delivery: 'skillsCategoryDelivery',
+  method: 'skillsCategoryMethod',
+  custom: 'skillsCategoryCustom',
+}
+
+/**
+ * The category of every shipped skill, keyed by the English skill id.
+ *
+ * A shipped skill the table does not name falls back to "custom", which is why
+ * the package's own test proves the table covers every shipped id: the fallback
+ * is for a skill this build did not ship, never for one it did.
+ */
+const SHIPPED_SKILL_CATEGORIES: Readonly<Record<string, SkillCategoryId>> = {
+  'agent-leader-communication': 'workflow',
+  'leader-medium-task-workflow': 'workflow',
+  'leader-long-task-orchestration': 'workflow',
+  'agent-subagent-orchestration': 'workflow',
+  'fullstack-advisor': 'workflow',
+  'executor-short-task-workflow': 'workflow',
+  'github-repository-presentation': 'delivery',
+  'git-release-hygiene': 'delivery',
+  'frontend-engineering-workflow': 'workflow',
+  'backend-architecture-workflow': 'workflow',
+  'independent-code-review-workflow': 'workflow',
+  'grilling': 'method',
+  'research': 'method',
+}
+
+/**
+ * The category one asset is filtered under.
+ *
+ * A local override of a shipped skill stays with that skill's category: it is the
+ * same skill, edited. Only a skill the user brought in themselves is "custom".
+ * @param asset - the asset row, as the page received it.
+ * @returns its filter category.
+ */
+export function skillCategoryOf(asset: Pick<TeamSkillAssetView, 'skillId' | 'origin' | 'officialSkillId'>): SkillCategoryId {
+  if (asset.origin === 'custom') return 'custom'
+  return SHIPPED_SKILL_CATEGORIES[asset.officialSkillId ?? asset.skillId] ?? 'custom'
 }
 
 /**

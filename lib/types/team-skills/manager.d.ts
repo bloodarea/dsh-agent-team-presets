@@ -50,6 +50,17 @@ export interface TeamSkillDeleteOutcome {
     readonly warnings: readonly string[];
 }
 /** The Team Skill library plus its role bindings. */
+/**
+ * Whether two assets are the shipped copy and its own editable copy.
+ *
+ * They share a name because they ARE the same skill: the override is the shipped
+ * body with the user's edits. Presenting that pair as a name clash made an
+ * ordinary "I made a local copy" state read as a defect.
+ * @param left - one asset.
+ * @param right - the other asset.
+ * @returns true when one is the shipped copy and the other its override.
+ */
+export declare function sanctionedCopy(left: TeamSkillAsset, right: TeamSkillAsset): boolean;
 export declare class TeamSkillManager {
     private readonly store;
     private bindings;
@@ -132,18 +143,16 @@ export declare class TeamSkillManager {
     reconcile(): Promise<void>;
     private reconcileNow;
     /**
-     * Resolve the asset a catalog default should bind to.
+     * Move every role holding one asset onto another.
      *
-     * The shipped copy is the fallback, and it is the only candidate while no
-     * override exists. When the user has created an editable override of that
-     * shipped skill, the override is what they mean by it: `overrideSkill`
-     * rewrites the bindings that exist at creation time, so a default first
-     * seeded afterwards must resolve to the same copy or the two creation orders
-     * would disagree about which body a role receives.
-     * @param skillId - shipped skill identity the default names.
-     * @returns the asset identity to bind, or undefined when neither copy exists.
+     * Used by "restore to the built-in version": the roles reading a local copy
+     * have to read the shipped one again, or the restore would only change bytes
+     * nobody is bound to.
+     * @param fromAssetId - asset the roles hold now.
+     * @param toAssetId - asset they should hold.
+     * @returns the number of bindings moved.
      */
-    private seededAssetId;
+    replaceAssetBindings(fromAssetId: string, toAssetId: string): Promise<number>;
     private mutate;
     /**
      * Find text mentions of one skill name inside another asset.
@@ -206,7 +215,7 @@ export declare class TeamSkillManager {
      * and reconcile to restore the official default bindings.
      * @param teamIds - optional list of team identities to restore; defaults to all built-in teams.
      */
-    restoreBuiltinBindings(teamIds?: readonly string[]): Promise<void>;
+    restoreBuiltinBindings(teamIds?: readonly string[] | null): Promise<void>;
     /**
      * Persist the bindings document atomically enough for a UI write.
      * @returns after the document is on disk.

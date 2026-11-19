@@ -56,8 +56,17 @@ const EXPECTED_RECOVERY_TOOLS = [
 
 /** The skills this release ships under `assets/skills`. */
 const EXPECTED_SKILL_IDS = [
+  'agent-leader-communication',
+  'leader-medium-task-workflow',
+  'leader-long-task-orchestration',
+  'agent-subagent-orchestration',
+  'fullstack-advisor',
+  'executor-short-task-workflow',
   'github-repository-presentation',
   'git-release-hygiene',
+  'frontend-engineering-workflow',
+  'backend-architecture-workflow',
+  'independent-code-review-workflow',
   'grilling',
   'research',
 ] as const
@@ -182,7 +191,7 @@ describe('committed lib artifact carries the 0.1.7 security contract', () => {
     expect(() => assertRefuseTeamGuard(libSource)).not.toThrow()
   })
 
-  it('ships OFFICIAL_SKILL_IDS as exactly the four official skills', () => {
+  it('ships OFFICIAL_SKILL_IDS as exactly the thirteen official skills', () => {
     const declared = extractStringList(libSource, 'OFFICIAL_SKILL_IDS')
     expectExactSet(declared, EXPECTED_SKILL_IDS, 'OFFICIAL_SKILL_IDS')
     expect(normalize(libSource)).toMatch(/for\s*\(\s*const\s+[A-Za-z_$][\w$]*\s+of\s+OFFICIAL_SKILL_IDS\s*\)/)

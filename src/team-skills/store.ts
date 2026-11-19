@@ -242,9 +242,23 @@ export class TeamSkillStore {
   }
   list(): readonly TeamSkillAsset[] { return [...this.table.values()].sort((a, b) => a.skillId.localeCompare(b.skillId) || a.id.localeCompare(b.id)) }
   get(assetId: string): TeamSkillAsset | undefined { return this.table.get(assetId) }
+  /**
+   * Resolve one skill by its name rather than by asset identity.
+   *
+   * Several assets may legitimately share a name: the shipped copy, a local
+   * override of it, and a skill the user imported under the same name. The
+   * shipped copy wins, because a name denotes the skill the plugin ships — a
+   * user's own copy must never shadow it for a caller that only said the name.
+   * Callers that know which copy they mean pass the asset id instead.
+   * @param skillId - kebab-case skill name.
+   * @returns the shipped copy when it exists, else the best local one.
+   */
   bySkillId(skillId: string): TeamSkillAsset | undefined {
     const candidates = this.list().filter(asset => asset.skillId === skillId)
-    return candidates.find(asset => asset.origin === 'override') ?? candidates.find(asset => asset.origin === 'custom') ?? candidates[0]
+    return candidates.find(asset => asset.origin === 'builtin')
+      ?? candidates.find(asset => asset.origin === 'override')
+      ?? candidates.find(asset => asset.origin === 'custom')
+      ?? candidates[0]
   }
   /** Commit all nested store mutations once; failures restore memory and version folders. */
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
@@ -276,6 +290,23 @@ export class TeamSkillStore {
       const checked = buildSkillPackage(input)
       if (!checked.ok) throw new Error(`invalid skill package: ${checked.reason}`)
       assetDirectoryName(package_.name)
+      // The English skill name is the identity every other surface uses: a
+      // binding names it, a preset document exports it, and the model addresses
+      // the skill by it. Two assets may therefore share it only when one is a
+      // sanctioned copy of the other -- an override IS the shipped skill, edited.
+      // A user skill or import taking a name that already belongs to another
+      // skill is refused here rather than allowed to shadow it, which is what
+      // made "bind `git-release-hygiene`" ambiguous in the first place. The
+      // shipped set is authoritative: installing a builtin always proceeds, so a
+      // legacy same-named user skill can neither block a release nor win a
+      // binding (bindings resolve by the builtin's identity).
+      if (options.origin !== 'builtin') {
+        const clash = [...this.table.values()].find(asset => asset.skillId === package_.name && asset.id !== options.id
+          && !(options.origin === 'override' && asset.origin === 'builtin'))
+        if (clash !== undefined) {
+          throw new Error(`the skill name "${package_.name}" already belongs to ${clash.id}; a skill name is the identity a binding uses`)
+        }
+      }
       const target = this.assetPath(options.id, options.version)
       const manifest = this.manifestPath(options.id, options.version)
       await assertNoSymlinks(target); await assertNoSymlinks(manifest)

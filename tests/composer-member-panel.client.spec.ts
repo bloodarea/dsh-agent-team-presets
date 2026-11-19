@@ -61,6 +61,23 @@ describe('the composer member panel', () => {
     expect(composer).toContain('css.panelDesc')
   })
 
+  it('lists the captain its own bound Team Skills inside the captain row', () => {
+    // A shipped captain carries workflow skills of its own. The row that starts a
+    // captain conversation has to state them, so the map may no longer skip every
+    // captain binding — the captain slot is read under the Host's own sentinel,
+    // never mixed into a member's id.
+    expect(composer).not.toMatch(/\|\| binding\.captain\) continue/)
+    expect(composer).toContain('binding.captain ? CAPTAIN_ROLE : binding.roleId')
+    const captainRow = composer.indexOf("t('composePanelCaptainHint')")
+    const membersSection = composer.indexOf("t('composePanelMembers')")
+    expect(captainRow).toBeGreaterThan(-1)
+    expect(membersSection).toBeGreaterThan(captainRow)
+    const row = composer.slice(captainRow, membersSection)
+    expect(row).toContain('captainSkillIds')
+    expect(row).toContain('css.panelSkillTags')
+    expect(row).toContain('skillLabel(name, t)')
+  })
+
   it('labels a member route as provider · model, falling back to the session model', () => {
     expect(composer).toContain('memberRouteLabel(state.providers, member)')
     expect(composer).toContain("parts.join(' · ')")

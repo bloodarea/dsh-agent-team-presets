@@ -18,6 +18,7 @@ import css from './TeamSkillsView.module.css'
 // very same classes rather than a lookalike set that can drift.
 import chips from './TeamPresetsSection.module.css'
 import type { TeamSkillsController, TeamSkillsState } from './team-skills-controller.ts'
+import { SKILL_CATEGORIES, SKILL_CATEGORY_LABELS, skillCategoryOf, skillLabel, type SkillCategoryId, type TeamPresetsLocaleKey } from './locales.ts'
 import type { TeamSkillAssetView, TeamSkillDeleteView, TeamSkillScanEntry } from '../types.ts'
 
 /** Locale keys this panel reads. */
@@ -47,7 +48,7 @@ export interface TeamSkillsViewProps {
   /** Page state and actions. */
   readonly controller: TeamSkillsController
   /** Translate one locale key. */
-  readonly t: (key: TeamSkillsLocaleKey) => string
+  readonly t: (key: TeamPresetsLocaleKey) => string
 }
 
 /** Which page the panel shows. */
@@ -103,6 +104,7 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
   const [page, setPage] = useState<Page>({ kind: 'list' })
   const [query, setQuery] = useState('')
   const [origin, setOrigin] = useState<'all' | 'builtin' | 'custom'>('all')
+  const [category, setCategory] = useState<'all' | SkillCategoryId>('all')
   const [draft, setDraft] = useState('')
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -121,9 +123,12 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
   const assets = state.library?.assets ?? []
   const visible = useMemo(() => assets.filter((asset) => {
     const matchesOrigin = origin === 'all' || (origin === 'builtin' ? asset.origin === 'builtin' : asset.origin !== 'builtin')
-    const haystack = `${asset.skillId} ${asset.description}`.toLocaleLowerCase()
-    return matchesOrigin && query.trim().split(/\s+/u).every(token => haystack.includes(token.toLocaleLowerCase()))
-  }), [assets, origin, query])
+    const matchesCategory = category === 'all' || skillCategoryOf(asset) === category
+    // Both names are searchable: the label a reader sees, and the English id
+    // every other surface uses.
+    const haystack = `${skillLabel(asset.skillId, t)} ${asset.skillId} ${asset.description}`.toLocaleLowerCase()
+    return matchesOrigin && matchesCategory && query.trim().split(/\s+/u).every(token => haystack.includes(token.toLocaleLowerCase()))
+  }), [assets, origin, category, query, t])
 
   const detail = state.detail
   const selected = page.kind === 'detail' ? assets.find(asset => asset.id === page.assetId) : undefined
@@ -160,7 +165,7 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
         </button>
         {detail === undefined || selected === undefined ? <div className={css.empty}>{t('skillsEmpty')}</div> : (
           <>
-            <h2 className={css.title}>{detail.asset.skillId}</h2>
+            <h2 className={css.title}>{skillLabel(detail.asset.skillId, t)} <span className={css.muted}>{detail.asset.skillId}</span></h2>
             <p className={css.sub}>{detail.asset.description}</p>
             <div className={css.pills}>
               <span className={`${chips.originTag} ${originTone(chips, detail.asset.origin)}`}>
@@ -414,6 +419,17 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
 
       <div className={css.toolbar}>
         <input className={css.search} value={query} placeholder={t('skillsSearch')} onChange={(event) => { setQuery(event.target.value) }} />
+        <select
+          className={chips.select}
+          aria-label={t('skillsCategoryAll')}
+          value={category}
+          onChange={(event) => { setCategory(event.target.value as 'all' | SkillCategoryId) }}
+        >
+          <option value="all">{t('skillsCategoryAll')}</option>
+          {SKILL_CATEGORIES.map(id => (
+            <option key={id} value={id}>{t(SKILL_CATEGORY_LABELS[id])}</option>
+          ))}
+        </select>
       </div>
       <div className={css.segment}>
         <button type="button" className={`${chips.chip} ${origin === 'all' ? chips.chipActive : ''}`} onClick={() => { setOrigin('all') }}>{t('skillsAll')}</button>
@@ -422,7 +438,7 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
       </div>
 
       <div className={css.rowlist}>
-        {visible.length === 0 ? <div className={css.empty}>{t('skillsEmpty')}</div> : visible.map(asset => (
+        {visible.length === 0 ? <div className={css.empty}>{assets.length === 0 ? t('skillsEmpty') : t('skillsFilterEmpty')}</div> : visible.map(asset => (
           <button
             key={asset.id}
             type="button"
@@ -432,7 +448,8 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
             <span className={`${css.dot} ${asset.origin === 'builtin' ? '' : css.dotCustom}`} />
             <span className={css.main}>
               <span className={css.rowTitle}>
-                {asset.skillId}
+                {skillLabel(asset.skillId, t)}
+                <span className={css.muted}>{asset.skillId}</span>
                 <span className={`${chips.originTag} ${originTone(chips, asset.origin)}`}>{originLabel(asset, t)}</span>
                 {asset.updateAvailable === true ? <span className={`${css.tag} ${css.tagWarn}`}>{t('skillsOverrideOn')}</span> : null}
               </span>

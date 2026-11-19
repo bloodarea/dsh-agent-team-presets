@@ -131,6 +131,22 @@ function seedOwner(key: string): readonly [string, string] | undefined {
 }
 
 /** The Team Skill library plus its role bindings. */
+/**
+ * Whether two assets are the shipped copy and its own editable copy.
+ *
+ * They share a name because they ARE the same skill: the override is the shipped
+ * body with the user's edits. Presenting that pair as a name clash made an
+ * ordinary "I made a local copy" state read as a defect.
+ * @param left - one asset.
+ * @param right - the other asset.
+ * @returns true when one is the shipped copy and the other its override.
+ */
+export function sanctionedCopy(left: TeamSkillAsset, right: TeamSkillAsset): boolean {
+  return (left.origin === 'builtin' && right.origin === 'override' && right.officialSkillId === left.skillId)
+    || (right.origin === 'builtin' && left.origin === 'override' && left.officialSkillId === right.skillId)
+}
+
+
 export class TeamSkillManager {
   private bindings: TeamSkillBinding[] = []
   private revision = 0
@@ -409,68 +425,60 @@ export class TeamSkillManager {
         const memberRole = member === undefined ? undefined : member.id ?? member.name
         const roleId = isCaptain ? CAPTAIN_ROLE : memberRole === CAPTAIN_ROLE ? undefined : memberRole
         if (roleId === undefined) continue
-        // A default names the shipped skill, but the role must receive the copy
-        // the deployment actually uses. An override is the user's own editable
-        // version of that shipped skill, and `overrideSkill` only rewrites the
-        // bindings that already exist when it is created, so an override made
-        // before a default was first seeded would otherwise be bypassed for
-        // that role and silently hand it the built-in body instead of the
-        // user's edit. Resolving the override here makes the two creation
-        // orders equivalent.
-        const assetId = this.seededAssetId(declaration.skillId)
-        if (assetId === undefined) continue
-        // The marker is keyed by the DECLARATION, never by the asset it
-        // resolved to: an override can appear or disappear between restarts,
-        // and a key that followed it would stop matching the marker a user's
+        // A default names the shipped skill, and the shipped copy is what it
+        // binds. A local copy is bound when the user creates one (that is what
+        // `replaceBuiltinBindings` does at creation time) and never by this
+        // pass: resolving a declaration onto a same-named copy here made the
+        // default follow whatever the user happened to have edited, so deleting
+        // or restoring the copy could not return a role to the shipped skill.
+        const assetId = `builtin:${declaration.skillId}`
+        if (this.store.get(assetId) === undefined) continue
+        // The marker is keyed by the DECLARATION, not by the asset a role
+        // happens to hold: a copy can appear or disappear between restarts, and
+        // a key that followed it would stop matching the marker a user's
         // explicit unbind wrote, resurrecting a default they removed.
-        const key = JSON.stringify([team.id, roleId, `builtin:${declaration.skillId}`])
-        const already = this.seeded.has(key)
-        // A role that still holds the shipped copy of a default, in a deployment
-        // that now has an override for it, is moved onto that override: the
-        // marker records that the default was offered, not which copy it landed
-        // on, so it must not pin a role to a body the user has replaced. Only
-        // this exact pair is migrated — a role holding a different asset (an
-        // explicit choice, or another override) is left alone.
-        if (already) {
-          const builtinId = `builtin:${declaration.skillId}`
-          if (assetId !== builtinId) {
-            const stale = this.bindings.findIndex(row => row.teamId === team.id && row.roleId === roleId && row.assetId === builtinId)
-            if (stale >= 0) {
-              this.bindings[stale] = { teamId: team.id, roleId, assetId, ...(roleId === CAPTAIN_ROLE ? { captain: true } : {}) }
-            }
-          }
-          continue
-        }
+        const key = JSON.stringify([team.id, roleId, assetId])
+        const holdsSkill = this.bindings.some(row => {
+          if (row.teamId !== team.id || row.roleId !== roleId) return false
+          return this.store.get(row.assetId)?.skillId === declaration.skillId
+        })
+        // A role that still holds a copy of this skill keeps it: an explicit
+        // assignment outranks a default.
+        if (holdsSkill) continue
+        // The marker means "this default was offered and the user removed it",
+        // so re-adding would resurrect an explicit unbind. The paths that DO
+        // return a missing default -- deleting the copy, restoring it -- clear
+        // the marker themselves before reconciling.
+        if (this.seeded.has(key)) continue
         this.seeded.add(key)
-        if (!this.bindings.some(row => row.teamId === team.id && row.roleId === roleId && row.assetId === assetId)) {
-          this.bindings.push({ teamId: team.id, roleId, assetId, ...(roleId === CAPTAIN_ROLE ? { captain: true } : {}) })
-        }
+        this.bindings.push({ teamId: team.id, roleId, assetId, ...(roleId === CAPTAIN_ROLE ? { captain: true } : {}) })
       }
     }
     if (JSON.stringify([this.bindings, [...this.seeded]]) !== before) await this.flush()
   }
 
   /**
-   * Resolve the asset a catalog default should bind to.
+   * Move every role holding one asset onto another.
    *
-   * The shipped copy is the fallback, and it is the only candidate while no
-   * override exists. When the user has created an editable override of that
-   * shipped skill, the override is what they mean by it: `overrideSkill`
-   * rewrites the bindings that exist at creation time, so a default first
-   * seeded afterwards must resolve to the same copy or the two creation orders
-   * would disagree about which body a role receives.
-   * @param skillId - shipped skill identity the default names.
-   * @returns the asset identity to bind, or undefined when neither copy exists.
+   * Used by "restore to the built-in version": the roles reading a local copy
+   * have to read the shipped one again, or the restore would only change bytes
+   * nobody is bound to.
+   * @param fromAssetId - asset the roles hold now.
+   * @param toAssetId - asset they should hold.
+   * @returns the number of bindings moved.
    */
-  private seededAssetId(skillId: string): string | undefined {
-    const builtinId = `builtin:${skillId}`
-    const builtin = this.store.get(builtinId)
-    if (builtin === undefined) return undefined
-    const overrideId = `override:${skillId}`
-    const override = this.store.get(overrideId)
-    // An override that has drifted to another shipped skill is not this
-    // default's copy, and binding it would hand the role the wrong body.
-    return override?.origin === 'override' && override.officialSkillId === skillId ? overrideId : builtinId
+  async replaceAssetBindings(fromAssetId: string, toAssetId: string): Promise<number> {
+    return this.mutate(async () => {
+      if (this.store.get(toAssetId) === undefined) return 0
+      let moved = 0
+      this.bindings = this.bindings.map((row) => {
+        if (row.assetId !== fromAssetId) return row
+        moved += 1
+        return { ...row, assetId: toAssetId }
+      })
+      if (moved > 0) await this.flush()
+      return moved
+    })
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
@@ -596,14 +604,36 @@ export class TeamSkillManager {
    * and reconcile to restore the official default bindings.
    * @param teamIds - optional list of team identities to restore; defaults to all built-in teams.
    */
-  async restoreBuiltinBindings(teamIds?: readonly string[]): Promise<void> {
+  async restoreBuiltinBindings(teamIds?: readonly string[] | null): Promise<void> {
     return this.mutate(async () => {
-      const targets = new Set(teamIds ?? BUILTIN_TEAM_IDS)
+      // "Restore these Teams" with nothing named means all of them: the page
+      // calls this without arguments, and a remote call can deliver that absence
+      // as `[]`, `null` or an empty object. Treating any of those as a filter is
+      // what made the whole restore a silent no-op that still answered 200, so
+      // only a real, non-empty array narrows the set.
+      const requested = Array.isArray(teamIds) ? teamIds : []
+      const targets = new Set(requested.length === 0 ? BUILTIN_TEAM_IDS : requested)
       this.seeded = new Set([...this.seeded].filter(key => {
         const owner = seedOwner(key)
         return owner === undefined || !targets.has(owner[0])
       }))
+      // "Restore built-in presets" restores the shipped defaults, which are the
+      // shipped skills. A role still reading an override of a declared skill is
+      // returned to the shipped copy, or the restore would leave the visible
+      // binding on the user's own asset and look like it did nothing.
+      this.bindings = this.bindings.map((row) => {
+        if (!targets.has(row.teamId)) return row
+        const asset = this.store.get(row.assetId)
+        if (asset?.origin !== 'override' || asset.officialSkillId === undefined) return row
+        const builtinId = `builtin:${asset.officialSkillId}`
+        return this.store.get(builtinId) === undefined ? row : { ...row, assetId: builtinId }
+      })
       await this.reconcileNow()
+      // `reconcileNow` flushes only when IT changed something. The conversion
+      // above already mutated the list, so its own before/after reads as "no
+      // change" and nothing would reach the disk: the restore appeared to do
+      // nothing, and the next restart brought the old bindings back.
+      await this.flush()
     })
   }
 

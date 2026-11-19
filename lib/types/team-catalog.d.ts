@@ -47,10 +47,57 @@ export interface OfficialSkillBinding {
  */
 export declare const OFFICIAL_REPOSITORY_SKILLS: readonly OfficialSkillBinding[];
 /**
- * The shipped delivery skills, assigned by default to the `executor` role
- * of software engineering Teams.
+ * The leader workflow skills, assigned by default to the `team-lead` captain of
+ * every software engineering Team: dispatching and reporting, the bounded
+ * medium-task board, the long-running delivery plan, and the subagent
+ * orchestration rules a captain needs before it may explore in parallel.
  */
-export declare const OFFICIAL_EXECUTOR_SKILLS: readonly OfficialSkillBinding[];
+export declare const OFFICIAL_LEADER_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The advisory workflow skill, assigned by default to the `fullstack-advisor`
+ * role. The advisor stays single-threaded, so it never receives the subagent
+ * orchestration skill.
+ */
+export declare const OFFICIAL_ADVISOR_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The delivery skills, assigned by default to the `executor` role of software
+ * engineering Teams: the bounded implementation workflow, the parallel
+ * work-package orchestration rules, and the two repository delivery skills.
+ */
+export declare const OFFICIAL_DEVELOPMENT_EXECUTOR_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The default assignments of a software engineering Team that carries an
+ * advisory role: leader, advisor, then executor. `agent-subagent-orchestration`
+ * is deliberately bound to two roles and to no third one.
+ */
+export declare const OFFICIAL_DEVELOPMENT_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The professional-role workflows, one main skill per specialist role: the
+ * UI frontend engineer, the backend architect, and the independent reviewer.
+ *
+ * Each is a progressive-loading entry point — the detailed methods live in its
+ * own `references/` folder and are read on demand, never registered as skills
+ * of their own. The reviewer keeps the subagent orchestration rules because a
+ * large, high-risk review may fan out; the two advisory-side roles never
+ * dispatch.
+ */
+export declare const OFFICIAL_PROFESSIONAL_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The reviewer's bindings alone.
+ *
+ * The 标准研发团队 has no specialist role, so it declares the leader, advisor,
+ * executor, and reviewer defaults and nothing that names a role it does not
+ * carry — a declaration with no matching role would never resolve, and the
+ * catalog is what the Host reconciles against.
+ */
+export declare const OFFICIAL_STANDARD_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The default assignments of the 全栈软件研发团队, whose advisor work is split
+ * into two specialist roles: leader, the frontend and backend workflows, the
+ * reviewer pair, and the executor's own delivery skills. There is no single
+ * `fullstack-advisor` binding, because that Team does not carry that role.
+ */
+export declare const OFFICIAL_SPECIALIST_SKILLS: readonly OfficialSkillBinding[];
 /**
  * The method skills assigned by default to the 需求探索 team: grilling to the
  * captain, and research to the two scouting roles that gather evidence for it.

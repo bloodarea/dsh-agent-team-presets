@@ -118,7 +118,7 @@ Switch to the **Team skills** tab:
 This is a **plugin-private skill library**, separate from the deployment's global skills:
 
 - **Import folder / Scan import directory / New skill** brings a `SKILL.md` together with its `scripts`, `references` and other assets;
-- **Built-in / Custom** — four shipped skills (`git-release-hygiene`, `github-repository-presentation`, `grilling`, `research`) are marked as built-in and can be duplicated into editable local copies;
+- **Built-in / Custom** — ten shipped skills (the captain, advisor, and executor workflows plus `git-release-hygiene`, `github-repository-presentation`, `grilling`, `research`) are marked as built-in and can be duplicated into editable local copies;
 - click a row to read it, check its declared dependencies and see **where it is bound**.
 
 The rule that matters: a skill is visible to **only the role it was assigned to**. Assignment happens on the member page's "Assigned skills" section, not here — this page only owns the library.

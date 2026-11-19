@@ -11,6 +11,7 @@
  * @module dsh-agent-team-presets/client/TeamSkillsView
  */
 import type { TeamSkillsController } from './team-skills-controller.ts';
+import { type TeamPresetsLocaleKey } from './locales.ts';
 /** Locale keys this panel reads. */
 export type TeamSkillsLocaleKey = 'originBuiltin' | 'originCustom' | 'originOverride' | 'skillsTitle' | 'skillsSub' | 'skillsNote' | 'skillsNew' | 'skillsImport' | 'skillsOpenFolder' | 'skillsOpenAssetFolder' | 'skillsSearch' | 'skillsAll' | 'skillsBuiltin' | 'skillsCustom' | 'skillsFiles' | 'skillsBound' | 'skillsEmpty' | 'skillsResources' | 'skillsSaveFile' | 'skillsEditable' | 'skillsReadonly' | 'skillsMakeCopy' | 'skillsResetCopy' | 'skillsBindings' | 'skillsNoBinding' | 'skillsUnbind' | 'skillsDeps' | 'skillsNoDeps' | 'skillsDelete' | 'skillsDeleteTitle' | 'skillsDeleteBody' | 'skillsDeleteBlocked' | 'skillsDeleteBoundWarning' | 'skillsDeleteBuiltinWarning' | 'skillsCancel' | 'skillsConfirm' | 'skillsName' | 'skillsDesc' | 'skillsNewTitle' | 'skillsVersion' | 'skillsOverrideOn' | 'skillsBlockedAssign' | 'skillsMcpUnverified' | 'skillsNameClash' | 'skillsNameClashBody' | 'skillsDeclared' | 'skillsFound' | 'skillsMissing' | 'skillsScan' | 'skillsScanHint' | 'skillsScanSummary' | 'skillsScanEmpty' | 'skillsScanImported' | 'skillsScanExisting' | 'skillsScanInvalid' | 'skillsScanMissingSkill' | 'skillsScanInvalidFrontmatter' | 'skillsScanInvalidName' | 'skillsScanMissingDescription' | 'skillsScanTooLarge' | 'skillsScanSymlink' | 'skillsScanNotDirectory' | 'skillsScanUnreadable' | 'skillsScanDuplicate' | 'skillsScanInstallRefused' | 'skillsOpenScanFolder' | 'skillsCopyScanFolder' | 'skillsScanFolderOpened' | 'skillsScanFolderCopied' | 'skillsScanFolderCopyFailed';
 /** Props of {@link TeamSkillsView}. */
@@ -18,7 +19,7 @@ export interface TeamSkillsViewProps {
     /** Page state and actions. */
     readonly controller: TeamSkillsController;
     /** Translate one locale key. */
-    readonly t: (key: TeamSkillsLocaleKey) => string;
+    readonly t: (key: TeamPresetsLocaleKey) => string;
 }
 /** The Team Skill settings pages. */
 export declare function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement;

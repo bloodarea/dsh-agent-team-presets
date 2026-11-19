@@ -27,10 +27,19 @@ describe('the shipped method skills', () => {
   })
 
   it('registers both method skills and ships their third-party notice', () => {
-    expect(OFFICIAL_SKILL_VERSION).toBe('1')
+    expect(OFFICIAL_SKILL_VERSION).toBe('5')
     expect([...OFFICIAL_SKILL_IDS]).toEqual([
+      'agent-leader-communication',
+      'leader-medium-task-workflow',
+      'leader-long-task-orchestration',
+      'agent-subagent-orchestration',
+      'fullstack-advisor',
+      'executor-short-task-workflow',
       'github-repository-presentation',
       'git-release-hygiene',
+      'frontend-engineering-workflow',
+      'backend-architecture-workflow',
+      'independent-code-review-workflow',
       'grilling',
       'research',
     ])
