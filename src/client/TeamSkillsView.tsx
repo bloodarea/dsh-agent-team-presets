@@ -6,13 +6,13 @@
  * The library page owns discovery: search, the built-in/custom segment, and the
  * three actions the prototype puts in the title row. The detail page owns one
  * skill: its file tree and editor, its member references, and the deletion the
- * Host refuses while a member still holds it. Assignment itself belongs to the
- * member page, so this file never invents a second place to bind a skill.
+ * Host refuses while a member still holds it. A built-in skill can be copied
+ * here with the option to move its role bindings to the editable copy.
  * @module dsh-agent-team-presets/client/TeamSkillsView
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './TeamSkillsView.module.css'
 // The library filters are the same control as the Team list's chips, so they use the
 // very same classes rather than a lookalike set that can drift.
@@ -28,18 +28,21 @@ export type TeamSkillsLocaleKey =
   | 'skillsOpenAssetFolder'
   | 'skillsSearch' | 'skillsAll' | 'skillsBuiltin' | 'skillsCustom' | 'skillsFiles' | 'skillsBound'
   | 'skillsEmpty' | 'skillsResources' | 'skillsSaveFile' | 'skillsEditable' | 'skillsReadonly'
-  | 'skillsMakeCopy' | 'skillsResetCopy' | 'skillsBindings' | 'skillsNoBinding' | 'skillsUnbind'
+  | 'skillsMakeCopy' | 'skillsMakeCopyTitle' | 'skillsMakeCopySwitchBindings' | 'skillsMakeCopySwitchIssue'
+  | 'skillsResetCopy' | 'skillsBindings' | 'skillsNoBinding' | 'skillsUnbind'
   | 'skillsDeps' | 'skillsNoDeps' | 'skillsDelete' | 'skillsDeleteTitle' | 'skillsDeleteBody'
   | 'skillsDeleteBlocked' | 'skillsDeleteBoundWarning' | 'skillsDeleteBuiltinWarning'
   | 'skillsCancel' | 'skillsConfirm' | 'skillsName' | 'skillsDesc' | 'skillsNewTitle'
   | 'skillsVersion' | 'skillsOverrideOn' | 'skillsBlockedAssign' | 'skillsMcpUnverified'
   | 'skillsNameClash' | 'skillsNameClashBody' | 'skillsDeclared' | 'skillsFound' | 'skillsMissing'
   | 'skillsScan' | 'skillsScanHint' | 'skillsScanSummary' | 'skillsScanEmpty'
-  | 'skillsScanImported' | 'skillsScanExisting' | 'skillsScanInvalid'
+  | 'skillsScanImported' | 'skillsScanExisting' | 'skillsScanUpdated' | 'skillsScanInvalid' | 'skillsScanSourceMissing'
   | 'skillsScanMissingSkill' | 'skillsScanInvalidFrontmatter' | 'skillsScanInvalidName'
   | 'skillsScanMissingDescription' | 'skillsScanTooLarge' | 'skillsScanSymlink'
   | 'skillsScanNotDirectory' | 'skillsScanUnreadable' | 'skillsScanDuplicate'
-  | 'skillsScanInstallRefused'
+  | 'skillsScanInstallRefused' | 'skillsScanBuiltinNameConflict' | 'skillsScanCopyNameConflict'
+  | 'skillsScanDuplicateSourceName' | 'skillsScanSourceMissingReason' | 'skillsScanSourceChanged'
+  | 'skillsInboxChanges' | 'skillsInboxNew' | 'skillsInboxUpdated' | 'skillsIgnoredDependencyFields'
   | 'skillsOpenScanFolder' | 'skillsCopyScanFolder'
   | 'skillsScanFolderOpened' | 'skillsScanFolderCopied' | 'skillsScanFolderCopyFailed'
 
@@ -82,6 +85,19 @@ const SCAN_REASON_KEYS: Readonly<Record<string, TeamSkillsLocaleKey>> = {
   'duplicate': 'skillsScanDuplicate',
   'duplicate-path': 'skillsScanDuplicate',
   'install-refused': 'skillsScanInstallRefused',
+  'builtin-name-conflict': 'skillsScanBuiltinNameConflict',
+  'copy-name-conflict': 'skillsScanCopyNameConflict',
+  'duplicate-source-name': 'skillsScanDuplicateSourceName',
+  'source-missing': 'skillsScanSourceMissingReason',
+  'source-changed': 'skillsScanSourceChanged',
+}
+
+const SCAN_STATUS_KEYS: Readonly<Record<TeamSkillScanEntry['status'], TeamSkillsLocaleKey>> = {
+  imported: 'skillsScanImported',
+  existing: 'skillsScanExisting',
+  updated: 'skillsScanUpdated',
+  invalid: 'skillsScanInvalid',
+  missing: 'skillsScanSourceMissing',
 }
 
 /** One scan row's explanation, localized when the scanner's code is known. */
@@ -89,6 +105,36 @@ function scanReasonText(entry: TeamSkillScanEntry, t: (key: TeamSkillsLocaleKey)
   const key = entry.reason === undefined ? undefined : SCAN_REASON_KEYS[entry.reason]
   const label = entry.reason === undefined ? '' : key === undefined ? entry.reason : t(key)
   return entry.detail === undefined ? label : `${label} (${entry.detail})`
+}
+
+function ignoredDependencyText(fields: readonly string[], t: TeamSkillsViewProps['t']): string {
+  return t('skillsIgnoredDependencyFields').replace('{fields}', () => fields.join(', '))
+}
+
+function ScanRows({ entries, pending = false, t }: {
+  readonly entries: readonly TeamSkillScanEntry[]
+  readonly pending?: boolean
+  readonly t: TeamSkillsViewProps['t']
+}): React.ReactElement {
+  return (
+    <ul className={css.scanList}>
+      {entries.map(entry => {
+        const needsAttention = entry.status === 'invalid' || entry.status === 'missing'
+        const status = pending && entry.status === 'imported' ? 'skillsInboxNew'
+          : pending && entry.status === 'updated' ? 'skillsInboxUpdated' : SCAN_STATUS_KEYS[entry.status]
+        const tone = needsAttention ? css.tagWarn : !pending && entry.status !== 'existing' ? css.tagOk : ''
+        const fields = entry.ignoredDependencyFields ?? []
+        return (
+          <li key={`${entry.folder}:${entry.status}:${entry.assetId ?? entry.skillId ?? ''}`} className={css.scanRow}>
+            <span className={css.scanFolder}>{entry.folder}</span>
+            <span className={`${css.tag} ${tone}`}>{t(status)}</span>
+            <span className={css.muted}>{needsAttention ? scanReasonText(entry, t) : entry.assetId ?? entry.skillId ?? ''}</span>
+            {fields.length === 0 ? null : <span className={css.muted}>{ignoredDependencyText(fields, t)}</span>}
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 function originLabel(asset: TeamSkillAssetView, t: (key: TeamSkillsLocaleKey) => string): string {
@@ -109,12 +155,13 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [copy, setCopy] = useState<{ switchBindings: boolean; attempted: boolean } | undefined>(undefined)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteOutcome, setDeleteOutcome] = useState<TeamSkillDeleteView | undefined>(undefined)
 
   useEffect(() => {
     const unsubscribe = controller.subscribe(() => { setState(controller.getSnapshot()) })
-    void controller.refresh()
+    void controller.refresh(true)
     return unsubscribe
   }, [controller])
 
@@ -130,8 +177,10 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
     return matchesOrigin && matchesCategory && query.trim().split(/\s+/u).every(token => haystack.includes(token.toLocaleLowerCase()))
   }), [assets, origin, category, query, t])
 
-  const detail = state.detail
-  const selected = page.kind === 'detail' ? assets.find(asset => asset.id === page.assetId) : undefined
+  const detail = page.kind === 'detail' && state.detail?.asset.id === page.assetId ? state.detail : undefined
+  const copyTitle = detail === undefined ? '' : t('skillsMakeCopyTitle').replace('{skill}', () => skillLabel(detail.asset.skillId, t))
+  const ignoredFields = detail?.ignoredDependencyFields ?? []
+  const inboxChanges = (state.inboxChanges ?? []).filter(entry => entry.status !== 'existing')
 
   /**
    * Pick a folder and hand its files to the Host.
@@ -145,7 +194,8 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
       const path = relative === '' ? file.name : relative.includes('/') ? relative.slice(relative.indexOf('/') + 1) : relative
       files.push({ path, content: new Uint8Array(await file.arrayBuffer()) })
     }
-    await controller.importFolder(files)
+    const assetId = await controller.importFolder(files)
+    if (assetId !== undefined) setPage({ kind: 'detail', assetId })
   }
 
   if (state.status === 'unavailable') {
@@ -160,10 +210,10 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
   if (page.kind === 'detail') {
     return (
       <div className={css.page}>
-        <button type="button" className={css.crumb} onClick={() => { setPage({ kind: 'list' }); setConfirmDelete(false); setDeleteOutcome(undefined) }}>
+        <button type="button" className={css.crumb} onClick={() => { setPage({ kind: 'list' }); setCopy(undefined); setConfirmDelete(false); setDeleteOutcome(undefined) }}>
           ‹ {t('skillsTitle')}
         </button>
-        {detail === undefined || selected === undefined ? <div className={css.empty}>{t('skillsEmpty')}</div> : (
+        {detail === undefined ? <div className={css.empty}>{t('skillsEmpty')}</div> : (
           <>
             <h2 className={css.title}>{skillLabel(detail.asset.skillId, t)} <span className={css.muted}>{detail.asset.skillId}</span></h2>
             <p className={css.sub}>{detail.asset.description}</p>
@@ -194,6 +244,14 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
                 </div>
               )
             })()}
+            {ignoredFields.length === 0 ? null : (
+              <div className={css.info}>{ignoredDependencyText(ignoredFields, t)}</div>
+            )}
+            {detail.bindingSwitchIssue === undefined ? null : (
+              <div className={`${css.info} ${css.infoError}`} role="status">
+                {t('skillsMakeCopySwitchIssue').replace('{issue}', () => detail.bindingSwitchIssue ?? '')}
+              </div>
+            )}
             <div className={css.sectionTitle}>{t('skillsResources')}</div>
             <div className={css.fileArea}>
               <div className={css.fileTree}>
@@ -225,7 +283,7 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
               {detail.asset.editable ? (
                 <Button onClick={() => { void controller.saveFile(state.file ?? 'SKILL.md', draft) }}>{t('skillsSaveFile')}</Button>
               ) : (
-                <Button onClick={() => { void controller.createOverride(detail.asset.skillId) }}>{t('skillsMakeCopy')}</Button>
+                <Button disabled={state.busy} onClick={() => { setCopy({ switchBindings: false, attempted: false }) }}>{t('skillsMakeCopy')}</Button>
               )}
               {detail.asset.origin === 'override'
                 ? <Button onClick={() => { void controller.resetOverride(detail.asset.id) }}>{t('skillsResetCopy')}</Button>
@@ -271,8 +329,45 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
                 )}
             </div>
 
-            {state.message === undefined ? null : (
+            {state.message === undefined || copy !== undefined ? null : (
               <div className={`${css.message} ${state.failed ? css.messageFailed : ''}`}>{state.message}</div>
+            )}
+
+            {copy === undefined ? null : (
+              <Modal
+                open
+                headless
+                title={copyTitle}
+                className={css.dialog ?? ''}
+                backdropBlur={false}
+                onClose={() => { if (!state.busy) setCopy(undefined) }}
+              >
+                <h2>{copyTitle}</h2>
+                <label className={css.label}>
+                  <input
+                    type="checkbox"
+                    data-modal-autofocus
+                    checked={copy.switchBindings}
+                    disabled={state.busy}
+                    onChange={(event) => { setCopy({ ...copy, switchBindings: event.target.checked }) }}
+                  />
+                  {t('skillsMakeCopySwitchBindings').replace('{count}', String(detail.asset.bindings.length))}
+                </label>
+                {copy.attempted && state.message !== undefined ? (
+                  <div className={`${css.message} ${css.messageFailed}`} role="alert">{state.message}</div>
+                ) : null}
+                <div className={css.dialogActions}>
+                  <Button disabled={state.busy} onClick={() => { setCopy(undefined) }}>{t('skillsCancel')}</Button>
+                  <Button disabled={state.busy} onClick={() => {
+                    setCopy({ ...copy, attempted: true })
+                    void controller.createOverride(detail.asset.skillId, copy.switchBindings).then(assetId => {
+                      if (assetId === undefined) return
+                      setPage({ kind: 'detail', assetId })
+                      setCopy(undefined)
+                    })
+                  }}>{t('skillsMakeCopy')}</Button>
+                </div>
+              </Modal>
             )}
 
             {confirmDelete ? (
@@ -382,12 +477,22 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
           type="file"
           multiple
           style={{ display: 'none' }}
-          onChange={(event) => { void importFolder(event.target.files) }}
+          onChange={(event) => {
+            void importFolder(event.target.files)
+            event.target.value = ''
+          }}
           {...{ webkitdirectory: '' }}
         />
-        <Button variant="outline" onClick={() => { document.getElementById('team-skill-import')?.click() }}>{t('skillsImport')}</Button>
-        <Button variant="outline" onClick={() => { void controller.scanImportFolder() }}>{t('skillsScan')}</Button>
+        <Button variant="outline" disabled={state.busy} onClick={() => { document.getElementById('team-skill-import')?.click() }}>{t('skillsImport')}</Button>
+        <Button variant="outline" disabled={state.busy} onClick={() => { void controller.scanImportFolder() }}>{t('skillsScan')}</Button>
       </div>
+
+      {inboxChanges.length === 0 ? null : (
+        <div className={css.scan}>
+          <div className={css.scanHead} role="status">{t('skillsInboxChanges').replace('{count}', String(inboxChanges.length))}</div>
+          <ScanRows entries={inboxChanges} pending t={t} />
+        </div>
+      )}
 
       {state.scan === undefined ? null : (
         <div className={css.scan}>
@@ -395,25 +500,13 @@ export function TeamSkillsView(props: TeamSkillsViewProps): React.ReactElement {
             {t('skillsScanSummary')
               .replace('{scanned}', String(state.scan.scanned))
               .replace('{imported}', String(state.scan.imported))
+              .replace('{updated}', String(state.scan.updated ?? 0))
               .replace('{existing}', String(state.scan.existing))
+              .replace('{missing}', String(state.scan.missing ?? 0))
               .replace('{invalid}', String(state.scan.invalid))}
           </div>
           <div className={css.muted}>{t('skillsScanHint')} {state.scan.root}</div>
-          {state.scan.entries.length === 0 ? <div className={css.muted}>{t('skillsScanEmpty')}</div> : (
-            <ul className={css.scanList}>
-              {state.scan.entries.map(entry => (
-                <li key={entry.folder} className={css.scanRow}>
-                  <span className={css.scanFolder}>{entry.folder}</span>
-                  <span className={`${css.tag} ${entry.status === 'imported' ? css.tagOk : entry.status === 'invalid' ? css.tagWarn : ''}`}>
-                    {t(entry.status === 'imported' ? 'skillsScanImported' : entry.status === 'existing' ? 'skillsScanExisting' : 'skillsScanInvalid')}
-                  </span>
-                  <span className={css.muted}>
-                    {entry.status === 'invalid' ? scanReasonText(entry, t) : entry.assetId ?? entry.skillId ?? ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          {state.scan.entries.length === 0 ? <div className={css.muted}>{t('skillsScanEmpty')}</div> : <ScanRows entries={state.scan.entries} t={t} />}
         </div>
       )}
 

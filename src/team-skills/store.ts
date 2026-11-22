@@ -4,10 +4,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { SkillPathError, assertNoSymlinks, canonicalRoot, assetDirectoryName, checkFolder, isTextBytes, normalizeSkillPath, resolveInside } from './paths.ts'
-import { buildSkillPackage } from './import.ts'
+import { buildSkillPackage, renameSkillPackage } from './import.ts'
+
 import type { ImportedFile, SkillPackage } from './import.ts'
 import type { TeamSkillAsset, TeamSkillDependencies, TeamSkillFile, TeamSkillOrigin } from '../types.ts'
 
+export const SKILL_IMPORT_FOLDER = 'inbox'
 const REGISTRY_VERSION = 1
 interface RegistryDocument { readonly version: number; readonly assets: readonly TeamSkillAsset[]; readonly transactionId?: string }
 type JournalAction = { kind: 'create'; path: string } | { kind: 'move'; path: string; backup: string }
@@ -43,6 +45,10 @@ export function diskComponent(value: string): string {
   return value.length <= 120 ? `~${Buffer.from(value, 'utf8').toString('hex')}` : `~h${digestBytes(Buffer.from(value, 'utf8'))}`
 }
 function strings(value: unknown): value is string[] { return Array.isArray(value) && value.every(item => typeof item === 'string') }
+function importFolderName(value: string): string {
+  if (normalizeSkillPath(value) !== value || value.includes('/') || value.startsWith('.')) throw new Error('invalid Team Skill source folder')
+  return value
+}
 function validateAsset(value: unknown): asserts value is TeamSkillAsset {
   if (value === null || typeof value !== 'object') throw new Error('invalid Team Skill asset')
   const a = value as TeamSkillAsset
@@ -52,6 +58,10 @@ function validateAsset(value: unknown): asserts value is TeamSkillAsset {
     || (a.officialSkillId !== undefined && (typeof a.officialSkillId !== 'string' || assetDirectoryName(a.officialSkillId) !== a.officialSkillId))
     || (a.baseVersion !== undefined && component(a.baseVersion) !== a.baseVersion)
     || (a.updateAvailable !== undefined && typeof a.updateAvailable !== 'boolean')) throw new Error('invalid Team Skill asset shape')
+  if (a.sourceFolder !== undefined) {
+    if (a.origin !== 'custom' || typeof a.sourceFolder !== 'string') throw new Error('invalid Team Skill source folder')
+    importFolderName(a.sourceFolder)
+  }
   for (const file of a.files) {
     if (file === null || typeof file !== 'object' || typeof file.path !== 'string' || normalizeSkillPath(file.path) !== file.path
       || typeof file.text !== 'boolean' || typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(file.sha256)) throw new Error('invalid Team Skill file shape')
@@ -120,7 +130,11 @@ export class TeamSkillStore {
   }
   private get journalPath(): string { return join(this.root, 'transaction.json') }
   private journalTarget(path: string): string {
-    if (!/^(?:(?:assets|manifests)\/(?:[A-Za-z0-9][A-Za-z0-9:._-]*|~(?:[a-f0-9]+|h[a-f0-9]{64}))(?:\/(?:[A-Za-z0-9][A-Za-z0-9:._-]*|~(?:[a-f0-9]+|h[a-f0-9]{64}))(?:\.json)?)?|\.(?:stage|removed)-[a-f0-9-]+)$/u.test(path)
+    const parts = path.split('/')
+    if (parts[0] === SKILL_IMPORT_FOLDER && parts.length >= 3) {
+      importFolderName(parts[1]!)
+      normalizeSkillPath(parts.slice(2).join('/'))
+    } else if (!/^(?:(?:assets|manifests)\/(?:[A-Za-z0-9][A-Za-z0-9:._-]*|~(?:[a-f0-9]+|h[a-f0-9]{64}))(?:\/(?:[A-Za-z0-9][A-Za-z0-9:._-]*|~(?:[a-f0-9]+|h[a-f0-9]{64}))(?:\.json)?)?|\.(?:stage|removed)-[a-f0-9-]+)$/u.test(path)
       || path.split('/').some(part => part === '.' || part === '..')) throw new Error('invalid Team Skill transaction path')
     // Old POSIX journals may contain ':'. On Windows those coordinates were
     // never valid directories, and a drive-relative segment must not reset root.
@@ -283,7 +297,7 @@ export class TeamSkillStore {
       return result
     })
   }
-  async install(package_: SkillPackage, options: { readonly id: string; readonly origin: TeamSkillOrigin; readonly version: string; readonly officialSkillId?: string; readonly baseVersion?: string; readonly dependencies?: TeamSkillDependencies }): Promise<TeamSkillAsset> {
+  async install(package_: SkillPackage, options: { readonly id: string; readonly origin: TeamSkillOrigin; readonly version: string; readonly officialSkillId?: string; readonly baseVersion?: string; readonly dependencies?: TeamSkillDependencies; readonly sourceFolder?: string }): Promise<TeamSkillAsset> {
     // Snapshot caller-owned buffers before any await.
     const input = package_.files.map(file => ({ path: file.path, bytes: new Uint8Array(file.bytes) }))
     return this.transaction(async () => {
@@ -315,6 +329,7 @@ export class TeamSkillStore {
       const asset = immutable({ id: options.id, skillId: package_.name, description: checked.skill.description, origin: options.origin, version: options.version,
         ...options.officialSkillId === undefined ? {} : { officialSkillId: options.officialSkillId },
         ...options.baseVersion === undefined ? {} : { baseVersion: options.baseVersion },
+        ...options.sourceFolder === undefined ? {} : { sourceFolder: options.sourceFolder },
         digest: folderDigest(files), files, dependencies: options.dependencies ?? NO_DEPENDENCIES, updatedAt: Date.now() })
       validateAsset(asset)
       const tx = this.transactions.getStore()!
@@ -344,10 +359,40 @@ export class TeamSkillStore {
       return asset
     })
   }
-  async writeFile(assetId: string, path: string, content: string): Promise<TeamSkillAsset> {
+  sourcePath(folder: string): string {
+    return resolveInside(join(this.root, SKILL_IMPORT_FOLDER), importFolderName(folder))
+  }
+
+  /** Publish a scanned package under its existing identity, or register it for the first time. */
+  async publishSource(folder: string, package_: SkillPackage): Promise<'imported' | 'updated' | 'existing'> {
+    importFolderName(folder)
+    return this.transaction(async () => {
+      const current = this.bySkillId(package_.name)
+      if (current !== undefined && current.origin !== 'custom') throw new Error(`the skill name "${package_.name}" already belongs to ${current.id}`)
+      if (current !== undefined && current.digest === folderDigest(fileTable(package_.files))) {
+        if (current.sourceFolder !== folder) {
+          const tx = this.transactions.getStore()!
+          tx.assets.set(current.id, immutable({ ...current, sourceFolder: folder }))
+          tx.dirty = true
+        }
+        return 'existing'
+      }
+      await this.install(package_, {
+        id: current?.id ?? `custom:${package_.name}`,
+        origin: 'custom', sourceFolder: folder, version: current === undefined ? '1' : nextVersion(),
+        ...(current === undefined ? {} : { dependencies: current.dependencies }),
+      })
+      return current === undefined ? 'imported' : 'updated'
+    })
+  }
+
+  async writeFile(assetId: string, path: string, content: string, expectedVersion?: string): Promise<TeamSkillAsset> {
     return this.transaction(async () => {
       const asset = requireAsset(this.table, assetId)
       if (asset.origin === 'builtin') throw new Error('a shipped Team Skill is read-only; create an editable copy instead')
+      if (expectedVersion !== undefined && asset.version !== expectedVersion) {
+        throw new Error('This Team Skill has a newer published version. Reopen its file before saving.')
+      }
       const relative = normalizeSkillPath(path)
       const files = new Map<string, Uint8Array>()
       for (const file of asset.files) files.set(file.path, await this.readBytes(assetId, file.path, asset.version))
@@ -355,9 +400,33 @@ export class TeamSkillStore {
       const checked = buildSkillPackage([...files].map(([path, bytes]) => ({ path, bytes })))
       if (!checked.ok) throw new Error(`invalid skill package: ${checked.reason}`)
       if (checked.skill.name !== asset.skillId) throw new Error('editing cannot change the skill name')
+      if (asset.sourceFolder !== undefined) await this.writeSourceFile(asset, asset.sourceFolder, relative, files.get(relative)!)
       return this.install(checked.skill, { ...asset, version: nextVersion() })
     })
   }
+  private async writeSourceFile(asset: TeamSkillAsset, folder: string, path: string, bytes: Uint8Array): Promise<void> {
+    const current = await inspectSkillDirectory(this.sourcePath(folder))
+    const sourceChanged = 'The Team Skill source changed on disk. Scan the import folder before saving.'
+    if (!current.ok || folderDigest(fileTable(current.skill.files)) !== asset.digest) throw new Error(sourceChanged)
+    const previous = asset.files.find(file => file.path === path)
+    if (previous === undefined || !previous.text) throw new Error('Only existing text files can be edited in a scanned Team Skill.')
+
+    const sourcePath = `${SKILL_IMPORT_FOLDER}/${folder}/${path}`
+    const stagePath = `.stage-${randomUUID()}`
+    const backupPath = `.removed-${randomUUID()}`
+    const target = this.journalTarget(sourcePath)
+    const stage = this.journalTarget(stagePath)
+    const backup = this.journalTarget(backupPath)
+    await assertNoSymlinks(target)
+    await this.record({ kind: 'create', path: stagePath })
+    await writeFile(stage, bytes, { flag: 'wx', mode: (await lstat(target)).mode & 0o777 })
+    await this.record({ kind: 'move', path: sourcePath, backup: backupPath })
+    await rename(target, backup)
+    if (digestBytes(await readFile(backup)) !== previous.sha256) throw new Error(sourceChanged)
+    await this.record({ kind: 'relocate', path: stagePath, destination: sourcePath })
+    await rename(stage, target)
+  }
+
   /** Change dependency metadata by publishing a new immutable asset version. */
   async updateDependencies(assetId: string, dependencies: TeamSkillDependencies): Promise<TeamSkillAsset> {
     return this.transaction(async () => {
@@ -462,17 +531,51 @@ export class TeamSkillStore {
     return immutable(parsed)
   }
 
-  async createOverride(skillId: string, id: string): Promise<TeamSkillAsset> {
+  private freeCopyName(skillId: string, reserved: readonly string[]): string {
+    const taken = new Set([...reserved, ...this.list().map(asset => asset.skillId)])
+    let suffix = 1
+    while (taken.has(`${skillId}-${suffix}`)) suffix += 1
+    return `${skillId}-${suffix}`
+  }
+
+  /** Keep old binding identities when a previously same-named copy needs its own name. */
+  async renameLegacyCopies(reserved: readonly string[]): Promise<void> {
+    await this.transaction(async () => {
+      const seen = new Set([...reserved, ...this.list().filter(asset => asset.origin !== 'override').map(asset => asset.skillId)])
+      for (const asset of this.list()) {
+        if (asset.origin !== 'override') continue
+        if (seen.has(asset.skillId) || asset.skillId === asset.officialSkillId) {
+          const name = this.freeCopyName(asset.officialSkillId ?? asset.skillId, reserved)
+          const package_ = renameSkillPackage(await this.readPackage(asset), name)
+          await this.install(package_, { ...asset, version: nextVersion() })
+          seen.add(name)
+        } else {
+          seen.add(asset.skillId)
+        }
+      }
+    })
+  }
+
+  private async readPackage(asset: TeamSkillAsset): Promise<SkillPackage> {
+    const files: ImportedFile[] = []
+    for (const file of asset.files) files.push({ path: file.path, bytes: await this.readBytes(asset.id, file.path, asset.version) })
+    const checked = buildSkillPackage(files)
+    if (!checked.ok) throw new Error(`invalid skill package: ${checked.reason}`)
+    return checked.skill
+  }
+
+  async createOverride(skillId: string, id?: string, reserved: readonly string[] = []): Promise<TeamSkillAsset> {
     return this.transaction(async () => {
-      const existing = this.table.get(id)
+      const existing = id === undefined ? undefined : this.table.get(id)
       if (existing) {
         if (existing.origin === 'override' && existing.officialSkillId === skillId) return existing
         throw new Error('asset identity already belongs to another skill')
       }
       const official = requireAsset(this.table, `builtin:${skillId}`)
-      const files: ImportedFile[] = []
-      for (const file of official.files) files.push({ path: file.path, bytes: await this.readBytes(official.id, file.path, official.version) })
-      return this.installFiles(skillId, files, { id, origin: 'override', version: nextVersion(), officialSkillId: skillId, baseVersion: official.version })
+      const name = this.freeCopyName(skillId, reserved)
+      const package_ = renameSkillPackage(await this.readPackage(official), name)
+      return this.install(package_, { id: id ?? `override:${randomUUID()}`, origin: 'override', version: nextVersion(),
+        officialSkillId: skillId, baseVersion: official.version, dependencies: official.dependencies })
     })
   }
   async resetOverride(assetId: string): Promise<TeamSkillAsset> {
@@ -480,9 +583,8 @@ export class TeamSkillStore {
       const asset = requireAsset(this.table, assetId)
       if (asset.origin !== 'override' || asset.officialSkillId === undefined) throw new Error('only an override of a shipped Team Skill can be reset')
       const official = requireAsset(this.table, `builtin:${asset.officialSkillId}`)
-      const files: ImportedFile[] = []
-      for (const file of official.files) files.push({ path: file.path, bytes: await this.readBytes(official.id, file.path, official.version) })
-      return this.installFiles(official.skillId, files, { id: assetId, origin: 'override', version: nextVersion(), officialSkillId: official.skillId, baseVersion: official.version })
+      const package_ = renameSkillPackage(await this.readPackage(official), asset.skillId)
+      return this.install(package_, { ...asset, version: nextVersion(), baseVersion: official.version })
     })
   }
   async verify(assetId: string): Promise<boolean> {
@@ -525,7 +627,7 @@ export async function installFromDirectory(store: TeamSkillStore, source: string
 }
 /** What reading one untrusted folder produced: a legal package or the exact rule that refused it. */
 export type SkillFolderInspection =
-  | { readonly ok: true; readonly skill: SkillPackage }
+  | Extract<ReturnType<typeof buildSkillPackage>, { ok: true }>
   | { readonly ok: false; readonly reason: string; readonly path?: string }
 /**
  * Validate one external folder without publishing it.
@@ -538,7 +640,7 @@ export type SkillFolderInspection =
 export async function inspectSkillDirectory(source: string): Promise<SkillFolderInspection> {
   try {
     const checked = buildSkillPackage(await readDirectory(source))
-    if (checked.ok) return { ok: true, skill: checked.skill }
+    if (checked.ok) return checked
     return { ok: false, reason: checked.reason, ...checked.path === undefined ? {} : { path: checked.path } }
   } catch (error: unknown) {
     if (error instanceof SkillPathError) return { ok: false, reason: error.reason, ...error.path === undefined ? {} : { path: error.path } }

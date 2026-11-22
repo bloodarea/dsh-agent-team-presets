@@ -3,8 +3,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   captainBriefing, definitionFingerprint, findMember, findMemberById, findTeam, memberBriefing, memberTarget,
-  memberTargets, selectedMember, selectedRoleId, selectedTeam, soloMemberBriefing, toolMode, withSelection,
+  memberTargets, memberTeamDivision, recordedMemberRole, selectedMember, selectedRoleId, selectedTeam,
+  soloMemberBriefing, toolMode, withSelection,
 } from '../src/presets.ts'
+import { editTeamPreset } from '../src/preset-editor.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from '../src/types.ts'
 
 /** One member slot with only the fields a test exercises. */
@@ -114,6 +116,54 @@ describe('findMember', () => {
 
   it('reports an unknown name', () => {
     expect(findMember(team([agent('builder')]), 'reviewer')).toBeUndefined()
+  })
+})
+
+describe('summon target collisions', () => {
+  it('reserves every usable display name and preserves free positional fallbacks', () => {
+    const preset = team([agent('审查者'), agent('QA Reviewer'), agent(' MEMBER-1 '), agent('member-4')])
+    expect(memberTargets(preset).map(row => row.target)).toEqual(['member-3', 'member-2', 'member-1', 'member-4'])
+    expect(findMember(preset, 'member-1')?.member).toBe(preset.members[2])
+    expect(findMember(preset, ' MEMBER-1 ')?.member).toBe(preset.members[2])
+    expect(findMember(preset, '审查者')?.target).toBe('member-3')
+    expect(findMember(preset, 'QA Reviewer')?.target).toBe('member-2')
+    expect(captainBriefing(preset)).toContain('- member-3 (审查者)')
+    expect(memberTeamDivision(preset, 'member-1')).toContain('- member-3 (审查者)')
+  })
+
+  it('skips explicit targets when numbering duplicate valid names in legacy presets', () => {
+    const preset = team([agent('executor'), agent('EXECUTOR'), agent('executor-2')])
+    expect(memberTargets(preset).map(row => row.target)).toEqual(['executor', 'executor-3', 'executor-2'])
+    expect(findMember(preset, 'executor')?.member).toBe(preset.members[0])
+    expect(findMember(preset, 'EXECUTOR')?.member).toBe(preset.members[1])
+    expect(findMember(preset, 'executor-2')?.member).toBe(preset.members[2])
+    expect(findMember(preset, 'Executor-3')?.member).toBe(preset.members[1])
+  })
+
+  it('edits the same member addressed by the summon lookup', () => {
+    const preset = team([agent('审查者'), agent('executor'), agent('EXECUTOR'), agent('member-1')])
+    const result = editTeamPreset(preset, { members: [
+      { member: 'member-1', description: 'explicit target' },
+      { member: 'EXECUTOR', description: 'exact display name' },
+      { member: '审查者', description: 'free display name' },
+    ] })
+    expect(result).toMatchObject({
+      ok: true,
+      changed: ['member:member-1.description', 'member:executor-2.description', 'member:member-2.description'],
+      team: { members: [
+        { description: 'free display name' }, { description: '' },
+        { description: 'exact display name' }, { description: 'explicit target' },
+      ] },
+    })
+  })
+
+  it('restores a legacy instance by its saved role instead of the current owner of its name', () => {
+    const preset = team([{ ...agent('审查者'), id: 'review-role' }, { ...agent('member-1'), id: 'explicit-role' }])
+    const record = { memberName: 'member-1', displayName: '审查者' }
+    expect(recordedMemberRole(preset, record)).toBe('review-role')
+    expect(recordedMemberRole(preset, { ...record, roleId: 'frozen-role' })).toBe('frozen-role')
+    expect(recordedMemberRole(team([preset.members[1]!]), record)).toBeUndefined()
+    expect(recordedMemberRole(team([agent('审查者'), ...preset.members]), record)).toBeUndefined()
   })
 })
 

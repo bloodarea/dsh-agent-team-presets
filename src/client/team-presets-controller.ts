@@ -19,23 +19,23 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 import { toolMode, withSelection } from '../presets.ts'
 import { cloneMetadata, restoreBuiltinTeams } from '../builtin-teams.ts'
 import { builtinEntry } from '../team-catalog.ts'
+import { isOfficialSkillAsset, isOfficialSkillOverride, officialSkillDefaults, officialSkillTarget } from '../team-skills/official-bindings.ts'
 import {
   applySharedFields,
   importConflicts,
-  memberFromTransfer,
   parseTeamPresetText,
   serializeTeamPreset,
   slotNameKey,
   teamFromTransfer,
   uniqueName,
 } from '../preset-transfer.ts'
-import type { TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts'
+import type { OfficialSkillTransfer, TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TeamRosterValue } from '../types.ts'
 import { liveAssignments } from '../team-search.ts'
 import type {
   TeamAgentPreset, TeamCaptainPreset, TeamCategory, TeamCategoryAssignment, TeamExecutionRow, TeamExecutionState,
-  TeamPreset, TeamPresetsSection, ToolChoice,
+  TeamPreset, TeamPresetsSection, TeamSkillAssetView, ToolChoice,
 } from '../types.ts'
 
 /**
@@ -266,6 +266,10 @@ export type DefaultsRestore = 'restored' | 'unchanged'
 export type TeamPresetImportPlan = {
   /** The document being imported. */
   readonly transfer: TeamPresetTransfer
+  /** Imported roles with the IDs they will keep if added to the draft. */
+  readonly incoming: TeamPreset
+  /** Local identity of the replacement target, when there is a conflict. */
+  readonly targetId: string | undefined
   /** Index of the Team the document would overwrite, or undefined when it adds one. */
   readonly targetIndex: number | undefined
   /** Display name of that Team, for the dialog that resolves the collision. */
@@ -328,10 +332,10 @@ function mergeTransfer(
   target: TeamPreset,
   plan: TeamPresetImportPlan,
   resolution: TeamPresetImportResolution,
-): TeamPreset {
+): { readonly team: TeamPreset; readonly importedNames: ReadonlyMap<string, string> } {
   const members = [...target.members]
   const importedNames = new Map<string, string>()
-  for (const incoming of plan.transfer.team.members) {
+  for (const incoming of plan.incoming.members) {
     const key = slotNameKey(incoming.name)
     const at = key === '' ? -1 : members.findIndex(member => slotNameKey(member.name) === key)
     if (at >= 0 && (resolution.members[incoming.name] ?? 'replace') === 'replace') {
@@ -343,30 +347,90 @@ function mergeTransfer(
       }
     }
     const name = uniqueName(incoming.name, members.map(member => member.name))
-    members.push(memberFromTransfer({ ...incoming, name }))
+    members.push({ ...incoming, name })
     importedNames.set(incoming.name, name)
   }
   const captain = plan.transfer.team.captain
   const captainName = resolution.captain === 'rename' ? plan.suggestedCaptainName : captain.name
   importedNames.set(captain.name, captainName)
   return {
-    id: target.id,
-    name: plan.transfer.team.name,
-    description: plan.transfer.team.description,
-    // v1 never carried discovery metadata; preserve it on a legacy overwrite.
-    // v2 owns the field, including an intentionally empty metadata object.
-    ...(plan.transfer.version < 2
-      ? target.metadata === undefined ? {} : { metadata: structuredClone(target.metadata) }
-      : { metadata: structuredClone(plan.transfer.team.metadata ?? {}) }),
-    ...(plan.transfer.team.officialSkills === undefined
-      ? target.officialSkills === undefined ? {} : { officialSkills: structuredClone(target.officialSkills) }
-      : { officialSkills: plan.transfer.team.officialSkills.map(binding => ({
-        ...binding,
-        roleName: importedNames.get(binding.roleName) ?? binding.roleName,
-      })) }),
-    captain: applySharedFields(target.captain, { ...captain, name: captainName }),
-    members,
+    importedNames,
+    team: {
+      ...target,
+      name: plan.transfer.team.name,
+      description: plan.transfer.team.description,
+      // v1 never carried discovery metadata; v2 owns the field even when empty.
+      ...(plan.transfer.version < 2 ? {} : { metadata: structuredClone(plan.transfer.team.metadata ?? {}) }),
+      captain: applySharedFields(target.captain, { ...captain, name: captainName }),
+      members,
+    },
   }
+}
+
+/** Feedback describes the draft and the current library, before any binding is applied. */
+export type TeamPresetImportSkillRow = OfficialSkillTransfer & {
+  readonly source: 'preset' | 'catalog'
+  readonly status: 'unknown-skill' | 'missing-role' | 'ambiguous-role' | 'catalog-ignored'
+    | 'eligible' | 'asset-missing' | 'library-unavailable' | 'local-override'
+}
+
+function skillRow(
+  team: TeamPreset,
+  declaration: OfficialSkillTransfer,
+  source: TeamPresetImportSkillRow['source'],
+  assets: readonly TeamSkillAssetView[] | undefined,
+): TeamPresetImportSkillRow {
+  const row = { ...declaration, source }
+  const target = officialSkillTarget(team, declaration)
+  if (target.status !== 'valid') return { ...row, status: target.status }
+  if (assets === undefined) return { ...row, status: 'library-unavailable' }
+  if (assets.some(asset => isOfficialSkillOverride(asset, declaration.skillId)
+    && asset.bindings.some(binding => binding.teamId === team.id && binding.roleId === target.roleId))) {
+    return { ...row, status: 'local-override' }
+  }
+  const available = assets.some(asset => isOfficialSkillAsset(asset, target.assetId))
+  return { ...row, status: available ? 'eligible' : 'asset-missing' }
+}
+
+/** Build the same proposed roster and declaration set for preview and staging. */
+function projectImport(
+  teams: readonly TeamPreset[],
+  plan: TeamPresetImportPlan,
+  resolution: TeamPresetImportResolution,
+  assets?: readonly TeamSkillAssetView[],
+): { readonly team: TeamPreset; readonly target: TeamPreset | undefined; readonly rows: readonly TeamPresetImportSkillRow[] } {
+  const target = resolution.team === 'replace' ? teams.find(team => team.id === plan.targetId) : undefined
+  const replacement = target === undefined ? undefined : mergeTransfer(target, plan, resolution)
+  const preferred = resolution.teamName.trim() === '' ? plan.transfer.team.name : resolution.teamName
+  // New roles already have their draft identities. A new Team gets its local ID
+  // at staging, so preview cannot mistake it for a saved Team with bindings.
+  const team = replacement?.team ?? { ...plan.incoming, name: uniqueName(preferred, teams.map(candidate => candidate.name)) }
+  const defaults = officialSkillDefaults(team)
+  const declarations = plan.transfer.team.officialSkills
+  const rows: TeamPresetImportSkillRow[] = []
+  const retained: OfficialSkillTransfer[] = []
+  for (const declaration of declarations ?? []) {
+    const original = officialSkillTarget(plan.incoming, declaration)
+    if (original.status !== 'valid') {
+      rows.push({ ...declaration, source: 'preset', status: original.status })
+      continue
+    }
+    if (defaults.source === 'catalog') {
+      rows.push({ ...declaration, source: 'preset', status: 'catalog-ignored' })
+      continue
+    }
+    const resolved = { ...declaration, roleName: replacement?.importedNames.get(declaration.roleName) ?? declaration.roleName }
+    const row = skillRow(team, resolved, 'preset', assets)
+    rows.push(row)
+    if (row.status !== 'missing-role' && row.status !== 'ambiguous-role') retained.push(resolved)
+  }
+  if (defaults.source === 'catalog' || declarations === undefined) {
+    rows.push(...defaults.declarations.map(declaration => skillRow(team, declaration, defaults.source, assets)))
+  }
+  const staged = defaults.source === 'catalog'
+    ? { ...team, officialSkills: defaults.declarations.map(declaration => ({ ...declaration })) }
+    : declarations === undefined ? team : { ...team, officialSkills: retained }
+  return { team: staged, target, rows }
 }
 
 /**
@@ -948,6 +1012,7 @@ export class TeamPresetsController {
       restoreDefaults: () => { this.restoreDefaults() },
       exportTeam: (index: number) => this.exportTeam(index),
       inspectImport: (text: string) => this.inspectImport(text),
+      previewImport: (plan, resolution, assets) => this.previewImport(plan, resolution, assets),
       applyImport: (plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution) => {
         return this.applyImport(plan, resolution)
       },
@@ -1265,8 +1330,7 @@ export class TeamPresetsController {
   exportTeam(index: number): string | undefined {
     const team = this.visibleTeams()[index]
     if (team === undefined) return undefined
-    const officialSkills = team.officialSkills ?? builtinEntry(team.id)?.officialSkillBindings
-    return serializeTeamPreset(team, officialSkills === undefined ? {} : { officialSkills })
+    return serializeTeamPreset(team, { officialSkills: officialSkillDefaults(team).declarations })
   }
 
   /**
@@ -1280,7 +1344,26 @@ export class TeamPresetsController {
   inspectImport(text: string): TeamPresetImportInspection {
     const parsed = parseTeamPresetText(text)
     if (!parsed.ok) return parsed
-    return { ok: true, plan: { transfer: parsed.transfer, ...importConflicts(this.visibleTeams(), parsed.transfer) } }
+    const teams = this.visibleTeams()
+    const conflicts = importConflicts(teams, parsed.transfer)
+    return {
+      ok: true,
+      plan: {
+        transfer: parsed.transfer,
+        incoming: teamFromTransfer(parsed.transfer, ''),
+        targetId: conflicts.targetIndex === undefined ? undefined : teams[conflicts.targetIndex]?.id,
+        ...conflicts,
+      },
+    }
+  }
+
+  /** Inspect the draft that the selected collision choices would stage. */
+  previewImport(
+    plan: TeamPresetImportPlan,
+    resolution: TeamPresetImportResolution,
+    assets?: readonly TeamSkillAssetView[],
+  ): readonly TeamPresetImportSkillRow[] {
+    return projectImport(this.visibleTeams(), plan, resolution, assets).rows
   }
 
   /**
@@ -1295,16 +1378,13 @@ export class TeamPresetsController {
    */
   applyImport(plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution): string {
     const draft = this.beginDraft()
-    const target = plan.targetIndex === undefined ? undefined : draft[plan.targetIndex]
-    if (resolution.team === 'replace' && target !== undefined) {
-      const merged = mergeTransfer(target, plan, resolution)
-      this.draft = draft.map((team, position) => position === plan.targetIndex ? merged : team)
+    const projected = projectImport(draft, plan, resolution)
+    if (projected.target !== undefined) {
+      this.draft = draft.map(team => team === projected.target ? projected.team : team)
       this.publish()
-      return target.id
+      return projected.team.id
     }
-    const preferred = resolution.teamName.trim() === '' ? plan.transfer.team.name : resolution.teamName
-    const name = uniqueName(preferred, draft.map(team => team.name))
-    const created = { ...teamFromTransfer(plan.transfer, createTeamPreset(draft).id), name }
+    const created = { ...projected.team, id: createTeamPreset(draft).id }
     this.draft = [...draft, created]
     this.publish()
     return created.id
@@ -1755,6 +1835,8 @@ export interface TeamPresetsInjected {
   exportTeam: (index: number) => string | undefined
   /** Read one shared document and report what importing it would collide with. */
   inspectImport: (text: string) => TeamPresetImportInspection
+  /** Preview the declared skills for the selected import choices. */
+  previewImport: (plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution, assets?: readonly TeamSkillAssetView[]) => readonly TeamPresetImportSkillRow[]
   /** Stage one inspected document under the user's resolution of its collisions. */
   applyImport: (plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution) => string
   removeTeam: (index: number) => void

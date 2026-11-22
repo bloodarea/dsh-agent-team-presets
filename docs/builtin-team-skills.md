@@ -59,18 +59,18 @@ You can add or remove assignments per role from the member page; those local cha
 
 ## Local overrides
 
-Built-in skills are **read-only**. To change one, create a local editable copy from the skill's page. From then on:
+Built-in skills are **read-only**. You can create a local editable copy from the skill’s page.
 
-- Creating the copy switches the roles that already hold the shipped skill onto it, so a member reads your edits.
+- Each copy gets its own skill name, such as `research-1` or `research-2`. Select the option in the dialog if you also want to switch roles already bound to the built-in skill to the new copy.
 - When a later plugin release moves the shipped copy past the version your copy was derived from, the library marks it `updateAvailable`.
 - **Restore to the built-in version** (`恢复为插件内置版本`) replaces your copy's content **and moves those roles back onto the shipped skill**, so the default binding is the shipped one again.
 - A copy that lags several versions keeps working, but it also keeps whatever it was derived from. The library reports the gap rather than silently upgrading you.
 
-A default binding always names the **shipped** skill. A local copy never captures a default by sharing its name, which is what makes the restore above reliable.
+A preset’s default binding names the **shipped** skill. The roles you explicitly switch keep using their local copy until you change their assignment or restore it.
 
 ### One name, one skill
 
-The English skill id is the identity every surface uses: a binding stores it, a preset document exports it, and the model addresses the skill by it. Two assets may share that name only when one is a sanctioned copy of the other — an override *is* the shipped skill, edited. Importing or creating a second skill under a name the library already has is therefore **refused**, with the owner named in the error, instead of letting the name point at two assets and a binding land on whichever one happened to sort first.
+The model addresses each skill by its unique name, and role bindings store the asset ID. Built-in names are reserved. Folder import and directory scan refuse a package with a built-in name.
 
 ## Scope
 

@@ -17,6 +17,7 @@ import { MemberRuntime } from '../src/member-runtime.ts'
 import { memberRecords, mountMemberStorage } from './fixtures/member-storage.ts'
 import type { MemberStorage } from './fixtures/member-storage.ts'
 import { mountSubagentDouble, acceptedActivation as activationFor } from './fixtures/plugin-harness.ts'
+import type { DoubleMember, SubagentDoubleOptions } from './fixtures/plugin-harness.ts'
 import { routedCaptain, slot, team } from './fixtures/team-presets.ts'
 import { executeTool } from './fixtures/execute-tool.ts'
 
@@ -56,9 +57,7 @@ async function acceptedActivation(spec: SubagentActivationSpec): Promise<Subagen
 }
 
 /** Mount the loop, publish one real Agent, and install the given services. */
-async function setup(options: {
-  startActivation?: (spec: SubagentActivationSpec) => Promise<SubagentActivation>
-} = {}) {
+async function setup(options: Pick<SubagentDoubleOptions, 'startActivation' | 'members'> = {}) {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
@@ -66,7 +65,7 @@ async function setup(options: {
   // Creation admission reads live services before anything durable exists: the
   // depth cap comes from `subagents`, and the member slots below configure a
   // `deepseek` route, so both must exist in this deployment.
-  mountSubagentDouble(ctx, { startActivation: options.startActivation ?? acceptedActivation })
+  mountSubagentDouble(ctx, { ...options, startActivation: options.startActivation ?? acceptedActivation })
   ctx.llm.registerAdapter(['fixture', 'deepseek'], new FixtureAdapter())
   const agent = await harness.create(SessionId('captain'), { provider: 'fixture', model: 'fixture' })
   ctx.tools.register({ name: 'read', description: 'Read fixture', parameters: {}, output: { schema: { type: 'string' }, render: () => [] }, async execute() { return '' } })
@@ -216,6 +215,32 @@ describe('spawn_team_member arguments', () => {
     await callMemberTool(ctx, agent, { member: 'member-1', task: 'work' })
     expect(startActivation).toHaveBeenCalledWith(expect.objectContaining({ name: 'member-1', label: 'member-1' }))
     expect(await snapshot(storage)).toMatchObject({ memberName: 'member-1' })
+    application.dispose()
+  })
+
+  it('summons the right roles without reusing old instance names', async () => {
+    const roster: DoubleMember[] = [{ id: 'old-review', name: 'member-1', status: 'idle' }]
+    const startActivation = vi.fn(async (spec: SubagentActivationSpec) => {
+      const activation = await acceptedActivation(spec)
+      roster.push({ id: activation.childId, name: activation.name, status: 'idle' })
+      return activation
+    })
+    const { ctx, agent, storage, members } = await setup({ startActivation, members: () => roster })
+    const preset = team([
+      slot({ id: 'review-role', name: '审查者' }),
+      slot({ id: 'explicit-role', name: 'member-1' }),
+      slot({ id: 'executor-role', name: 'executor' }),
+    ])
+    const application = applyTeamToAgent(ctx, agent, preset, { fresh: 'spawn', fork: 'fork' }, undefined, members)
+    for (const member of ['member-1', '审查者', 'executor', 'executor']) {
+      const result = await callMemberTool(ctx, agent, { member, task: 'work' })
+      expect(result.isError, resultText(result)).toBe(false)
+    }
+    const records = await memberRecords(storage)
+    expect(Object.fromEntries(records.map(record => [record.memberName, record.roleId]))).toEqual({
+      'member-1-2': 'explicit-role', 'member-2': 'review-role', executor: 'executor-role', 'executor-2': 'executor-role',
+    })
+    expect(roster[0]).toEqual({ id: 'old-review', name: 'member-1', status: 'idle' })
     application.dispose()
   })
 

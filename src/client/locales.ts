@@ -48,6 +48,9 @@ export type TeamPresetsLocaleKey =
   | 'importConflictTitle' | 'importTeamConflict' | 'importTeamReplace' | 'importTeamRename' | 'importNewTeamName'
   | 'importCaptainConflict' | 'importCaptainReplace' | 'importCaptainRename'
   | 'importMemberConflict' | 'importMemberReplace' | 'importMemberRename'
+  | 'importPreviewTitle' | 'importDraftNote' | 'importSkillDeclarations' | 'importSkillCatalog'
+  | 'importSkillUnknown' | 'importSkillRoleMissing' | 'importSkillRoleAmbiguous' | 'importSkillCatalogIgnored'
+  | 'importSkillEligible' | 'importSkillAssetMissing' | 'importSkillLibraryUnavailable' | 'importSkillLocalOverride'
   | 'importInvalidJson' | 'importInvalidFormat' | 'importUnsupportedVersion' | 'importUnsupportedFields'
   | 'importDuplicateMembers' | 'importTooManyMembers' | 'importTooLarge' | 'importInvalidMetadata'
   // Team Skills panel copy.
@@ -76,11 +79,13 @@ export type TeamPresetsLocaleKey =
   | 'patchPackage' | 'patchFile'
   | 'patchInstalledOk' | 'patchRemovedOk' | 'patchRefused'
   | 'skillsScan' | 'skillsScanHint' | 'skillsScanSummary' | 'skillsScanEmpty'
-  | 'skillsScanImported' | 'skillsScanExisting' | 'skillsScanInvalid'
+  | 'skillsScanImported' | 'skillsScanExisting' | 'skillsScanUpdated' | 'skillsScanInvalid' | 'skillsScanSourceMissing'
   | 'skillsScanMissingSkill' | 'skillsScanInvalidFrontmatter' | 'skillsScanInvalidName'
   | 'skillsScanMissingDescription' | 'skillsScanTooLarge' | 'skillsScanSymlink'
   | 'skillsScanNotDirectory' | 'skillsScanUnreadable' | 'skillsScanDuplicate'
-  | 'skillsScanInstallRefused'
+  | 'skillsScanInstallRefused' | 'skillsScanBuiltinNameConflict' | 'skillsScanCopyNameConflict'
+  | 'skillsScanDuplicateSourceName' | 'skillsScanSourceMissingReason' | 'skillsScanSourceChanged'
+  | 'skillsInboxChanges' | 'skillsInboxNew' | 'skillsInboxUpdated' | 'skillsIgnoredDependencyFields'
   | 'skillsOpenScanFolder' | 'skillsCopyScanFolder'
   | 'skillsScanFolderOpened' | 'skillsScanFolderCopied' | 'skillsScanFolderCopyFailed'
   | 'skillsOverride'
@@ -154,7 +159,7 @@ export type TeamPresetsLocaleKey =
   | 'skillsSaveFile'
   | 'skillsEditable'
   | 'skillsReadonly'
-  | 'skillsMakeCopy'
+  | 'skillsMakeCopy' | 'skillsMakeCopyTitle' | 'skillsMakeCopySwitchBindings' | 'skillsMakeCopySwitchIssue'
   | 'skillsResetCopy'
   | 'skillsNoBinding'
   | 'skillsUnbind'
@@ -329,7 +334,8 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   composerMissingHint: 'This is not No team. An unapplicable selection denies tools; a running task keeps its old policy until idle. Choose a valid Team or No team.',
   importPreset: 'Import preset',
   exportPreset: 'Export',
-  importNote: 'A shared document carries names, descriptions, system prompts, and colors. Model routes and tool permissions stay local.',
+  importNote: 'A shared document carries names, descriptions, system prompts, colors, display metadata, and built-in skill declarations. Model routes and tool permissions stay local.',
+  importDraftNote: 'Import stages the preset as a draft. Save to apply it. Skill defaults respect existing local overrides and manual unbinding.',
   restoreDefaults: 'Restore built-in presets',
   restoreDefaultsHint: 'Puts every preset this plugin ships back to its shipped name, description, prompts, colors, and roster. The model routes and tool permissions you configured stay as they are, and teams you created yourself are not touched.',
   defaultsRestored: 'Default presets restored in this draft. Save to apply them.',
@@ -349,6 +355,17 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   importMemberConflict: 'These members already exist in that team',
   importMemberReplace: 'Replace that member',
   importMemberRename: 'Add it renamed',
+  importPreviewTitle: 'Review preset import',
+  importSkillDeclarations: 'Preset skill declarations',
+  importSkillCatalog: 'Built-in team defaults',
+  importSkillUnknown: 'Invalid declaration. Only built-in skills are supported.',
+  importSkillRoleMissing: 'Invalid declaration. The role does not exist.',
+  importSkillRoleAmbiguous: 'Invalid declaration. The role does not resolve to a unique slot.',
+  importSkillCatalogIgnored: 'This team ID uses the built-in catalog rules.',
+  importSkillEligible: 'Eligible for automatic binding after saving.',
+  importSkillAssetMissing: 'The built-in asset is missing. The declaration is kept for automatic binding when the asset becomes available.',
+  importSkillLibraryUnavailable: 'Asset availability could not be checked. The declaration is kept.',
+  importSkillLocalOverride: 'This role’s existing local override takes precedence.',
   importInvalidJson: 'That file is not valid JSON.',
   importInvalidFormat: 'That file is not a Team preset document.',
   importUnsupportedVersion: 'That document was written by a newer version of this plugin.',
@@ -401,11 +418,13 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   patchRefused: 'Nothing changed.',
   skillsScan: 'Scan import folder',
   skillsScanHint: 'Folder path:',
-  skillsScanSummary: 'Scanned {scanned}: imported {imported}, already present {existing}, refused {invalid}.',
+  skillsScanSummary: 'Scanned {scanned}. Imported {imported}, updated {updated}, unchanged {existing}, missing {missing}, refused {invalid}.',
   skillsScanEmpty: 'No skill folder was found in the import folder.',
   skillsScanImported: 'imported',
-  skillsScanExisting: 'already present',
+  skillsScanExisting: 'unchanged',
+  skillsScanUpdated: 'updated',
   skillsScanInvalid: 'refused',
+  skillsScanSourceMissing: 'source missing',
   skillsScanMissingSkill: 'missing SKILL.md',
   skillsScanInvalidFrontmatter: 'invalid frontmatter',
   skillsScanInvalidName: 'name is not kebab-case',
@@ -416,6 +435,15 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   skillsScanUnreadable: 'cannot be read',
   skillsScanDuplicate: 'same skill name',
   skillsScanInstallRefused: 'publish refused',
+  skillsScanBuiltinNameConflict: 'name matches a built-in skill',
+  skillsScanCopyNameConflict: 'name matches an existing local copy',
+  skillsScanDuplicateSourceName: 'another source folder declares this skill name',
+  skillsScanSourceMissingReason: 'the previously imported source folder is missing',
+  skillsScanSourceChanged: 'source changed during the scan. Scan again.',
+  skillsInboxChanges: 'Changes in the import folder ({count})',
+  skillsInboxNew: 'new skill',
+  skillsInboxUpdated: 'update available',
+  skillsIgnoredDependencyFields: 'Dependency fields ignored on import ({fields}). Use set_team_skill_dependencies to configure this skill’s dependencies.',
   skillsOpenScanFolder: 'Open scan folder',
   skillsCopyScanFolder: 'Copy scan folder path',
   skillsScanFolderOpened: 'The scan folder is open. Put one skill folder inside it, then scan.',
@@ -445,7 +473,10 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   skillsEditable: 'editable',
   skillsReadonly: 'read-only original',
   skillsMakeCopy: 'Create an editable copy',
-  skillsResetCopy: 'Reset to the built-in copy',
+  skillsMakeCopyTitle: 'Create an editable copy of {skill}?',
+  skillsMakeCopySwitchBindings: 'Switch currently bound roles to the copy ({count})',
+  skillsMakeCopySwitchIssue: 'The editable copy was created. Role bindings could not be switched. {issue}',
+  skillsResetCopy: 'Reset copy and switch roles back to the built-in skill',
   skillsNoBinding: 'Not assigned to any member yet',
   skillsUnbind: 'Remove',
   skillsDeps: 'MCP and runtime dependencies',
@@ -691,7 +722,8 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   composerMissingHint: '这不是“不使用团队”。无法应用时权限保持拒绝；进行中的任务保留旧策略直到空闲。请改选有效团队或“不使用团队”。',
   importPreset: '导入预设',
   exportPreset: '导出',
-  importNote: '共享文档只携带名称、描述、系统提示词和颜色；模型路由与工具权限保留在本地。',
+  importNote: '共享文档携带名称、描述、系统提示词、颜色、展示信息和内置技能声明。模型路由与工具权限保留在本地。',
+  importDraftNote: '导入会暂存为草稿，保存后生效。技能默认规则会保留已有的本地副本绑定和手动解绑。',
   restoreDefaults: '恢复内置预设',
   restoreDefaultsHint: '把插件自带的预设全部恢复到出厂的名称、说明、提示词、颜色和成员名单；你为它们配置的模型路由与工具权限保持不变，你自己创建的团队完全不受影响。',
   defaultsRestored: '默认预设已恢复到草稿，保存后生效。',
@@ -711,6 +743,17 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   importMemberConflict: '该团队已存在这些队员',
   importMemberReplace: '替换该队员',
   importMemberRename: '重命名后新增',
+  importPreviewTitle: '预览预设导入',
+  importSkillDeclarations: '预设技能声明',
+  importSkillCatalog: '内置团队默认技能',
+  importSkillUnknown: '声明无效，仅支持插件内置技能。',
+  importSkillRoleMissing: '声明无效，找不到该角色。',
+  importSkillRoleAmbiguous: '声明无效，无法唯一确定该角色。',
+  importSkillCatalogIgnored: '该团队 ID 使用内置团队默认规则。',
+  importSkillEligible: '保存后符合自动绑定条件。',
+  importSkillAssetMissing: '当前缺少该内置资产。声明会保留，资产可用后可自动补绑。',
+  importSkillLibraryUnavailable: '暂时无法核实资产是否可用。声明会保留。',
+  importSkillLocalOverride: '该角色已有对应的本地副本绑定，将优先保留。',
   importInvalidJson: '该文件不是合法的 JSON。',
   importInvalidFormat: '该文件不是团队预设文档。',
   importUnsupportedVersion: '该文档由更新版本的插件生成。',
@@ -763,11 +806,13 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   patchRefused: '未做任何修改。',
   skillsScan: '扫描导入目录',
   skillsScanHint: '目录路径：',
-  skillsScanSummary: '已检查 {scanned} 个：新增 {imported}，已存在 {existing}，无法导入 {invalid}。',
+  skillsScanSummary: '已扫描 {scanned} 个目录。导入 {imported}，更新 {updated}，无变化 {existing}，来源缺失 {missing}，无法导入 {invalid}。',
   skillsScanEmpty: '导入目录里没有发现技能文件夹。',
   skillsScanImported: '已导入',
-  skillsScanExisting: '已存在',
+  skillsScanExisting: '无变化',
+  skillsScanUpdated: '已更新',
   skillsScanInvalid: '无法导入',
+  skillsScanSourceMissing: '来源缺失',
   skillsScanMissingSkill: '缺少 SKILL.md',
   skillsScanInvalidFrontmatter: 'frontmatter 格式不正确',
   skillsScanInvalidName: 'name 不符合 kebab-case',
@@ -778,6 +823,15 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   skillsScanUnreadable: '无法读取',
   skillsScanDuplicate: '技能名重复',
   skillsScanInstallRefused: '发布被拒绝',
+  skillsScanBuiltinNameConflict: '与内置技能同名',
+  skillsScanCopyNameConflict: '与已有本地副本同名',
+  skillsScanDuplicateSourceName: '另一个来源目录已声明此技能名',
+  skillsScanSourceMissingReason: '此前导入该技能的来源目录已缺失',
+  skillsScanSourceChanged: '来源在扫描期间发生了变化，请重新扫描。',
+  skillsInboxChanges: '导入目录有变动（{count}）',
+  skillsInboxNew: '新技能',
+  skillsInboxUpdated: '有更新',
+  skillsIgnoredDependencyFields: '导入时已忽略依赖字段（{fields}）。请使用 set_team_skill_dependencies 配置此技能的依赖。',
   skillsOpenScanFolder: '打开扫描技能目录',
   skillsCopyScanFolder: '复制扫描技能目录',
   skillsScanFolderOpened: '已打开扫描目录。把一个技能文件夹放进去后点扫描即可。',
@@ -807,7 +861,10 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   skillsEditable: '可编辑',
   skillsReadonly: '只读原版',
   skillsMakeCopy: '创建本地可编辑副本',
-  skillsResetCopy: '恢复为插件内置版本',
+  skillsMakeCopyTitle: '创建「{skill}」的本地可编辑副本？',
+  skillsMakeCopySwitchBindings: '将当前绑定此技能的角色切换到副本（{count}）',
+  skillsMakeCopySwitchIssue: '已创建可编辑副本。未能切换角色绑定。{issue}',
+  skillsResetCopy: '重置副本并将角色切回内置技能',
   skillsNoBinding: '尚未分配给任何成员',
   skillsUnbind: '解除绑定',
   skillsDeps: 'MCP 及运行环境依赖',

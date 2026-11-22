@@ -32,55 +32,48 @@ async function fixture() {
 }
 
 describe('Team Skill override service regressions', () => {
-  it('switches builtin users atomically, deduplicates and keeps explicit override choices', async () => {
+  it('creates uniquely named copies and only switches bindings on explicit request', async () => {
     const { root, store, manager, service, resync } = await fixture()
-    await store.createOverride('demo', 'override:demo')
-    await store.createOverride('demo', 'override:another')
-    for (const roleId of ['dev', 'already', 'explicit']) {
-      expect((await manager.assign({ teamId: 'team-1', roleId, assetId: 'builtin:demo' })).ok).toBe(true)
-    }
-    await manager.assign({ teamId: 'team-1', roleId: 'already', assetId: 'override:demo' })
-    await manager.assign({ teamId: 'team-1', roleId: 'explicit', assetId: 'override:another' })
+    await manager.assign({ teamId: 'team-1', roleId: 'dev', assetId: 'builtin:demo' })
+    await manager.assign({ teamId: 'team-1', roleId: 'explicit', assetId: 'builtin:demo' })
+    const first = await service.overrideSkill('demo', false)
+    if (!('asset' in first)) throw new Error(first.detail)
+    expect(first.asset).toMatchObject({ skillId: 'demo-1', officialSkillId: 'demo', bindings: [] })
+    expect(first.body).toContain('name: demo-1')
+    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual(['builtin:demo'])
+    await manager.assign({ teamId: 'team-1', roleId: 'explicit', assetId: first.asset.id })
     const revision = manager.bindingRevision
-    const answer = await service.overrideSkill('demo')
-    expect('asset' in answer && answer.asset.id).toBe('override:demo')
+    const second = await service.overrideSkill('demo', true)
+    if (!('asset' in second)) throw new Error(second.detail)
+    expect(second.asset.skillId).toBe('demo-2')
     expect(manager.bindingRevision).toBe(revision + 1)
-    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual(['override:demo'])
-    expect(manager.assetsFor('team-1', 'already').map(asset => asset.id)).toEqual(['override:demo'])
-    expect(manager.assetsFor('team-1', 'explicit').map(asset => asset.id)).toEqual(['builtin:demo', 'override:another'])
-    expect(manager.assetsFor('team-1', 'unrelated')).toEqual([])
+    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual([second.asset.id])
+    expect(manager.assetsFor('team-1', 'explicit').map(asset => asset.id)).toEqual([second.asset.id, first.asset.id])
     expect(JSON.parse(await readFile(join(root, 'bindings.json'), 'utf8')).bindings).toEqual(manager.list())
     expect(resync).toHaveBeenCalledTimes(1)
-    await service.overrideSkill('demo')
-    expect(manager.bindingRevision).toBe(revision + 1)
+    const restored = await service.resetSkill(second.asset.id)
+    expect(restored).toMatchObject({ asset: { id: second.asset.id, skillId: 'demo-2' }, body: expect.stringContaining('name: demo-2') })
+    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual(['builtin:demo'])
+    expect(await store.readText('builtin:demo', 'SKILL.md')).toContain('name: demo\n')
   })
 
-  it('keeps the created override but rolls bindings back on write failure and retries safely', async () => {
+  it('reports the created copy when a binding switch fails and rolls back its bindings', async () => {
     const { root, store, manager, service, resync } = await fixture()
     await manager.assign({ teamId: 'team-1', roleId: 'dev', assetId: 'builtin:demo' })
     const before = manager.list()
     const revision = manager.bindingRevision
-    // Create a directory only once override publication succeeds, so the fault
-    // is specifically the following bindings commit, not service readiness.
     const create = store.createOverride.bind(store)
-    const spy = vi.spyOn(store, 'createOverride').mockImplementationOnce(async (...args) => {
+    vi.spyOn(store, 'createOverride').mockImplementationOnce(async (...args) => {
       const asset = await create(...args)
       await rm(join(root, 'bindings.json'))
       await mkdir(join(root, 'bindings.json'))
       return asset
     })
-    expect(await service.overrideSkill('demo')).toMatchObject({ ok: false, reason: 'override-refused' })
-    expect(store.get('override:demo')).toBeDefined()
-    const version = store.get('override:demo')!.version
+    const answer = await service.overrideSkill('demo', true)
+    expect(answer).toMatchObject({ asset: { skillId: 'demo-1', bindings: [] }, bindingSwitchIssue: expect.any(String) })
     expect(manager.list()).toEqual(before)
     expect(manager.bindingRevision).toBe(revision)
     expect(resync).not.toHaveBeenCalled()
-    await rm(join(root, 'bindings.json'), { recursive: true })
-    spy.mockRestore()
-    expect('asset' in await service.overrideSkill('demo')).toBe(true)
-    expect(store.get('override:demo')!.version).toBe(version)
-    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual(['override:demo'])
-    expect(resync).toHaveBeenCalledTimes(1)
   })
 
   it('creates the import folder for the open gesture and stays idempotent', async () => {
@@ -107,10 +100,10 @@ describe('Team Skill override service regressions', () => {
 
     const first = await service.scanImportFolder()
     if (!('entries' in first)) throw new Error('the scan was refused')
-    expect(first).toMatchObject({ ok: true, scanned: 5, imported: 1, existing: 1, invalid: 3 })
+    expect(first).toMatchObject({ ok: true, scanned: 5, imported: 1, existing: 0, invalid: 4 })
     const rows = Object.fromEntries(first.entries.map(entry => [entry.folder, entry]))
     expect(rows['alpha']).toMatchObject({ status: 'imported', skillId: 'alpha', assetId: 'custom:alpha' })
-    expect(rows['duplicate-demo']).toMatchObject({ status: 'existing', reason: 'duplicate', assetId: 'builtin:demo' })
+    expect(rows['duplicate-demo']).toMatchObject({ status: 'invalid', reason: 'builtin-name-conflict', skillId: 'demo' })
     expect(rows['bad-name']).toMatchObject({ status: 'invalid', reason: 'invalid-name' })
     expect(rows['no-skill']).toMatchObject({ status: 'invalid', reason: 'missing-skill-file' })
     expect(rows['plain.txt']).toMatchObject({ status: 'invalid', reason: 'not-directory' })
@@ -119,7 +112,84 @@ describe('Team Skill override service regressions', () => {
     // A second scan is idempotent: the published folder is now simply present.
     const second = await service.scanImportFolder()
     if (!('entries' in second)) throw new Error('the rescan was refused')
-    expect(second).toMatchObject({ scanned: 5, imported: 0, existing: 2, invalid: 3 })
+    expect(second).toMatchObject({ scanned: 5, imported: 0, existing: 1, invalid: 4 })
+  })
+
+  it('detects package changes without publishing, then updates the same bound asset', async () => {
+    const { root, store, manager, service } = await fixture()
+    const source = join(root, 'inbox', 'my source')
+    const instruction = '---\nname: writer\ndescription: writer\nexecutables: [example]\n---\n\nBody\n'
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'SKILL.md'), instruction)
+    await writeFile(join(source, 'image.png'), Buffer.from([0, 1, 2]))
+    expect(await service.library(true)).toMatchObject({ inboxChanges: [{ skillId: 'writer', status: 'imported' }] })
+    expect(store.get('custom:writer')).toBeUndefined()
+    expect(await service.scanImportFolder()).toMatchObject({ imported: 1, entries: [{ ignoredDependencyFields: ['executables'] }] })
+    expect(await service.detail('custom:writer')).toMatchObject({ directory: source })
+    const dependencies = { executables: [], mcpServers: [{ serverName: 'docs', required: false }], otherSkills: [] }
+    await store.updateDependencies('custom:writer', dependencies)
+    await manager.assign({ teamId: 'team-1', roleId: 'dev', assetId: 'custom:writer' })
+    const before = store.get('custom:writer')!
+    expect(await service.library(true)).toMatchObject({ inboxChanges: [] })
+
+    await writeFile(join(source, 'image.png'), Buffer.from([0, 1, 3]))
+    expect(await service.library(true)).toMatchObject({ inboxChanges: [{ skillId: 'writer', status: 'updated' }] })
+    expect(store.get(before.id)?.version).toBe(before.version)
+    expect(await service.writeFile(before.id, 'SKILL.md', instruction.replace('Body', 'Too early')))
+      .toMatchObject({ ok: false, detail: expect.stringContaining('source changed') })
+    expect(await service.scanImportFolder()).toMatchObject({ updated: 1, existing: 0 })
+    const after = store.get(before.id)!
+    expect(after).toMatchObject({ id: before.id, dependencies })
+    expect(after.version).not.toBe(before.version)
+    expect(after.digest).not.toBe(before.digest)
+    expect(await service.writeFile(before.id, 'SKILL.md', instruction, before.version))
+      .toMatchObject({ ok: false, detail: expect.stringContaining('newer published version') })
+    expect([...await store.readBytes(before.id, 'image.png', before.version)]).toEqual([0, 1, 2])
+    expect([...await store.readBytes(before.id, 'image.png')]).toEqual([0, 1, 3])
+    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual([before.id])
+
+    const edited = instruction.replace('Body', 'Edited through DSH')
+    expect(await service.writeFile(before.id, 'SKILL.md', edited)).toMatchObject({ body: edited })
+    expect(await readFile(join(source, 'SKILL.md'), 'utf8')).toBe(edited)
+    expect(await service.library(true)).toMatchObject({ inboxChanges: [] })
+    await rm(source, { recursive: true })
+    expect(await service.library(true)).toMatchObject({ inboxChanges: [{ skillId: 'writer', status: 'missing' }] })
+    expect(await service.scanImportFolder()).toMatchObject({ missing: 1, updated: 0 })
+    expect(manager.assetsFor('team-1', 'dev').map(asset => asset.id)).toEqual([before.id])
+    expect(await store.readText(before.id, 'SKILL.md')).toBe(edited)
+  })
+
+  it('restores the source file if publishing a panel edit fails', async () => {
+    const { root, store, service } = await fixture()
+    const source = join(root, 'inbox', 'writer')
+    const original = '---\nname: writer\ndescription: writer\n---\n\nOriginal\n'
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'SKILL.md'), original)
+    expect(await service.scanImportFolder()).toMatchObject({ imported: 1 })
+    const before = store.get('custom:writer')!
+    vi.spyOn(store, 'install').mockRejectedValueOnce(new Error('publish failed'))
+    expect(await service.writeFile(before.id, 'SKILL.md', original.replace('Original', 'New'), before.version))
+      .toMatchObject({ ok: false, detail: expect.stringContaining('publish failed') })
+    expect(await readFile(join(source, 'SKILL.md'), 'utf8')).toBe(original)
+    expect(store.get(before.id)).toEqual(before)
+    expect(await service.library(true)).toMatchObject({ inboxChanges: [] })
+  })
+
+  it('refuses reserved names and never picks a winner between duplicate scan sources', async () => {
+    const { root, store, service } = await fixture()
+    const files = (name: string) => [{ path: 'SKILL.md', base64: Buffer.from(`---\nname: ${name}\ndescription: test\n---\n`).toString('base64') }]
+    expect(await service.importSkill(files('demo'))).toMatchObject({ ok: false, reason: 'builtin-name-conflict' })
+    expect(await service.importSkill(files('research'))).toMatchObject({ ok: false, reason: 'builtin-name-conflict' })
+    for (const folder of ['a', 'b']) {
+      const path = join(root, 'inbox', folder)
+      await mkdir(path, { recursive: true })
+      await writeFile(join(path, 'SKILL.md'), Buffer.from(files('duplicate')[0]!.base64, 'base64'))
+    }
+    expect(await service.scanImportFolder()).toMatchObject({ imported: 0, invalid: 2, entries: [
+      { folder: 'a', status: 'invalid', reason: 'duplicate-source-name' },
+      { folder: 'b', status: 'invalid', reason: 'duplicate-source-name' },
+    ] })
+    expect(store.get('custom:duplicate')).toBeUndefined()
   })
 
   it('reports an empty scan when the import folder does not exist', async () => {

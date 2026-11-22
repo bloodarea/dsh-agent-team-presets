@@ -1,13 +1,5 @@
-/**
- * Conflict dialog for one Team import.
- *
- * The document's Team name, captain name, and member names are the keys an
- * import matches on, so each one that the target Team already uses is resolved
- * here: overwrite the configured agent, or add the imported one under a name
- * that is still free. Choosing a new Team name makes the whole document a new
- * Team, which is why the agent collisions disappear with that choice.
- */
-import type { TeamPresetImportPlan, TeamPresetImportResolution } from './team-presets-controller.ts';
+/** Review one Team import and resolve any naming conflicts before staging. */
+import type { TeamPresetImportPlan, TeamPresetImportResolution, TeamPresetImportSkillRow } from './team-presets-controller.ts';
 import type { TeamPresetsLocaleKey } from './locales.ts';
 /** Props of the import conflict dialog. */
 export interface TeamImportDialogProps {
@@ -15,12 +7,9 @@ export interface TeamImportDialogProps {
     readonly plan: TeamPresetImportPlan;
     /** Page copy reader. */
     readonly t: (key: TeamPresetsLocaleKey) => string;
+    readonly previewSkills: (resolution: TeamPresetImportResolution) => readonly TeamPresetImportSkillRow[];
     readonly onCancel: () => void;
     readonly onConfirm: (resolution: TeamPresetImportResolution) => void;
 }
-/**
- * Render the collision dialog for one import.
- * @param props - the plan, the page copy, and the two outcomes.
- * @returns the dialog; the caller mounts it only while an import is pending.
- */
+/** Render a pending import, including any declaration that could not resolve. */
 export declare function TeamImportDialog(props: TeamImportDialogProps): import("react").JSX.Element;

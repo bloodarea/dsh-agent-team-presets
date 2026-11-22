@@ -20,8 +20,7 @@
 import type { TeamSkillAsset, TeamSkillBinding, TeamSkillBindingSummary, TeamSkillDeleteBlocker } from '../types.ts';
 import type { TeamPreset } from '../types.ts';
 import type { TeamSkillStore } from './store.ts';
-/** The role slot the captain is stored under. */
-export declare const CAPTAIN_ROLE = "captain";
+export { CAPTAIN_ROLE } from './official-bindings.ts';
 /** What the manager needs from the rest of the plugin to answer a delete. */
 export interface TeamSkillGuardContext {
     /** Teams the page currently shows, for dependency labels. */
@@ -101,7 +100,7 @@ export declare class TeamSkillManager {
         assetId: string;
         captain?: boolean;
     }): Promise<TeamSkillAssignResult>;
-    /** Replace existing shipped bindings after an editable copy is created. */
+    /** Replace only existing bindings to the shipped skill after an explicit switch. */
     replaceBuiltinBindings(skillId: string, overrideId: string): Promise<number>;
     /**
      * Remove the assignment of one role slot.
@@ -153,6 +152,7 @@ export declare class TeamSkillManager {
      * @returns the number of bindings moved.
      */
     replaceAssetBindings(fromAssetId: string, toAssetId: string): Promise<number>;
+    private replaceAssetBindingsNow;
     private mutate;
     /**
      * Find text mentions of one skill name inside another asset.

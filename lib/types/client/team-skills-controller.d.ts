@@ -10,7 +10,7 @@
  * @module dsh-agent-team-presets/client/team-skills-controller
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { TeamSkillDeleteView, TeamSkillDetailView, TeamSkillLibraryView, TeamSkillScanView } from '../types.ts';
+import type { TeamSkillDeleteView, TeamSkillDetailView, TeamSkillLibraryView, TeamSkillScanEntry, TeamSkillScanView } from '../types.ts';
 /** One page snapshot. */
 export interface TeamSkillsState {
     /** Where the library load stands. */
@@ -33,6 +33,8 @@ export interface TeamSkillsState {
     readonly file: string | undefined;
     /** That file's text, once read. */
     readonly fileText: string | undefined;
+    /** Changes found by the last deliberate inbox check. */
+    readonly inboxChanges?: readonly TeamSkillScanEntry[];
     /** The last directory scan, so the page can list every folder it judged. */
     readonly scan: TeamSkillScanView | undefined;
     /** Whether this Host can reveal a folder natively; false means the control copies the path. */
@@ -48,6 +50,9 @@ export declare class TeamSkillsController {
     private readonly listeners;
     private readonly ctx;
     private disposed;
+    private pendingInboxCheck;
+    private libraryRequest;
+    private inboxRequest;
     /**
      * The Remote namespace, once the gateway announces it.
      *
@@ -90,8 +95,8 @@ export declare class TeamSkillsController {
      * @param patch - fields to change.
      */
     private publish;
-    /** Read the library from the Host. */
-    refresh(): Promise<void>;
+    /** Read the library, optionally checking the inbox for pending changes. */
+    refresh(checkInbox?: boolean): Promise<void>;
     /**
      * Show one asset's detail.
      * @param assetId - asset identity.
@@ -117,11 +122,12 @@ export declare class TeamSkillsController {
     /**
      * Import one folder the user picked.
      * @param files - the picker's files, already carrying relative paths.
+     * @returns the asset identity when the folder was imported.
      */
     importFolder(files: readonly {
         path: string;
         content: Uint8Array;
-    }[]): Promise<void>;
+    }[]): Promise<string | undefined>;
     /**
      * Scan the Host's import folder and publish every new legal skill.
      *
@@ -132,8 +138,11 @@ export declare class TeamSkillsController {
     /**
      * Copy one shipped skill into an editable override.
      * @param skillId - shipped skill id.
+     * @param switchBindings - whether to move current role bindings to the copy.
+     * @returns the copy's asset identity when the Host created it.
      */
-    createOverride(skillId: string): Promise<void>;
+    createOverride(skillId: string, switchBindings: boolean): Promise<string | undefined>;
+    private showCreatedAsset;
     /**
      * Discard one override's edits by re-copying the shipped skill.
      * @param assetId - override identity.

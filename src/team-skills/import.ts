@@ -15,7 +15,8 @@
  */
 
 import { inflateRawSync } from 'node:zlib'
-import { parseDocument } from 'yaml'
+import { isAlias, isMap, isScalar, parseDocument, stringify } from 'yaml'
+import type { Document } from 'yaml'
 import {
   MAX_SKILL_FILE_BYTES, checkFolder, normalizeSkillPath, SkillPathError,
 } from './paths.ts'
@@ -61,37 +62,67 @@ export interface SkillPackage {
   readonly totalBytes: number
 }
 
+const DEPENDENCY_FRONTMATTER_FIELDS = ['executables', 'mcpServers', 'otherSkills'] as const
+
+/** An unsupported dependency key explicitly present in `SKILL.md` frontmatter. */
+export interface SkillDependencyWarning {
+  readonly code: 'unsupported-dependency-frontmatter'
+  readonly field: (typeof DEPENDENCY_FRONTMATTER_FIELDS)[number]
+}
+
 /** Result of one import attempt. */
 export type SkillImportResult =
-  | { readonly ok: true; readonly skill: SkillPackage; readonly warnings: readonly string[] }
+  | {
+    readonly ok: true
+    readonly skill: SkillPackage
+    readonly warnings: readonly string[]
+    readonly dependencyWarnings: readonly SkillDependencyWarning[]
+  }
   | { readonly ok: false; readonly reason: SkillImportFailure; readonly path?: string }
 
 /** The kebab-case grammar the official skill registry enforces. */
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 
-/**
- * Parse the YAML frontmatter of one `SKILL.md`.
- *
- * Only `name` and `description` are interpreted, and both are required by the
- * Agent Skills specification. Everything else — `license`, `compatibility`,
- * `metadata`, `allowed-tools`, an unknown vendor key — stays in the file
- * untouched, because the document is portable and this reader is one consumer.
- * @param text - the whole document.
- * @returns the two required fields, or undefined when the fence is absent.
- */
-export function parseSkillFrontmatter(text: string): { name: string; description: string } | undefined {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(text)
-  if (match?.[1] === undefined) return undefined
+/** Read the frontmatter and retain the location of the YAML source. */
+function readSkillFrontmatter(text: string, keepSourceTokens = false) {
+  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/du.exec(text)
+  const range = match?.indices?.[1]
+  if (match?.[1] === undefined || range === undefined) return undefined
   try {
-    const document = parseDocument(match[1], { uniqueKeys: true })
+    const document = parseDocument(match[1], { uniqueKeys: true, keepSourceTokens })
     if (document.errors.length > 0) return undefined
-    const fields: unknown = document.toJS({ maxAliasCount: 100 })
-    if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) return undefined
-    const { name, description } = fields as Record<string, unknown>
-    return { name: typeof name === 'string' ? name : '', description: typeof description === 'string' ? description : '' }
+    const value: unknown = document.toJS({ maxAliasCount: 100 })
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+    const fields = value as Record<string, unknown>
+    return {
+      document,
+      yamlStart: range[0],
+      name: typeof fields['name'] === 'string' ? fields['name'] : '',
+      description: typeof fields['description'] === 'string' ? fields['description'] : '',
+    }
   } catch {
     return undefined
   }
+}
+
+/** Find an explicitly written top-level field without following YAML merges. */
+function explicitField(document: Document.Parsed, field: string) {
+  if (!isMap(document.contents)) return undefined
+  return document.contents.items.findLast(({ key }) => {
+    const resolved = isAlias(key) ? key.resolve(document) : key
+    return isScalar(resolved) && resolved.value === field
+  })
+}
+
+/**
+ * Parse the two required Agent Skills fields from `SKILL.md`.
+ * @param text - the whole document.
+ * @returns the required fields, or undefined when the frontmatter cannot be parsed.
+ */
+export function parseSkillFrontmatter(text: string): { name: string; description: string } | undefined {
+  const frontmatter = readSkillFrontmatter(text)
+  if (frontmatter === undefined) return undefined
+  return { name: frontmatter.name, description: frontmatter.description }
 }
 
 /**
@@ -120,14 +151,17 @@ export function buildSkillPackage(input: readonly ImportedFile[]): SkillImportRe
   if (instruction === undefined) return { ok: false, reason: 'missing-skill-file', path: SKILL_FILE }
   let text: string
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(instruction.bytes)
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(instruction.bytes)
   } catch {
     return { ok: false, reason: 'invalid-frontmatter', path: SKILL_FILE }
   }
-  const frontmatter = parseSkillFrontmatter(text)
+  const frontmatter = readSkillFrontmatter(text)
   if (frontmatter === undefined) return { ok: false, reason: 'invalid-frontmatter', path: SKILL_FILE }
   if (!SKILL_NAME.test(frontmatter.name)) return { ok: false, reason: 'invalid-name', path: SKILL_FILE }
   if (frontmatter.description.trim() === '') return { ok: false, reason: 'missing-description', path: SKILL_FILE }
+  const dependencyWarnings = DEPENDENCY_FRONTMATTER_FIELDS
+    .filter(field => explicitField(frontmatter.document, field) !== undefined)
+    .map<SkillDependencyWarning>(field => ({ code: 'unsupported-dependency-frontmatter', field }))
   const totalBytes = ordered.reduce((sum, file) => sum + file.bytes.byteLength, 0)
   const warnings: string[] = []
   // Advisory only: a script is legitimate content, and refusing it would break
@@ -141,7 +175,70 @@ export function buildSkillPackage(input: readonly ImportedFile[]): SkillImportRe
     ok: true,
     skill: { name: frontmatter.name, description: frontmatter.description, files: ordered, totalBytes },
     warnings,
+    dependencyWarnings,
   }
+}
+
+/**
+ * Rename an already validated Team Skill package for a new copy.
+ * @param package_ - the source package, whose files are left intact.
+ * @param name - the new kebab-case name.
+ * @returns the renamed package, with only the instruction file changed.
+ */
+export function renameSkillPackage(package_: SkillPackage, name: string): SkillPackage {
+  if (!SKILL_NAME.test(name)) throw new Error(`invalid Team Skill name: ${name}`)
+  const instruction = package_.files.find(file => file.path === SKILL_FILE)
+  if (instruction === undefined) throw new Error(`missing ${SKILL_FILE}`)
+  const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(instruction.bytes)
+  const frontmatter = readSkillFrontmatter(text, true)
+  if (frontmatter === undefined || !SKILL_NAME.test(frontmatter.name)) throw new Error(`invalid skill name in ${SKILL_FILE}`)
+  if (frontmatter.name === name && package_.name === name) return package_
+
+  const { document, yamlStart } = frontmatter
+  const node = explicitField(document, 'name')?.value
+  let replacement = stringify(name, { version: document.directives.yaml.version }).trimEnd()
+  let start: number
+  let end: number
+  if ((isScalar(node) || isAlias(node)) && node.range !== undefined) {
+    [start, end] = node.range
+  } else if (isMap(document.contents) && document.contents.range !== undefined) {
+    // A YAML merge can supply the name. Override it without editing the anchor.
+    start = document.contents.range[0]
+    if (document.contents.flow) {
+      start += 1
+      replacement = `name: ${replacement}, `
+    } else {
+      const keyStart = yamlStart + start
+      const lineStart = text.lastIndexOf('\n', keyStart - 1) + 1
+      const indent = text.slice(lineStart, keyStart)
+      const newline = text[lineStart - 2] === '\r' ? '\r\n' : '\n'
+      replacement = `name: ${replacement}${newline}${indent}`
+    }
+    end = start
+  } else {
+    throw new Error(`cannot locate name in ${SKILL_FILE}`)
+  }
+  if (isScalar(node) && node.srcToken?.type === 'block-scalar') {
+    // Change the one name in the scalar body. Its header can carry a comment.
+    const { source } = node.srcToken
+    const offset = source.indexOf(frontmatter.name)
+    if (offset < 0) throw new Error(`cannot locate name in ${SKILL_FILE}`)
+    start = end - source.length + offset
+    end = start + frontmatter.name.length
+    replacement = name
+  } else if (isScalar(node) && node.type === 'QUOTE_SINGLE') {
+    replacement = `'${name}'`
+  } else if (isScalar(node) && node.type === 'QUOTE_DOUBLE') {
+    replacement = JSON.stringify(name)
+  }
+  const renamed = text.slice(0, yamlStart + start) + replacement + text.slice(yamlStart + end)
+  const files = package_.files.map(file => file === instruction
+    ? { path: file.path, bytes: new TextEncoder().encode(renamed) }
+    : file)
+  const result = buildSkillPackage(files)
+  if (!result.ok) throw new Error(`invalid renamed Team Skill: ${result.reason}`)
+  if (result.skill.name !== name) throw new Error(`could not rename ${SKILL_FILE} to ${name}`)
+  return result.skill
 }
 
 /** One entry of a parsed ZIP central directory. */

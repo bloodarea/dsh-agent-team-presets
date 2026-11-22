@@ -22,6 +22,7 @@ import { readdir } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { TeamSkillManager, CAPTAIN_ROLE } from './manager.ts'
+import { OFFICIAL_SKILL_IDS } from './official-bindings.ts'
 import { TeamSkillRuntime } from './provider.ts'
 import type { SkillSyncResult } from './provider.ts'
 import { TeamSkillStore } from './store.ts'
@@ -53,32 +54,7 @@ export interface AgentSkillSync {
   readonly assigned: number | undefined
 }
 
-/**
- * The skills the package ships under `assets/skills`.
- *
- * The engineering workflow skills are bound to a role by `team-catalog.ts`; the
- * three professional-role workflows (`frontend-engineering-workflow`,
- * `backend-architecture-workflow`, `independent-code-review-workflow`) are the
- * progressive-loading entry points of the UI frontend engineer, the backend
- * architect, and the independent reviewer, whose detailed methods live in each
- * skill's `references/` folder; `grilling` and `research` are method skills the
- * work-mode Teams bind instead.
- */
-export const OFFICIAL_SKILL_IDS = [
-  'agent-leader-communication',
-  'leader-medium-task-workflow',
-  'leader-long-task-orchestration',
-  'agent-subagent-orchestration',
-  'fullstack-advisor',
-  'executor-short-task-workflow',
-  'github-repository-presentation',
-  'git-release-hygiene',
-  'frontend-engineering-workflow',
-  'backend-architecture-workflow',
-  'independent-code-review-workflow',
-  'grilling',
-  'research',
-] as const
+export { OFFICIAL_SKILL_IDS } from './official-bindings.ts'
 
 /** Version stamped on the shipped assets; bumped when the packaged copies change. */
 export const OFFICIAL_SKILL_VERSION = '5'
@@ -210,6 +186,7 @@ export class TeamSkills {  /** The asset store. */
       }
       this.official = entries.map(entry => entry.skillId)
       const warnings: string[] = []
+      await this.store.renameLegacyCopies(OFFICIAL_SKILL_IDS)
       const changed = await this.store.ensureOfficial(entries, warnings)
       for (const warning of warnings) log(warning)
       if (changed.length > 0) log(`Team Skill store updated: ${changed.join(', ')}`)

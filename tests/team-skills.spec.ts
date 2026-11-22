@@ -469,7 +469,12 @@ describe('per-Agent visibility', () => {
     await store.open()
     await store.ensureOfficial([{ skillId: 'frontend-design', directory: source, version: 'official-1' }])
     const official = store.get('builtin:frontend-design')!
-    const initialOverride = await store.createOverride('frontend-design', 'override:frontend-design')
+    // Simulate a same-named copy stored by an earlier release.
+    const legacy = buildSkillPackage(MINIMAL)
+    if (!legacy.ok) throw new Error(legacy.reason)
+    const initialOverride = await store.install(legacy.skill, {
+      id: 'override:frontend-design', origin: 'override', officialSkillId: 'frontend-design', version: '1',
+    })
     const override = await store.writeFile(initialOverride.id, 'SKILL.md', '---\nname: frontend-design\ndescription: overridden method\n---\n\nOverride body.\n')
     const { ctx, skills } = await registry()
     const runtime = new TeamSkillRuntime(ctx, store, () => {})

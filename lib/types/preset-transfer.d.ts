@@ -71,7 +71,7 @@ export type TeamSlotTransfer = {
 export type OfficialSkillTransfer = {
     /** Shipped skill id; resolvable on another deployment of this plugin version. */
     readonly skillId: string;
-    /** Role name inside the document, matched case-insensitively on import. */
+    /** Exact role name inside the document. */
     readonly roleName: string;
 };
 /** One Team as a shareable document. */

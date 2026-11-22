@@ -3,7 +3,7 @@
  * one Team's roster, and one captain or member — with a shared save footer.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the settings shell's `settings.section` declaration.
@@ -26,6 +26,9 @@ import { DEFAULTS_NOTICE_KEYS, DISCLOSURE_NOTICE_KEYS, EXECUTION_NOTICE_KEYS, FO
 import type { TeamPresetsLocaleKey } from './locales.ts'
 import type { TeamAgentPreset, TeamCaptainPreset } from '../types.ts'
 import css from './TeamPresetsSection.module.css'
+
+const noSkillUpdates = () => () => {}
+const noSkillSnapshot = () => undefined
 
 /**
  * One tab in the section's own tab bar.
@@ -150,7 +153,9 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
   const [importPlan, setImportPlan] = useState<TeamPresetImportPlan | undefined>(undefined)
   // Each inspection replaces the pending dialog, whose choices must not survive it.
   const [importGeneration, setImportGeneration] = useState(0)
-  const { refreshCatalogue } = props
+  const { refreshCatalogue, skills } = props
+  const skillState = useSyncExternalStore(skills?.subscribe ?? noSkillUpdates, skills?.getSnapshot ?? noSkillSnapshot)
+  const importAssets = skillState?.status === 'ready' ? skillState.library?.assets : undefined
   // The settings shell mounts only the active section, so this runs on every
   // open: a route the deployment gained while the client was running must be
   // offered without a reload. The inject face is cached per registration, so
@@ -230,12 +235,16 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
       return
     }
     setImportError(undefined)
-    if (inspection.plan.targetIndex === undefined) {
-      openTeam(props.applyImport(inspection.plan, defaultImportResolution(inspection.plan)))
+    const resolution = defaultImportResolution(inspection.plan)
+    const preview = props.previewImport(inspection.plan, resolution, importAssets)
+    if (inspection.plan.targetIndex === undefined && preview.length === 0) {
+      setImportPlan(undefined)
+      openTeam(props.applyImport(inspection.plan, resolution))
       return
     }
     setImportGeneration(generation => generation + 1)
     setImportPlan(inspection.plan)
+    if (preview.length > 0) void skills?.refresh()
   }
 
   /**
@@ -386,6 +395,7 @@ export function TeamPresetsSection(props: TeamPresetsSectionProps) {
           key={importGeneration}
           plan={importPlan}
           t={t}
+          previewSkills={resolution => props.previewImport(importPlan, resolution, importAssets)}
           onCancel={() => { setImportPlan(undefined) }}
           onConfirm={(resolution) => {
             const created = props.applyImport(importPlan, resolution)

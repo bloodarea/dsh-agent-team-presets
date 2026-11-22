@@ -129,7 +129,7 @@ describe('Team Skill storage regressions', () => {
     const store = new TeamSkillStore(path); await store.open()
     await store.ensureOfficial([{ skillId: 'test-skill', directory: source, version: '1' }])
     const first = await store.createOverride('test-skill', 'override:test')
-    const changed = await store.writeFile(first.id, 'SKILL.md', instruction.replace('original', 'edited'))
+    const changed = await store.writeFile(first.id, 'SKILL.md', instruction.replace('test-skill', first.skillId).replace('original', 'edited'))
     const again = await store.createOverride('test-skill', first.id)
     expect(again).toEqual(changed)
     expect(await store.readText(first.id, 'SKILL.md')).toContain('edited')

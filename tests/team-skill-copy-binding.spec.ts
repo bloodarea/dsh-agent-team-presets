@@ -98,6 +98,26 @@ describe('a default binding and a same-named copy', () => {
     expect(held(manager)).toEqual(['builtin:git-release-hygiene'])
   })
 
+  it('renames a legacy copy and keeps its existing bindings and readable pinned version', async () => {
+    const { store, manager } = await open()
+    const id = await installSameName(store, 'override:git-release-hygiene', 'override')
+    await manager.reconcile()
+    await manager.replaceBuiltinBindings('git-release-hygiene', id)
+    const before = store.get(id)!
+    const original = await store.readText(id, 'SKILL.md', before.version)
+    await store.renameLegacyCopies(OFFICIAL_SKILL_IDS)
+    await manager.reconcile()
+    const after = store.get(id)!
+    expect(after).toMatchObject({ id, skillId: 'git-release-hygiene-1', officialSkillId: 'git-release-hygiene' })
+    expect(after.version).not.toBe(before.version)
+    expect(await store.readText(id, 'SKILL.md')).toContain('name: git-release-hygiene-1')
+    expect(await store.readText(id, 'SKILL.md', before.version)).toBe(original)
+    expect(manager.assetsFor('builtin-lightweight', EXECUTOR_ROLE).map(asset => asset.id)).toContain(id)
+    expect(held(manager)).toEqual([])
+    await store.renameLegacyCopies(OFFICIAL_SKILL_IDS)
+    expect(store.get(id)?.version).toBe(after.version)
+  })
+
   it('keeps an explicit unbind dead even after the copy is gone', async () => {
     const { store, manager } = await open()
     await manager.reconcile()

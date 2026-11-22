@@ -27,7 +27,7 @@ import { serializeTeamPreset } from '../src/preset-transfer.ts'
 import { teamAppearance } from '../src/client/appearance.ts'
 import type { TeamSelectionRecordView } from '../src/client/team-presets-controller.ts'
 import type {
-  TeamAgentPreset, TeamCaptainPreset, TeamExecutionRow, TeamExecutionSnapshot, TeamPreset, TeamPresetsSection, ToolChoice,
+  TeamAgentPreset, TeamCaptainPreset, TeamExecutionRow, TeamExecutionSnapshot, TeamPreset, TeamPresetsSection, TeamSkillAssetView, ToolChoice,
 } from '../src/types.ts'
 
 /** One empty captain slot, so a test names only the fields it exercises. */
@@ -1925,6 +1925,75 @@ describe('sharing one Team as a document', () => {
     controller.dispose()
   })
 
+  it('previews every declaration without a collision and keeps only valid declarations in the draft', () => {
+    const { form, controller } = controllerFor([])
+    const text = serializeTeamPreset({
+      ...incoming(),
+      captain: { ...EMPTY_CAPTAIN, name: 'reviewer' },
+      officialSkills: [
+        { skillId: 'grilling', roleName: 'builder' },
+        { skillId: 'research', roleName: 'builder' },
+        { skillId: 'my-custom', roleName: 'builder' },
+        { skillId: 'grilling', roleName: 'absent' },
+        { skillId: 'research', roleName: 'reviewer' },
+      ],
+    })
+    const plan = planOf(controller, text)
+    expect(plan.targetIndex).toBeUndefined()
+    const resolution = defaultImportResolution(plan)
+    const asset = (id: string, skillId: string, origin: string): TeamSkillAssetView => ({
+      id, skillId, origin, description: '', version: '1', editable: origin !== 'builtin',
+      fileCount: 1, totalBytes: 1, mcpServers: [], bindings: [],
+    })
+    const assets = [asset('builtin:grilling', 'grilling', 'builtin'), asset('custom:research', 'research', 'custom'),
+      asset('custom:my-custom', 'my-custom', 'custom')]
+    expect(controller.previewImport(plan, resolution, assets).map(row => [row.skillId, row.roleName, row.status])).toEqual([
+      ['grilling', 'builder', 'eligible'],
+      ['research', 'builder', 'asset-missing'],
+      ['my-custom', 'builder', 'unknown-skill'],
+      ['grilling', 'absent', 'missing-role'],
+      ['research', 'reviewer', 'ambiguous-role'],
+    ])
+    expect(controller.previewImport(plan, resolution)[0]?.status).toBe('library-unavailable')
+    controller.applyImport(plan, resolution)
+    expect(controller.store.getSnapshot().teams[0]?.officialSkills).toEqual([
+      { skillId: 'grilling', roleName: 'builder' },
+      { skillId: 'research', roleName: 'builder' },
+    ])
+    expect(form.mutations).toHaveLength(0)
+    controller.dispose()
+  })
+
+  it('uses catalog defaults only when replacing a built-in team identity', () => {
+    const entry = BUILTIN_TEAMS.find(row => row.id === DISCOVERY_TEAM_ID)!
+    const target = { ...builtinTeamDefinition(entry), officialSkills: [] }
+    const { controller } = controllerFor([target])
+    const document = {
+      ...target, captain: { ...target.captain, name: 'different-lead' },
+      officialSkills: [{ skillId: 'research', roleName: 'different-lead' }],
+    }
+    const plan = planOf(controller, serializeTeamPreset(document))
+    const replace = defaultImportResolution(plan)
+    const scout = target.members.find(member => member.name === 'technical-scout')!
+    const assets: TeamSkillAssetView[] = [{
+      id: 'override:research', skillId: 'research-1', officialSkillId: 'research', origin: 'override',
+      description: '', version: '1', editable: true, fileCount: 1, totalBytes: 1, mcpServers: [],
+      bindings: [{ teamId: target.id, teamName: target.name, roleId: scout.id ?? scout.name, roleName: scout.name, captain: false }],
+    }]
+    expect(controller.previewImport(plan, replace, assets)).toEqual([
+      { skillId: 'research', roleName: 'different-lead', source: 'preset', status: 'catalog-ignored' },
+      { skillId: 'grilling', roleName: 'discovery-lead', source: 'catalog', status: 'missing-role' },
+      { skillId: 'research', roleName: 'technical-scout', source: 'catalog', status: 'local-override' },
+      { skillId: 'research', roleName: 'product-scout', source: 'catalog', status: 'asset-missing' },
+    ])
+    expect(controller.previewImport(plan, { ...replace, team: 'rename' }, [])).toEqual([
+      { skillId: 'research', roleName: 'different-lead', source: 'preset', status: 'asset-missing' },
+    ])
+    controller.applyImport(plan, replace)
+    expect(controller.store.getSnapshot().teams[0]?.officialSkills).toEqual(entry.officialSkillBindings)
+    controller.dispose()
+  })
+
   it('reports the Team and the agent names a document collides with', () => {
     const { controller } = controllerFor([shareable()])
     const plan = planOf(controller, serializeTeamPreset(incoming()))
@@ -1980,7 +2049,7 @@ describe('sharing one Team as a document', () => {
     const { controller } = controllerFor([shareable()])
     const plan = planOf(controller, serializeTeamPreset({ ...incoming(), officialSkills: [
       { skillId: 'git-release-hygiene', roleName: 'team-lead' },
-      { skillId: 'frontend-design', roleName: 'reviewer' },
+      { skillId: 'frontend-engineering-workflow', roleName: 'reviewer' },
     ] }))
     controller.applyImport(plan, {
       team: 'replace', teamName: plan.suggestedTeamName, captain: 'rename', members: { reviewer: 'rename' },
@@ -1991,7 +2060,7 @@ describe('sharing one Team as a document', () => {
     expect(team?.members.map(member => member.name)).toEqual(['reviewer', 'reviewer 2', 'builder'])
     expect(team?.officialSkills).toEqual([
       { skillId: 'git-release-hygiene', roleName: 'team-lead 2' },
-      { skillId: 'frontend-design', roleName: 'reviewer 2' },
+      { skillId: 'frontend-engineering-workflow', roleName: 'reviewer 2' },
     ])
     controller.dispose()
   })

@@ -66,7 +66,7 @@ export declare class TeamSkillService extends TypertRemoteService {
      * List the library, the roster, and the shipped skill ids.
      * @returns one page load.
      */
-    library(): Promise<TeamSkillLibraryView>;
+    library(checkInbox?: boolean): Promise<TeamSkillLibraryView>;
     /**
      * Read one asset with its files and body.
      * @param assetId - asset identity.
@@ -89,9 +89,11 @@ export declare class TeamSkillService extends TypertRemoteService {
      * @param assetId - asset identity.
      * @param path - relative path.
      * @param text - new content.
+     * @param expectedVersion - the version the editor has open.
      * @returns the refreshed detail, or a refusal.
      */
-    writeFile(assetId: string, path: string, text: string): Promise<TeamSkillDetailView | TeamSkillRefusalView>;
+    writeFile(assetId: string, path: string, text: string, expectedVersion?: string): Promise<TeamSkillDetailView | TeamSkillRefusalView>;
+    private reservedSkillName;
     /**
      * Create one editable skill from the blank template.
      * @param skillId - kebab-case name the new skill takes.
@@ -114,22 +116,15 @@ export declare class TeamSkillService extends TypertRemoteService {
      * @returns the absolute folder, or a refusal when it cannot be created safely.
      */
     prepareImportFolder(): Promise<TeamSkillImportFolderView | TeamSkillRefusalView>;
-    /**
-     * Scan the private import directory and publish every legal new skill.
-     *
-     * The directory is the only supported way to hand the plugin a skill without
-     * the browser picker. Each folder is judged by the same importer rules as a
-     * picked folder, and the answer names the exact refusal for the ones that
-     * fail, so the page can list them instead of reporting a single count.
-     * @returns one row per folder, or a refusal when the store is unavailable.
-     */
+    private checkInbox;
+    /** Validate sources, publishing changed packages as new versions only on this explicit request. */
     scanImportFolder(): Promise<TeamSkillScanView | TeamSkillRefusalView>;
     /**
      * Copy one shipped skill into an editable override.
      * @param skillId - shipped skill id.
      * @returns the new detail, or a refusal.
      */
-    overrideSkill(skillId: string): Promise<TeamSkillDetailView | TeamSkillRefusalView>;
+    overrideSkill(skillId: string, switchBindings?: boolean): Promise<TeamSkillDetailView | TeamSkillRefusalView>;
     updateDependencies(assetId: string, dependencies: TeamSkillDependencies): Promise<TeamSkillDetailView | TeamSkillRefusalView>;
     /**
      * Reset one override back to the shipped copy.

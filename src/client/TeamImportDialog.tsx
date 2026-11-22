@@ -1,16 +1,8 @@
-/**
- * Conflict dialog for one Team import.
- *
- * The document's Team name, captain name, and member names are the keys an
- * import matches on, so each one that the target Team already uses is resolved
- * here: overwrite the configured agent, or add the imported one under a name
- * that is still free. Choosing a new Team name makes the whole document a new
- * Team, which is why the agent collisions disappear with that choice.
- */
+/** Review one Team import and resolve any naming conflicts before staging. */
 
 import { useState } from 'react'
 import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { TeamPresetImportPlan, TeamPresetImportResolution } from './team-presets-controller.ts'
+import type { TeamPresetImportPlan, TeamPresetImportResolution, TeamPresetImportSkillRow } from './team-presets-controller.ts'
 import type { TeamPresetsLocaleKey } from './locales.ts'
 import css from './TeamPresetsSection.module.css'
 
@@ -23,6 +15,7 @@ export interface TeamImportDialogProps {
   readonly plan: TeamPresetImportPlan
   /** Page copy reader. */
   readonly t: (key: TeamPresetsLocaleKey) => string
+  readonly previewSkills: (resolution: TeamPresetImportResolution) => readonly TeamPresetImportSkillRow[]
   readonly onCancel: () => void
   readonly onConfirm: (resolution: TeamPresetImportResolution) => void
 }
@@ -63,11 +56,18 @@ function choices(
   )
 }
 
-/**
- * Render the collision dialog for one import.
- * @param props - the plan, the page copy, and the two outcomes.
- * @returns the dialog; the caller mounts it only while an import is pending.
- */
+const skillStatusKeys: Record<TeamPresetImportSkillRow['status'], TeamPresetsLocaleKey> = {
+  'unknown-skill': 'importSkillUnknown',
+  'missing-role': 'importSkillRoleMissing',
+  'ambiguous-role': 'importSkillRoleAmbiguous',
+  'catalog-ignored': 'importSkillCatalogIgnored',
+  'eligible': 'importSkillEligible',
+  'asset-missing': 'importSkillAssetMissing',
+  'library-unavailable': 'importSkillLibraryUnavailable',
+  'local-override': 'importSkillLocalOverride',
+}
+
+/** Render a pending import, including any declaration that could not resolve. */
 export function TeamImportDialog(props: TeamImportDialogProps) {
   const { plan, t } = props
   const [teamChoice, setTeamChoice] = useState<CollisionChoice>('replace')
@@ -76,52 +76,55 @@ export function TeamImportDialog(props: TeamImportDialogProps) {
   const [memberChoices, setMemberChoices] = useState<Record<string, CollisionChoice>>({})
 
   const memberChoice = (name: string): CollisionChoice => memberChoices[name] ?? 'replace'
-  const agentCollisions = teamChoice === 'replace'
+  const teamCollision = plan.targetIndex !== undefined
+  const agentCollisions = teamCollision && teamChoice === 'replace'
     && (plan.captainConflict !== '' || plan.memberConflicts.length > 0)
+  const resolution: TeamPresetImportResolution = {
+    team: teamCollision ? teamChoice : 'rename',
+    teamName,
+    captain: captainChoice,
+    members: Object.fromEntries(plan.memberConflicts.map(name => [name, memberChoice(name)])),
+  }
+  const rows = props.previewSkills(resolution)
 
   return (
     <Modal
       open
       onClose={props.onCancel}
-      title={t('importConflictTitle')}
+      title={t(teamCollision ? 'importConflictTitle' : 'importPreviewTitle')}
       closeLabel={t('close')}
       footer={(
         <>
           <Button variant="outline" onClick={props.onCancel}>{t('cancel')}</Button>
           <Button
             variant="primary"
-            onClick={() => {
-              props.onConfirm({
-                team: teamChoice,
-                teamName,
-                captain: captainChoice,
-                members: Object.fromEntries(plan.memberConflicts.map(name => [name, memberChoice(name)])),
-              })
-            }}
+            onClick={() => { props.onConfirm(resolution) }}
           >
             {t('importConfirm')}
           </Button>
         </>
       )}
     >
-      <section className={css.conflict}>
-        <span className={css.conflictLead}>{t('importTeamConflict')}</span>
-        <span className={css.conflictName}>{plan.targetName}</span>
-        {choices('import-team', teamChoice, setTeamChoice, {
-          replace: t('importTeamReplace'),
-          rename: t('importTeamRename'),
-        }, true)}
-        {teamChoice === 'rename' ? (
-          <div className={css.field}>
-            <span className={css.fieldLabel}>{t('importNewTeamName')}</span>
-            <Input
-              className={css.input ?? ''}
-              value={teamName}
-              onChange={(event) => { setTeamName(event.target.value) }}
-            />
-          </div>
-        ) : null}
-      </section>
+      {teamCollision && (
+        <section className={css.conflict}>
+          <span className={css.conflictLead}>{t('importTeamConflict')}</span>
+          <span className={css.conflictName}>{plan.targetName}</span>
+          {choices('import-team', teamChoice, setTeamChoice, {
+            replace: t('importTeamReplace'),
+            rename: t('importTeamRename'),
+          }, true)}
+          {teamChoice === 'rename' ? (
+            <div className={css.field}>
+              <span className={css.fieldLabel}>{t('importNewTeamName')}</span>
+              <Input
+                className={css.input ?? ''}
+                value={teamName}
+                onChange={(event) => { setTeamName(event.target.value) }}
+              />
+            </div>
+          ) : null}
+        </section>
+      )}
 
       {!agentCollisions ? null : (
         <>
@@ -156,7 +159,24 @@ export function TeamImportDialog(props: TeamImportDialogProps) {
           )}
         </>
       )}
-      <p className={css.dialogNote}>{t('importNote')}</p>
+      {(['preset', 'catalog'] as const).map(source => {
+        const group = rows.filter(row => row.source === source)
+        if (group.length === 0) return null
+        return (
+          <section className={css.conflict} key={source} aria-live="polite">
+            <h3 className={css.conflictLead}>{t(source === 'preset' ? 'importSkillDeclarations' : 'importSkillCatalog')}</h3>
+            <ul className={css.plainRows}>
+              {group.map((row, index) => (
+                <li key={`${row.skillId}:${row.roleName}:${index}`} className={css.conflictMember}>
+                  <strong className={css.conflictName}>{row.skillId} · {row.roleName}</strong>
+                  <span>{t(skillStatusKeys[row.status])}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      })}
+      <p className={css.dialogNote}>{t('importDraftNote')}</p>
     </Modal>
   )
 }

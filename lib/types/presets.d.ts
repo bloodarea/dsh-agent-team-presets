@@ -29,13 +29,13 @@ export declare const IMPLICIT_TOOLS: readonly string[];
  * @returns the policy shown in Settings and enforced by the runtime.
  */
 export declare function toolMode(agent: TeamSlotPreset): 'all' | 'custom';
+/** One member and the summon target assigned to it by its Team's roster. */
+interface MemberTarget {
+    readonly member: TeamAgentPreset;
+    readonly target: string;
+}
 /**
- * Derive a teammate target from one member's display name.
- *
- * Teammate names are permanent, lower-kebab-case, and never reused, so a
- * display name that already satisfies the grammar is kept and any other name
- * is transliterated to `member-<index>`. The display name still reaches the
- * captain through the roster.
+ * Claim a target for one member after the Team's preferred targets are reserved.
  * @param member - the configured member.
  * @param index - zero-based position in the Team's member list.
  * @param used - targets already taken in this Team; the returned target is added.
@@ -43,27 +43,24 @@ export declare function toolMode(agent: TeamSlotPreset): 'all' | 'custom';
  */
 export declare function memberTarget(member: TeamAgentPreset, index: number, used: Set<string>): string;
 /**
- * Resolve one member by its display name or its teammate target.
- *
- * The resolved target travels with the member, so a caller never re-derives it
- * and cannot disagree with the roster about the name it summons.
- * @param team - the Team preset to search.
- * @param key - the model-authored member name.
- * @returns the matching member with its target, or undefined when the name is unknown.
- */
-export declare function findMember(team: TeamPreset, key: string): {
-    member: TeamAgentPreset;
-    target: string;
-} | undefined;
-/**
  * List every addressable teammate target of one Team.
  * @param team - the Team preset.
  * @returns one entry per member, in declared order.
  */
-export declare function memberTargets(team: TeamPreset): {
-    member: TeamAgentPreset;
-    target: string;
-}[];
+export declare function memberTargets(team: TeamPreset): MemberTarget[];
+/** Resolve an exact target, then an exact display name, then a case-insensitive target. */
+export declare function findMemberInRoster(roster: readonly MemberTarget[], key: string): MemberTarget | undefined;
+/** Resolve one member by display name or the same target shown in the roster. */
+export declare function findMember(team: TeamPreset, key: string): MemberTarget | undefined;
+/**
+ * Recover the role of a durable instance created before role ids were recorded.
+ * Its instance name can overlap a different role's current summon target.
+ */
+export declare function recordedMemberRole(team: TeamPreset | undefined, record: {
+    readonly roleId?: string | undefined;
+    readonly memberName: string;
+    readonly displayName: string;
+}): string | undefined;
 /**
  * Identify the definition one Team task owns.
  *
@@ -212,3 +209,4 @@ export declare function soloMemberBriefing(team: TeamPreset, member: TeamAgentPr
  * @returns the prompt section text for the member's team context.
  */
 export declare function memberTeamDivision(team: TeamPreset, target: string): string;
+export {};

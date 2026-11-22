@@ -36,53 +36,47 @@ export function toolMode(agent: TeamSlotPreset): 'all' | 'custom' {
   return agent.toolMode ?? (agent.tools.length === 0 ? 'all' : 'custom')
 }
 
-/** The member name grammar the Agent Teams service accepts. */
+/** The grammar and length of a configured member's summon target. */
 const MEMBER_TARGET = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
+const MEMBER_TARGET_LIMIT = 64
+
+/** One member and the summon target assigned to it by its Team's roster. */
+interface MemberTarget {
+  readonly member: TeamAgentPreset
+  readonly target: string
+}
+
+/** Return the member's normalized name when it can be used as a target. */
+function preferredMemberTarget(member: TeamAgentPreset): string | undefined {
+  const target = member.name.trim().toLowerCase()
+  return target !== 'lead' && target.length <= MEMBER_TARGET_LIMIT && MEMBER_TARGET.test(target) ? target : undefined
+}
 
 /**
- * Derive a teammate target from one member's display name.
- *
- * Teammate names are permanent, lower-kebab-case, and never reused, so a
- * display name that already satisfies the grammar is kept and any other name
- * is transliterated to `member-<index>`. The display name still reaches the
- * captain through the roster.
+ * Claim a target for one member after the Team's preferred targets are reserved.
  * @param member - the configured member.
  * @param index - zero-based position in the Team's member list.
  * @param used - targets already taken in this Team; the returned target is added.
  * @returns the teammate target this member is summoned under.
  */
 export function memberTarget(member: TeamAgentPreset, index: number, used: Set<string>): string {
-  const candidate = member.name.trim().toLowerCase()
-  const base = MEMBER_TARGET.test(candidate) && candidate !== 'lead' && candidate.length <= 64
-    ? candidate
-    : `member-${index + 1}`
-  let target = base
-  let suffix = 2
-  while (used.has(target)) {
-    target = `${base}-${suffix}`
-    suffix += 1
+  const preferred = preferredMemberTarget(member)
+  let target: string
+  if (preferred === undefined) {
+    let number = index + 1
+    while (used.has(`member-${number}`)) number += 1
+    target = `member-${number}`
+  } else {
+    target = preferred
+    let suffix = 2
+    while (used.has(target)) {
+      const tail = `-${suffix}`
+      target = `${preferred.slice(0, MEMBER_TARGET_LIMIT - tail.length).replace(/-+$/u, '')}${tail}`
+      suffix += 1
+    }
   }
   used.add(target)
   return target
-}
-
-/**
- * Resolve one member by its display name or its teammate target.
- *
- * The resolved target travels with the member, so a caller never re-derives it
- * and cannot disagree with the roster about the name it summons.
- * @param team - the Team preset to search.
- * @param key - the model-authored member name.
- * @returns the matching member with its target, or undefined when the name is unknown.
- */
-export function findMember(team: TeamPreset, key: string): { member: TeamAgentPreset; target: string } | undefined {
-  const wanted = key.trim()
-  const used = new Set<string>()
-  for (const [index, member] of team.members.entries()) {
-    const target = memberTarget(member, index, used)
-    if (target === wanted.toLowerCase() || member.name.trim() === wanted) return { member, target }
-  }
-  return undefined
 }
 
 /**
@@ -90,9 +84,57 @@ export function findMember(team: TeamPreset, key: string): { member: TeamAgentPr
  * @param team - the Team preset.
  * @returns one entry per member, in declared order.
  */
-export function memberTargets(team: TeamPreset): { member: TeamAgentPreset; target: string }[] {
+export function memberTargets(team: TeamPreset): MemberTarget[] {
   const used = new Set<string>()
-  return team.members.map((member, index) => ({ member, target: memberTarget(member, index, used) }))
+  const preferred = team.members.map(preferredMemberTarget)
+  // Every distinct usable name gets its own address before generated targets
+  // can claim one. The first of any repeated names keeps the unsuffixed target.
+  const targets = preferred.map(target => {
+    if (target === undefined || used.has(target)) return undefined
+    used.add(target)
+    return target
+  })
+  // Preserve each free positional fallback before moving any collided fallback
+  // forward, so one collision cannot renumber unrelated members.
+  for (const [index, target] of preferred.entries()) {
+    if (target !== undefined) continue
+    const fallback = `member-${index + 1}`
+    if (used.has(fallback)) continue
+    used.add(fallback)
+    targets[index] = fallback
+  }
+  return team.members.map((member, index) => ({ member, target: targets[index] ?? memberTarget(member, index, used) }))
+}
+
+/** Resolve an exact target, then an exact display name, then a case-insensitive target. */
+export function findMemberInRoster(roster: readonly MemberTarget[], key: string): MemberTarget | undefined {
+  const wanted = key.trim()
+  const normalized = wanted.toLowerCase()
+  return roster.find(row => row.target === wanted)
+    ?? roster.find(row => row.member.name.trim() === wanted)
+    ?? roster.find(row => row.target === normalized)
+}
+
+/** Resolve one member by display name or the same target shown in the roster. */
+export function findMember(team: TeamPreset, key: string): MemberTarget | undefined {
+  return findMemberInRoster(memberTargets(team), key)
+}
+
+/**
+ * Recover the role of a durable instance created before role ids were recorded.
+ * Its instance name can overlap a different role's current summon target.
+ */
+export function recordedMemberRole(team: TeamPreset | undefined, record: {
+  readonly roleId?: string | undefined
+  readonly memberName: string
+  readonly displayName: string
+}): string | undefined {
+  if (record.roleId !== undefined) return record.roleId
+  if (team === undefined) return record.memberName
+  const matches = team.members.filter(member => member.name.trim() === record.displayName)
+  if (matches.length !== 1) return undefined
+  const member = matches[0]!
+  return member.id ?? member.name
 }
 
 /**

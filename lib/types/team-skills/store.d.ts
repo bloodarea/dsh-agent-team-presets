@@ -1,5 +1,7 @@
+import { buildSkillPackage } from './import.ts';
 import type { ImportedFile, SkillPackage } from './import.ts';
 import type { TeamSkillAsset, TeamSkillDependencies, TeamSkillFile, TeamSkillOrigin } from '../types.ts';
+export declare const SKILL_IMPORT_FOLDER = "inbox";
 export interface OfficialSkillEntry {
     readonly skillId: string;
     readonly directory: string;
@@ -64,8 +66,13 @@ export declare class TeamSkillStore {
         readonly officialSkillId?: string;
         readonly baseVersion?: string;
         readonly dependencies?: TeamSkillDependencies;
+        readonly sourceFolder?: string;
     }): Promise<TeamSkillAsset>;
-    writeFile(assetId: string, path: string, content: string): Promise<TeamSkillAsset>;
+    sourcePath(folder: string): string;
+    /** Publish a scanned package under its existing identity, or register it for the first time. */
+    publishSource(folder: string, package_: SkillPackage): Promise<'imported' | 'updated' | 'existing'>;
+    writeFile(assetId: string, path: string, content: string, expectedVersion?: string): Promise<TeamSkillAsset>;
+    private writeSourceFile;
     /** Change dependency metadata by publishing a new immutable asset version. */
     updateDependencies(assetId: string, dependencies: TeamSkillDependencies): Promise<TeamSkillAsset>;
     readBytes(assetId: string, path: string, version?: string): Promise<Uint8Array>;
@@ -74,7 +81,11 @@ export declare class TeamSkillStore {
     ensureOfficial(entries: readonly OfficialSkillEntry[], warnings?: string[]): Promise<readonly string[]>;
     private installFiles;
     private manifest;
-    createOverride(skillId: string, id: string): Promise<TeamSkillAsset>;
+    private freeCopyName;
+    /** Keep old binding identities when a previously same-named copy needs its own name. */
+    renameLegacyCopies(reserved: readonly string[]): Promise<void>;
+    private readPackage;
+    createOverride(skillId: string, id?: string, reserved?: readonly string[]): Promise<TeamSkillAsset>;
     resetOverride(assetId: string): Promise<TeamSkillAsset>;
     verify(assetId: string): Promise<boolean>;
 }
@@ -85,10 +96,9 @@ export declare function installFromDirectory(store: TeamSkillStore, source: stri
     readonly version: string;
 }): Promise<TeamSkillAsset>;
 /** What reading one untrusted folder produced: a legal package or the exact rule that refused it. */
-export type SkillFolderInspection = {
-    readonly ok: true;
-    readonly skill: SkillPackage;
-} | {
+export type SkillFolderInspection = Extract<ReturnType<typeof buildSkillPackage>, {
+    ok: true;
+}> | {
     readonly ok: false;
     readonly reason: string;
     readonly path?: string;

@@ -14,8 +14,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from 'dsh-agent-team-presets/remote'
 import type {
   TeamSkillDeleteView, TeamSkillDetailView, TeamSkillImportFile,
-  TeamSkillLibraryView, TeamSkillRefusalView, TeamSkillScanView,
+  TeamSkillLibraryView, TeamSkillRefusalView, TeamSkillScanEntry, TeamSkillScanView,
 } from '../types.ts'
+
+type TeamSkillsRemote = NonNullable<Context['remote']['teamSkills']>
 
 /** The optional Host desktop carrier this page uses to reveal or open the import folder. */
 interface WorkspacePathRemote {
@@ -58,6 +60,8 @@ export interface TeamSkillsState {
   readonly file: string | undefined
   /** That file's text, once read. */
   readonly fileText: string | undefined
+  /** Changes found by the last deliberate inbox check. */
+  readonly inboxChanges?: readonly TeamSkillScanEntry[]
   /** The last directory scan, so the page can list every folder it judged. */
   readonly scan: TeamSkillScanView | undefined
   /** Whether this Host can reveal a folder natively; false means the control copies the path. */
@@ -90,6 +94,7 @@ export class TeamSkillsController {
     issue: undefined,
     file: undefined,
     fileText: undefined,
+    inboxChanges: [],
     scan: undefined,
     canOpenScanFolder: false,
     scanFolderPath: undefined,
@@ -99,6 +104,9 @@ export class TeamSkillsController {
   private readonly listeners = new Set<() => void>()
   private readonly ctx: Context
   private disposed = false
+  private pendingInboxCheck = false
+  private libraryRequest = 0
+  private inboxRequest = 0
 
   /**
    * The Remote namespace, once the gateway announces it.
@@ -109,7 +117,7 @@ export class TeamSkillsController {
    * web UI down (one entry "did not activate"), which is exactly the failure a
    * settings panel is never worth.
    */
-  private service: NonNullable<Context['remote']['teamSkills']> | undefined
+  private service: TeamSkillsRemote | undefined
 
   /**
    * @param ctx - the browser context this panel reads its Remote through.
@@ -122,7 +130,9 @@ export class TeamSkillsController {
     try {
       ctx.inject(['remote.teamSkills'], (scope) => {
         this.service = scope.remote.teamSkills
-        void this.refresh()
+        const checkInbox = this.pendingInboxCheck
+        this.pendingInboxCheck = false
+        void this.refresh(checkInbox)
         return () => { this.service = undefined }
       })
     } catch (error: unknown) {
@@ -223,29 +233,31 @@ export class TeamSkillsController {
     for (const listener of this.listeners) listener()
   }
 
-  /** Read the library from the Host. */
-  async refresh(): Promise<void> {
+  /** Read the library, optionally checking the inbox for pending changes. */
+  async refresh(checkInbox = false): Promise<void> {
+    if (checkInbox && this.service === undefined) this.pendingInboxCheck = true
+    const request = ++this.libraryRequest
+    if (checkInbox) this.inboxRequest = request
     this.publish({ status: this.state.library === undefined ? 'loading' : 'ready' })
     try {
-      const library = unwrap(await this.api().library())
-      // The Host answers with an issue when its store could not open; that is a
-      // degraded page, not an empty library the user is expected to fill.
-      // Read through the declared shape: the generated wire type is replaced by
-      // the next build, and this branch must stay correct in the meantime.
-      const issue = (library as { readonly issue?: string }).issue
-      if (issue !== undefined) {
-        this.publish({ status: 'unavailable', library: undefined, issue })
+      const api = this.api()
+      const library = unwrap(await (checkInbox ? api.library(true) : api.library()))
+      if (checkInbox && request === this.inboxRequest && library.issue === undefined) {
+        this.publish({ inboxChanges: library.inboxChanges ?? [] })
+      }
+      if (request !== this.libraryRequest) return
+      if (library.issue !== undefined) {
+        this.publish({ status: 'unavailable', library: undefined, issue: library.issue })
         return
       }
-      this.publish({ status: 'ready', library, issue: undefined })
-      // A selected asset that no longer exists must not keep a stale detail.
-      if (this.state.selectedId !== undefined && !library.assets.some(asset => asset.id === this.state.selectedId)) {
-        this.publish({ selectedId: undefined, detail: undefined })
-      }
+      const selectedId = this.state.selectedId
+      const selectionGone = selectedId !== undefined && !library.assets.some(asset => asset.id === selectedId)
+      this.publish({
+        status: 'ready', library, issue: undefined,
+        ...(selectionGone ? { selectedId: undefined, detail: undefined, file: undefined, fileText: undefined } : {}),
+      })
     } catch (error: unknown) {
-      // A missing service means this deployment ships no store; the page says so
-      // instead of reporting an empty library the user cannot fill.
-      this.publish({ status: 'unavailable', issue: String(error) })
+      if (request === this.libraryRequest) this.publish({ status: 'unavailable', issue: String(error) })
     }
   }
 
@@ -254,7 +266,7 @@ export class TeamSkillsController {
    * @param assetId - asset identity.
    */
   async select(assetId: string): Promise<void> {
-    this.publish({ selectedId: assetId, detail: undefined })
+    this.publish({ selectedId: assetId, detail: undefined, file: undefined, fileText: undefined })
     const answer = unwrap(await this.api().detail(assetId))
     if (this.disposed || this.state.selectedId !== assetId) return
     if (!isDetail(answer)) {
@@ -277,11 +289,13 @@ export class TeamSkillsController {
     this.publish({ file: path, fileText: undefined })
     try {
       const answer = unwrap(await this.api().readFile(assetId, path))
-      if (this.state.file !== path) return
+      if (this.state.selectedId !== assetId || this.state.file !== path) return
       if ('text' in answer) this.publish({ fileText: answer.text })
       else this.publish({ message: (answer as TeamSkillRefusalView).detail, failed: true })
     } catch (error: unknown) {
-      this.publish({ message: String(error), failed: true })
+      if (this.state.selectedId === assetId && this.state.file === path) {
+        this.publish({ message: String(error), failed: true })
+      }
     }
   }
 
@@ -293,12 +307,14 @@ export class TeamSkillsController {
   async saveFile(path: string, text: string): Promise<void> {
     const assetId = this.state.selectedId
     if (assetId === undefined) return
+    const version = this.state.detail?.asset.version
     await this.run(async () => {
-      const answer = unwrap(await this.api().writeFile(assetId, path, text))
+      const api = this.api()
+      const answer = unwrap(await api.writeFile(assetId, path, text, version))
       if (!isDetail(answer)) return (answer as TeamSkillRefusalView).detail
-      this.publish({ detail: answer })
-      await this.refresh()
-      await this.openFile(path)
+      if (this.state.selectedId === assetId) this.publish({ detail: answer })
+      await this.refresh(true)
+      if (this.state.selectedId === assetId) await this.openFile(path)
       return 'saved'
     })
   }
@@ -313,7 +329,7 @@ export class TeamSkillsController {
       const answer = unwrap(await this.api().createSkill(skillId, description))
       if (!isDetail(answer)) return (answer as TeamSkillRefusalView).detail
       this.publish({ detail: answer, selectedId: answer.asset.id })
-      await this.refresh()
+      await this.refresh(true)
       return 'created'
     })
   }
@@ -321,20 +337,22 @@ export class TeamSkillsController {
   /**
    * Import one folder the user picked.
    * @param files - the picker's files, already carrying relative paths.
+   * @returns the asset identity when the folder was imported.
    */
-  async importFolder(files: readonly { path: string; content: Uint8Array }[]): Promise<void> {
+  async importFolder(files: readonly { path: string; content: Uint8Array }[]): Promise<string | undefined> {
     if (files.length === 0) return
     const payload: TeamSkillImportFile[] = files.map(file => ({
       path: file.path,
       base64: encodeBase64(file.content),
     }))
+    let importedId: string | undefined
     await this.run(async () => {
       const answer = unwrap(await this.api().importSkill(payload))
       if (!isDetail(answer)) return (answer as TeamSkillRefusalView).detail
-      this.publish({ detail: answer, selectedId: answer.asset.id })
-      await this.refresh()
+      importedId = await this.showCreatedAsset(answer)
       return 'imported'
     })
+    return importedId
   }
 
   /**
@@ -350,8 +368,8 @@ export class TeamSkillsController {
         this.publish({ scan: undefined })
         return (answer as TeamSkillRefusalView).detail
       }
-      this.publish({ scan: answer })
-      await this.refresh()
+      this.publish({ scan: answer as TeamSkillScanView })
+      await this.refresh(true)
       return 'scanned'
     })
   }
@@ -359,15 +377,27 @@ export class TeamSkillsController {
   /**
    * Copy one shipped skill into an editable override.
    * @param skillId - shipped skill id.
+   * @param switchBindings - whether to move current role bindings to the copy.
+   * @returns the copy's asset identity when the Host created it.
    */
-  async createOverride(skillId: string): Promise<void> {
+  async createOverride(skillId: string, switchBindings: boolean): Promise<string | undefined> {
+    let copyId: string | undefined
     await this.run(async () => {
-      const answer = unwrap(await this.api().overrideSkill(skillId))
+      const api = this.api()
+      const answer = unwrap(await api.overrideSkill(skillId, switchBindings))
       if (!isDetail(answer)) return (answer as TeamSkillRefusalView).detail
-      this.publish({ detail: answer, selectedId: answer.asset.id })
-      await this.refresh()
+      copyId = await this.showCreatedAsset(answer)
       return 'override-created'
     })
+    return copyId
+  }
+
+  private async showCreatedAsset(detail: TeamSkillDetailView): Promise<string> {
+    await this.refresh(true)
+    const assetId = detail.asset.id
+    this.publish({ selectedId: assetId, detail, file: undefined, fileText: undefined })
+    await this.openFile('SKILL.md')
+    return assetId
   }
 
   /**
@@ -378,7 +408,10 @@ export class TeamSkillsController {
     await this.run(async () => {
       const answer = unwrap(await this.api().resetSkill(assetId))
       if (!isDetail(answer)) return (answer as TeamSkillRefusalView).detail
-      this.publish({ detail: answer })
+      if (this.state.selectedId === assetId) {
+        this.publish({ detail: answer })
+        await this.openFile('SKILL.md')
+      }
       await this.refresh()
       return 'override-reset'
     })
@@ -393,7 +426,7 @@ export class TeamSkillsController {
     let outcome: TeamSkillDeleteView | undefined
     await this.run(async () => {
       outcome = unwrap(await this.api().deleteAsset(assetId))
-      await this.refresh()
+      await this.refresh(outcome.ok)
       if (!outcome.ok) return outcome.blockers.map(blocker => `${blocker.kind}: ${blocker.detail}`).join('; ')
       this.publish({ selectedId: undefined, detail: undefined })
       return 'deleted'
@@ -487,7 +520,7 @@ export class TeamSkillsController {
       const message = await work()
       // A success is shown by the refreshed panel itself; only a refusal needs
       // words, so a machine key never reaches the user as raw text.
-      const succeeded = /^(saved|created|imported|deleted|assigned|unassigned|scanned|override-|restored-bindings)/u.test(message)
+      const succeeded = /^(saved|created|imported|deleted|assigned|unassigned|scanned|override-created|override-reset|restored-bindings)$/u.test(message)
       this.publish({ busy: false, message: succeeded ? undefined : message, failed: !succeeded })
     } catch (error: unknown) {
       this.publish({ busy: false, message: String(error), failed: true })

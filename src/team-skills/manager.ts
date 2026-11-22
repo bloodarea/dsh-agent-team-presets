@@ -23,7 +23,8 @@ import { delimiter, join } from 'node:path'
 import { atomicWriteJson } from './store.ts'
 import { assertNoSymlinks } from './paths.ts'
 
-import { BUILTIN_TEAM_CATALOG, BUILTIN_TEAM_IDS } from '../team-catalog.ts'
+import { BUILTIN_TEAM_IDS } from '../team-catalog.ts'
+import { CAPTAIN_ROLE, isOfficialSkillAsset, isOfficialSkillOverride, officialSkillDefaults, officialSkillTarget } from './official-bindings.ts'
 import { constants } from 'node:fs'
 import type {
   TeamSkillAsset, TeamSkillBinding, TeamSkillBindingSummary, TeamSkillDeleteBlocker,
@@ -34,8 +35,7 @@ import type { TeamSkillStore } from './store.ts'
 /** Bindings document revision this build understands. */
 const BINDINGS_VERSION = 1
 
-/** The role slot the captain is stored under. */
-export const CAPTAIN_ROLE = 'captain'
+export { CAPTAIN_ROLE } from './official-bindings.ts'
 
 /** Windows executable extensions assumed when PATHEXT is unset. */
 const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD'
@@ -234,35 +234,14 @@ export class TeamSkillManager {
     }))
   }
 
-  /** Replace existing shipped bindings after an editable copy is created. */
+  /** Replace only existing bindings to the shipped skill after an explicit switch. */
   async replaceBuiltinBindings(skillId: string, overrideId: string): Promise<number> {
     return this.mutate(() => this.store.withLock(async () => {
       const replacement = this.store.get(overrideId)
       if (replacement?.origin !== 'override' || replacement.officialSkillId !== skillId) {
         throw new Error('replacement must be an override of the shipped skill')
       }
-      const builtinId = `builtin:${skillId}`
-      let replaced = 0
-      const seen = new Set<string>()
-      const next: TeamSkillBinding[] = []
-      for (const binding of this.bindings) {
-        // A role already using another explicit override keeps that choice.
-        const hasOtherOverride = binding.assetId === builtinId && this.bindings.some(other => {
-          if (other.teamId !== binding.teamId || other.roleId !== binding.roleId || other.assetId === overrideId) return false
-          const asset = this.store.get(other.assetId)
-          return asset?.origin === 'override' && asset.officialSkillId === skillId
-        })
-        const convert = binding.assetId === builtinId && !hasOtherOverride
-        const row = convert ? { ...binding, assetId: overrideId } : binding
-        if (convert) replaced += 1
-        const key = JSON.stringify([row.teamId, row.roleId, row.assetId])
-        if (row.assetId !== overrideId || !seen.has(key)) next.push(row)
-        if (row.assetId === overrideId) seen.add(key)
-      }
-      if (replaced === 0) return 0
-      this.bindings = next
-      await this.flush()
-      return replaced
+      return this.replaceAssetBindingsNow(`builtin:${skillId}`, overrideId)
     }))
   }
 
@@ -405,46 +384,24 @@ export class TeamSkillManager {
       return owner !== undefined && this.hasRole(owner[0], owner[1])
     }))
     for (const team of teams) {
-      // A shipped identity always declares its catalog defaults: a record
-      // written before this release never carried the field, and the schema's
-      // empty default must not read as "the user removed every default".
-      // Local user teams and imported documents keep their own declaration.
-      const declarations = BUILTIN_TEAM_CATALOG.find(entry => entry.id === team.id)?.officialSkillBindings
-        ?? team.officialSkills
-        ?? []
-      for (const declaration of declarations) {
-        // A declared role name addresses the captain slot or one member, never
-        // both. `CAPTAIN_ROLE` is a sentinel rather than a role name, so a
-        // member whose own stored identity happens to read as that sentinel
-        // cannot be addressed without also matching the captain: the
-        // declaration is dropped instead of being granted to the captain's
-        // slot, because a member's default skill appearing on the captain is
-        // exactly the role leak this table exists to prevent.
-        const isCaptain = team.captain.name === declaration.roleName
-        const member = isCaptain ? undefined : team.members.find(member => member.name === declaration.roleName)
-        const memberRole = member === undefined ? undefined : member.id ?? member.name
-        const roleId = isCaptain ? CAPTAIN_ROLE : memberRole === CAPTAIN_ROLE ? undefined : memberRole
-        if (roleId === undefined) continue
-        // A default names the shipped skill, and the shipped copy is what it
-        // binds. A local copy is bound when the user creates one (that is what
-        // `replaceBuiltinBindings` does at creation time) and never by this
-        // pass: resolving a declaration onto a same-named copy here made the
-        // default follow whatever the user happened to have edited, so deleting
-        // or restoring the copy could not return a role to the shipped skill.
-        const assetId = `builtin:${declaration.skillId}`
-        if (this.store.get(assetId) === undefined) continue
-        // The marker is keyed by the DECLARATION, not by the asset a role
-        // happens to hold: a copy can appear or disappear between restarts, and
-        // a key that followed it would stop matching the marker a user's
-        // explicit unbind wrote, resurrecting a default they removed.
+      for (const declaration of officialSkillDefaults(team).declarations) {
+        const target = officialSkillTarget(team, declaration)
+        if (target.status !== 'valid') continue
+        const { roleId, assetId } = target
+        // The marker follows the declaration across changes to local copies.
         const key = JSON.stringify([team.id, roleId, assetId])
         const holdsSkill = this.bindings.some(row => {
           if (row.teamId !== team.id || row.roleId !== roleId) return false
-          return this.store.get(row.assetId)?.skillId === declaration.skillId
+          const asset = this.store.get(row.assetId)
+          return asset !== undefined && (isOfficialSkillAsset(asset, assetId)
+            || isOfficialSkillOverride(asset, declaration.skillId))
         })
-        // A role that still holds a copy of this skill keeps it: an explicit
-        // assignment outranks a default.
-        if (holdsSkill) continue
+        if (holdsSkill) {
+          this.seeded.add(key)
+          continue
+        }
+        const shipped = this.store.get(assetId)
+        if (shipped === undefined || !isOfficialSkillAsset(shipped, assetId)) continue
         // The marker means "this default was offered and the user removed it",
         // so re-adding would resurrect an explicit unbind. The paths that DO
         // return a missing default -- deleting the copy, restoring it -- clear
@@ -468,17 +425,24 @@ export class TeamSkillManager {
    * @returns the number of bindings moved.
    */
   async replaceAssetBindings(fromAssetId: string, toAssetId: string): Promise<number> {
-    return this.mutate(async () => {
-      if (this.store.get(toAssetId) === undefined) return 0
-      let moved = 0
-      this.bindings = this.bindings.map((row) => {
-        if (row.assetId !== fromAssetId) return row
-        moved += 1
-        return { ...row, assetId: toAssetId }
-      })
-      if (moved > 0) await this.flush()
-      return moved
+    return this.mutate(() => this.replaceAssetBindingsNow(fromAssetId, toAssetId))
+  }
+
+  private async replaceAssetBindingsNow(fromAssetId: string, toAssetId: string): Promise<number> {
+    if (fromAssetId === toAssetId || this.store.get(toAssetId) === undefined) return 0
+    const moved = this.bindings.filter(row => row.assetId === fromAssetId).length
+    if (moved === 0) return 0
+    const seen = new Set<string>()
+    this.bindings = this.bindings.flatMap((binding) => {
+      const row = binding.assetId === fromAssetId ? { ...binding, assetId: toAssetId } : binding
+      if (row.assetId !== toAssetId) return [row]
+      const key = JSON.stringify([row.teamId, row.roleId])
+      if (seen.has(key)) return []
+      seen.add(key)
+      return [row]
     })
+    await this.flush()
+    return moved
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {

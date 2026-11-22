@@ -40,25 +40,27 @@ export interface SkillPackage {
     /** Total byte length. */
     readonly totalBytes: number;
 }
+declare const DEPENDENCY_FRONTMATTER_FIELDS: readonly ["executables", "mcpServers", "otherSkills"];
+/** An unsupported dependency key explicitly present in `SKILL.md` frontmatter. */
+export interface SkillDependencyWarning {
+    readonly code: 'unsupported-dependency-frontmatter';
+    readonly field: (typeof DEPENDENCY_FRONTMATTER_FIELDS)[number];
+}
 /** Result of one import attempt. */
 export type SkillImportResult = {
     readonly ok: true;
     readonly skill: SkillPackage;
     readonly warnings: readonly string[];
+    readonly dependencyWarnings: readonly SkillDependencyWarning[];
 } | {
     readonly ok: false;
     readonly reason: SkillImportFailure;
     readonly path?: string;
 };
 /**
- * Parse the YAML frontmatter of one `SKILL.md`.
- *
- * Only `name` and `description` are interpreted, and both are required by the
- * Agent Skills specification. Everything else — `license`, `compatibility`,
- * `metadata`, `allowed-tools`, an unknown vendor key — stays in the file
- * untouched, because the document is portable and this reader is one consumer.
+ * Parse the two required Agent Skills fields from `SKILL.md`.
  * @param text - the whole document.
- * @returns the two required fields, or undefined when the fence is absent.
+ * @returns the required fields, or undefined when the frontmatter cannot be parsed.
  */
 export declare function parseSkillFrontmatter(text: string): {
     name: string;
@@ -71,6 +73,13 @@ export declare function parseSkillFrontmatter(text: string): {
  * @returns the validated package, or the reason it is not one.
  */
 export declare function buildSkillPackage(input: readonly ImportedFile[]): SkillImportResult;
+/**
+ * Rename an already validated Team Skill package for a new copy.
+ * @param package_ - the source package, whose files are left intact.
+ * @param name - the new kebab-case name.
+ * @returns the renamed package, with only the instruction file changed.
+ */
+export declare function renameSkillPackage(package_: SkillPackage, name: string): SkillPackage;
 /**
  * Read one ZIP archive as an imported folder.
  *
@@ -105,3 +114,4 @@ export declare function decodeImportFiles(files: readonly {
     readonly path: string;
     readonly base64: string;
 }[]): ImportedFile[];
+export {};

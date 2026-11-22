@@ -19,6 +19,7 @@ const composerCss = readFileSync(new URL('../src/client/ComposerTeamSelect.modul
 const section = readFileSync(new URL('../src/client/TeamPresetsSection.tsx', import.meta.url), 'utf8')
 const agentView = readFileSync(new URL('../src/client/TeamAgentView.tsx', import.meta.url), 'utf8')
 const listView = readFileSync(new URL('../src/client/TeamListView.tsx', import.meta.url), 'utf8')
+const importDialog = readFileSync(new URL('../src/client/TeamImportDialog.tsx', import.meta.url), 'utf8')
 
 describe('selection failure visibility', () => {
   it('renders the failure beside the composer control and in its title', () => {
@@ -50,6 +51,16 @@ describe('selection failure visibility', () => {
     expect(section).toContain("catalogueFailed={state.catalogue === 'error'}")
     expect(agentView).toContain("props.catalogueFailed")
     expect(agentView).toContain("t('modelsFailed')")
+  })
+})
+
+describe('preset skill import feedback visibility', () => {
+  it('only bypasses the dialog when there are neither conflicts nor skill rows', () => {
+    expect(section).toContain('inspection.plan.targetIndex === undefined && preview.length === 0')
+    expect(section).toContain('previewSkills={resolution => props.previewImport(')
+    expect(importDialog).toContain('props.previewSkills(resolution)')
+    expect(importDialog).toContain('t(skillStatusKeys[row.status])')
+    expect(importDialog).toContain("t('importDraftNote')")
   })
 })
 

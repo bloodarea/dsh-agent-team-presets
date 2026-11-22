@@ -5,10 +5,10 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-remotes/client';
 import { type SnapshotStore } from '@deepseek-ai/dsh-client-store';
-import type { TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts';
+import type { OfficialSkillTransfer, TeamPresetImportFailure, TeamPresetTransfer } from '../preset-transfer.ts';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { TeamRosterValue } from '../types.ts';
-import type { TeamAgentPreset, TeamCaptainPreset, TeamCategory, TeamCategoryAssignment, TeamExecutionRow, TeamExecutionState, TeamPreset, ToolChoice } from '../types.ts';
+import type { TeamAgentPreset, TeamCaptainPreset, TeamCategory, TeamCategoryAssignment, TeamExecutionRow, TeamExecutionState, TeamPreset, TeamSkillAssetView, ToolChoice } from '../types.ts';
 /**
  * Loader entry id of the Host row that owns the Team preset namespace. Spelled
  * here rather than imported: a client package must not depend on a Host package.
@@ -219,6 +219,10 @@ export type DefaultsRestore = 'restored' | 'unchanged';
 export type TeamPresetImportPlan = {
     /** The document being imported. */
     readonly transfer: TeamPresetTransfer;
+    /** Imported roles with the IDs they will keep if added to the draft. */
+    readonly incoming: TeamPreset;
+    /** Local identity of the replacement target, when there is a conflict. */
+    readonly targetId: string | undefined;
     /** Index of the Team the document would overwrite, or undefined when it adds one. */
     readonly targetIndex: number | undefined;
     /** Display name of that Team, for the dialog that resolves the collision. */
@@ -257,6 +261,11 @@ export type TeamPresetImportResolution = {
  * @returns the resolution that adds the document as a new Team.
  */
 export declare function defaultImportResolution(plan: TeamPresetImportPlan): TeamPresetImportResolution;
+/** Feedback describes the draft and the current library, before any binding is applied. */
+export type TeamPresetImportSkillRow = OfficialSkillTransfer & {
+    readonly source: 'preset' | 'catalog';
+    readonly status: 'unknown-skill' | 'missing-role' | 'ambiguous-role' | 'catalog-ignored' | 'eligible' | 'asset-missing' | 'library-unavailable' | 'local-override';
+};
 /**
  * Whether one stored Team still matches a staged draft, so the page can tell
  * a duplicate from a real edit.
@@ -559,6 +568,8 @@ export declare class TeamPresetsController {
      * @returns the plan, or the reason the document is not a Team preset of this format.
      */
     inspectImport(text: string): TeamPresetImportInspection;
+    /** Inspect the draft that the selected collision choices would stage. */
+    previewImport(plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution, assets?: readonly TeamSkillAssetView[]): readonly TeamPresetImportSkillRow[];
     /**
      * Stage one inspected document onto the draft.
      *
@@ -769,6 +780,8 @@ export interface TeamPresetsInjected {
     exportTeam: (index: number) => string | undefined;
     /** Read one shared document and report what importing it would collide with. */
     inspectImport: (text: string) => TeamPresetImportInspection;
+    /** Preview the declared skills for the selected import choices. */
+    previewImport: (plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution, assets?: readonly TeamSkillAssetView[]) => readonly TeamPresetImportSkillRow[];
     /** Stage one inspected document under the user's resolution of its collisions. */
     applyImport: (plan: TeamPresetImportPlan, resolution: TeamPresetImportResolution) => string;
     removeTeam: (index: number) => void;

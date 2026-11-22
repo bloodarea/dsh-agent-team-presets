@@ -325,6 +325,8 @@ export type TeamSkillAsset = {
   dependencies: TeamSkillDependencies
   /** Whether the shipped official asset this overrides has a newer version. */
   updateAvailable?: boolean
+  /** Folder under the private import directory that supplies this custom skill. */
+  sourceFolder?: string
   /** Epoch milliseconds of the last local write. */
   updatedAt: number
 }
@@ -498,6 +500,8 @@ export interface TeamSkillLibraryView {
   readonly teams: readonly TeamSkillTeamView[]
   /** Shipped skill ids this deployment provides. */
   readonly official: readonly string[]
+  /** Source folders with changes or conflicts found during a read-only check. */
+  readonly inboxChanges?: readonly TeamSkillScanEntry[]
   /** Why the store is unusable, when this deployment could not open it. */
   readonly issue?: string
 }
@@ -520,8 +524,12 @@ export interface TeamSkillDetailView {
   readonly files: readonly TeamSkillFileView[]
   /** The `SKILL.md` body, without frontmatter. */
   readonly body: string
-  /** Absolute directory holding this version's files, as the store named it. */
+  /** Absolute source directory for scanned assets, or the published version's directory. */
   readonly directory: string
+  /** Frontmatter fields the importer preserves without applying as dependencies. */
+  readonly ignoredDependencyFields?: readonly string[]
+  /** The copy was created, but moving the existing role bindings failed. */
+  readonly bindingSwitchIssue?: string
   /** Declared dependencies, with the executable check that can be made here. */
   readonly dependencies?: {
     readonly executables: readonly { readonly name: string; readonly found: boolean }[]
@@ -556,8 +564,10 @@ export interface TeamSkillDeleteView {
 export interface TeamSkillScanEntry {
   /** Folder name inside the scan root. */
   readonly folder: string
-  /** Whether it was imported, already present, or refused. */
-  readonly status: 'imported' | 'existing' | 'invalid'
+  /** How the source compares to the installed version. */
+  readonly status: 'imported' | 'updated' | 'existing' | 'invalid' | 'missing'
+  /** Frontmatter fields preserved without applying them as dependencies. */
+  readonly ignoredDependencyFields?: readonly string[]
   /** Skill name read from its `SKILL.md`, when the folder was readable. */
   readonly skillId?: string
   /** Asset identity for an imported or already-present skill. */
@@ -588,8 +598,12 @@ export interface TeamSkillScanView {
   readonly scanned: number
   /** Folders published as new custom assets. */
   readonly imported: number
-  /** Folders whose skill name already exists in the library. */
+  /** Installed custom skills that received a new version. */
+  readonly updated: number
+  /** Folders whose published package is identical. */
   readonly existing: number
+  /** Known source folders no longer providing the installed skill. */
+  readonly missing: number
   /** Folders refused with a reason. */
   readonly invalid: number
   /** One row per folder, in name order. */

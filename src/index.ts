@@ -38,11 +38,11 @@ import { membershipOf } from './team-runtime.ts'
 import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import { registerPresetTools } from './preset-tools.ts'
 import { teamModeAdmitsTools } from './team-mode.ts'
-import { CAPTAIN_ROLE, TeamSkills, resolveSkillRoot, roleOfMember } from './team-skills/index.ts'
+import { CAPTAIN_ROLE, TeamSkills, resolveSkillRoot } from './team-skills/index.ts'
 import type { AgentSkillSync } from './team-skills/index.ts'
 import { TeamSkillService } from './team-skills/service.ts'
 import { registerTeamSkillTools } from './team-skills/tools.ts'
-import { definitionFingerprint, findMemberById, findTeam, memberRouteOf, sameMemberRoute, selectedRoleId, selectedTeam, toolMode } from './presets.ts'
+import { definitionFingerprint, findMemberById, findTeam, memberRouteOf, recordedMemberRole, sameMemberRoute, selectedRoleId, selectedTeam, toolMode } from './presets.ts'
 import type { TeamPreset } from './types.ts'
 import TeamPresetsToolCatalog from './tool-catalog.ts'
 import { CAPTAIN_RECOVERY_TOOLS, descriptorPolicy, guardPolicy, hasLegacyPresetBriefing, policyOf } from './tool-policy.ts'
@@ -345,12 +345,10 @@ export function apply(ctx: Context, config: Config): void {
         quarantines.get(agent)?.dispose()
         quarantines.delete(agent)
         managedMembers.add(agent)
-        // A member's Team Skills are its own: the durable snapshot names the
-        // role, so the assignment is resolved from the record rather than from
-        // the current Settings, exactly as its route and policy are.
+        // Use the snapshot's role id or its saved display name when restoring
+        // Team Skills. The current summon target may have changed ownership.
         const claimedTeam = findTeam(config.teams.get(), claim.record.teamId)
-        const role = claim.record.roleId
-          ?? (claimedTeam === undefined ? claim.record.memberName : roleOfMember(claimedTeam, claim.record.memberName))
+        const role = recordedMemberRole(claimedTeam, claim.record)
         let installation: Promise<AgentSkillSync> | undefined
         if (role !== undefined) {
           const assignment = { teamId: claim.record.teamId, roleId: role, captain: false }

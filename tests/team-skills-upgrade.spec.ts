@@ -340,7 +340,8 @@ describe('what the published package carries', () => {
     // Both built faces carry the release: the bundle `main` points at, and the
     // per-module host build.
     expect(quoted(readFileSync(join(PACKAGE_ROOT, 'lib', 'index.js'), 'utf8'))).toEqual([...OFFICIAL_SKILL_IDS])
-    expect(quoted(readFileSync(join(PACKAGE_ROOT, 'lib', 'types', 'team-skills', 'index.js'), 'utf8'))).toEqual([...OFFICIAL_SKILL_IDS])
+    const bindings = readFileSync(join(PACKAGE_ROOT, 'lib', 'types', 'team-skills', 'official-bindings.js'), 'utf8')
+    expect(quoted(bindings)).toEqual([...OFFICIAL_SKILL_IDS])
 
     // The catalog declarations and the reconcile fallback are what make the
     // upgrade reach a stored record, so the shipped build must carry both.
@@ -349,8 +350,9 @@ describe('what the published package carries', () => {
     expect(catalog).toContain("skillId: 'research'")
     expect(catalog).toContain('officialSkillBindings: OFFICIAL_DISCOVERY_SKILLS')
     expect(catalog).toContain('officialSkillBindings: OFFICIAL_RESEARCH_SKILLS')
+    expect(bindings).toContain('entry.officialSkillBindings')
     expect(readFileSync(join(PACKAGE_ROOT, 'lib', 'types', 'team-skills', 'manager.js'), 'utf8'))
-      .toContain('BUILTIN_TEAM_CATALOG.find(entry => entry.id === team.id)?.officialSkillBindings')
+      .toContain('officialSkillDefaults(team).declarations')
 
     // Baseline finding B1: the tool quarantine fix had to be rebuilt into the
     // shipped artifact, or the release would ship without it.

@@ -8,7 +8,7 @@
  * @module dsh-agent-team-presets/preset-editor
  */
 
-import { memberTargets } from './presets.ts'
+import { findMemberInRoster, memberTargets } from './presets.ts'
 import type { TeamAgentPreset, TeamCaptainPreset, TeamPreset } from './types.ts'
 
 /** Longest member description the teammate roster accepts when it spawns that member. */
@@ -105,13 +105,12 @@ export function editTeamPreset(team: TeamPreset, edit: TeamPresetEdit): TeamPres
   const members = team.members.map(member => ({ ...member }))
   const roster = memberTargets({ ...team, members })
   for (const entry of edit.members ?? []) {
-    const wanted = entry.member.trim()
-    const at = roster.findIndex(row => row.target === wanted.toLowerCase() || row.member.name.trim() === wanted)
-    const row = roster[at]
+    const row = findMemberInRoster(roster, entry.member)
     if (row === undefined) {
       const targets = roster.map(candidate => candidate.target).join(', ')
       return { ok: false, message: `unknown Team member "${entry.member}"; available members: ${targets === '' ? '(none)' : targets}` }
     }
+    const at = roster.indexOf(row)
     const current = members[at] ?? row.member
     const updated: TeamAgentPreset = { ...current }
     if (entry.description !== undefined) {

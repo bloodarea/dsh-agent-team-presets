@@ -262,6 +262,45 @@ describe('Team Skill management regressions', () => {
     expect(manager.list().find(row => row.teamId === preset.id)).toMatchObject({ roleId: CAPTAIN_ROLE, captain: true })
   })
 
+  it('waits for a known built-in asset and seeds only valid, unambiguous declarations when it arrives', async () => {
+    const { store, manager, setTeams } = await fixture()
+    const preset = {
+      ...team([slot({ id: 'dev', name: 'developer' }), slot({ id: 'other', name: 'shared' })], { name: 'shared' }),
+      officialSkills: [
+        { skillId: 'research', roleName: 'developer' },
+        { skillId: 'research', roleName: 'shared' },
+        { skillId: 'research', roleName: 'missing' },
+        { skillId: 'my-custom', roleName: 'developer' },
+      ],
+    }
+    setTeams([preset])
+    await install(store, 'custom:research')
+    await install(store, 'builtin:my-custom', 'builtin')
+    expect(await manager.assign({ teamId: preset.id, roleId: 'dev', assetId: 'custom:research' })).toMatchObject({ ok: true })
+    await manager.reconcile()
+    expect(manager.list()).toEqual([{ teamId: preset.id, roleId: 'dev', assetId: 'custom:research' }])
+    await install(store, 'builtin:research', 'builtin')
+    await manager.reconcile()
+    expect(manager.list()).toEqual([
+      { teamId: preset.id, roleId: 'dev', assetId: 'custom:research' },
+      { teamId: preset.id, roleId: 'dev', assetId: 'builtin:research' },
+    ])
+  })
+
+  it('keeps an existing override and respects its later manual unbinding', async () => {
+    const { store, manager, setTeams } = await fixture()
+    const preset = team([slot({ id: 'dev', name: 'developer' })], {})
+    await install(store, 'builtin:research', 'builtin')
+    const copy = await store.createOverride('research', 'override:research')
+    expect(await manager.assign({ teamId: preset.id, roleId: 'dev', assetId: copy.id })).toMatchObject({ ok: true })
+    setTeams([{ ...preset, officialSkills: [{ skillId: 'research', roleName: 'developer' }] }])
+    await manager.reconcile()
+    expect(manager.assetsFor(preset.id, 'dev').map(asset => asset.id)).toEqual([copy.id])
+    expect(await manager.unassign(preset.id, 'dev', copy.id)).toBe(true)
+    await manager.reconcile()
+    expect(manager.assetsFor(preset.id, 'dev')).toEqual([])
+  })
+
   it('binds a default to the shipped copy even when a same-named copy exists', async () => {
     // A declaration names the skill the plugin ships. It must not resolve onto
     // whatever local copy happens to share that name: doing so made the default
