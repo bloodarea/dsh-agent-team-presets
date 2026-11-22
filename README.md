@@ -69,7 +69,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 - **Durable storage and a continuable subagent backend** for member execution; the default backend names are `spawn` and `fork`.
 - Custom tool allow-lists have their own execution model; see [Tools and permissions](docs/reference/tools-and-permissions.md).
 
-The plugin version (`0.3.3`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
+The plugin version (`0.3.4`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
 
 ### Install
 
@@ -126,7 +126,7 @@ Thanks to **张灏焱** for contributing the `grilling` and `research` method Te
 <a id="release-notes"></a>
 ## Release notes
 
-Latest tagged release **v0.3.2** keeps several upstream versions patchable at once and raises the host requirement to **DeepSeek Harness 0.2.2-rc.3**. Notes, assets, and the full history are on the [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) page.
+Latest tagged release **v0.3.4** keeps custom Team Skill bindings and summon targets intact across preset imports, scanned skill updates, and editable copies, adds a plugin icon, and patches `dsh-context` 0.87.0. Notes, assets, and the full history are on the [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) page.
 
 <a id="further-exploration"></a>
 ## Related resources

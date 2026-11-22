@@ -18,7 +18,7 @@ The replacements are offered in **Settings → Agent Team presets → Integratio
 
 | Target | Versions this build patches | What the row offers |
 | --- | --- | --- |
-| `dsh-context` | 0.84.0, 0.84.1, 0.85.0, 0.85.1 | Install patch / Remove patch |
+| `dsh-context` | 0.84.0, 0.84.1, 0.85.0, 0.85.1, 0.87.0 | Install patch / Remove patch |
 | `dsh-better-sidebar` | 0.32.0, 0.32.1 | Install patch / Remove patch |
 
 Each row reports its own state and the page never guesses: `not installed`, `version not supported`, `not patched`, `patched`, `modified by something else`. A `version not supported` row names the **installed** version and the **highest one this build patches**, in the reader's language — the only decision that state raises is which side to update. **Install patch** asks for confirmation, backs up the target's `lib/client.js`, then writes this plugin's build of the same source; **Remove patch** restores that backup and deletes it.

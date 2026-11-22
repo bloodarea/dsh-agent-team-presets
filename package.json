@@ -1,7 +1,8 @@
 {
   "name": "dsh-agent-team-presets",
   "description": "Reusable Agent Team presets for DeepSeek Harness: a captain plus members with their own prompt, model, reasoning effort, and tools.",
-  "version": "0.3.3",
+  "version": "0.3.4",
+  "icon": "./icon.webp",
   "keywords": [
     "agent-presets",
     "agent-teams",
@@ -43,6 +44,7 @@
     },
     "./src/*": "./src/*",
     "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.webp",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -159,6 +161,7 @@
     "lib/typert.remote-client.d.ts",
     "cordis.patch.yml",
     "locale",
+    "icon.webp",
     "assets/skills",
     "assets/card-patches",
     "LICENSE",

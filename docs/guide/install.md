@@ -12,7 +12,7 @@ What the plugin needs before it runs, the three supported install forms, and how
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use — typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or the selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.3.3`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
+The plugin version (`0.3.4`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
 
 ## Install
 

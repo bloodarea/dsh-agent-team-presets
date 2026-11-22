@@ -6,7 +6,7 @@ These source patches add an optional Client Cordis service owned by each target 
 
 | Patch | Baseline it was generated from | Rebuilt and shipped for | Service | Rendered surfaces |
 | --- | --- | --- | --- | --- |
-| `dsh-context-0.84.0-aa98b1231d5f.patch` | dsh-context 0.84.0, commit `aa98b1231d5f0f8e833391f198e65e14e73b3323` | 0.84.0, 0.84.1 | `contextAgentCardBadges` | Shared AgentCard header used by the fleet view and context view/sidebar |
+| `dsh-context-0.84.0-aa98b1231d5f.patch` | dsh-context 0.84.0, commit `aa98b1231d5f0f8e833391f198e65e14e73b3323` | 0.84.0, 0.84.1, 0.85.0, 0.85.1, 0.87.0 | `contextAgentCardBadges` | Shared AgentCard header used by the fleet view and context view/sidebar |
 | `dsh-better-sidebar-0.32.0.patch` | dsh-better-sidebar 0.32.0 published source payload | 0.32.0, 0.32.1 | `betterSidebarAgentCardBadges` | Tasks graph CardTop badge row and Tasks tree title row |
 
 Context source: <https://github.com/bowenliang123/dsh-context/tree/aa98b1231d5f0f8e833391f198e65e14e73b3323>. Its published package contains the minified Client artifact, so this patch targets the matching source checkout, not `lib/client.js`. The sidebar baseline is the source shipped in the installed 0.32.0 package.

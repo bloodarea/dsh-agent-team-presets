@@ -40,6 +40,16 @@
       "service": "contextAgentCardBadges",
       "pristineSha256": "4f87bfd9a080d1d688a55b8e008dae4313c625edc479b0310685d0bd746324e1",
       "patchedSha256": "efdff232dc5c9b2768f262cd3f9ed8b7604e9168190facc6770155fcbc94c954"
+    },
+    {
+      "id": "dsh-context",
+      "packageName": "dsh-context",
+      "version": "0.87.0",
+      "source": "bowenliang123/dsh-context@d6aff61857ae59c51c872d58ee66a4b46ed03ba7",
+      "asset": "dsh-context-0.87.0.client.js.gz",
+      "service": "contextAgentCardBadges",
+      "pristineSha256": "69aea607409542050690e8cb22b818400c675448b119b418436feeaee0287141",
+      "patchedSha256": "a4539b690fd908df1429acf649620b6f7d9627033c61ac6cbca9e8f76addccad"
     }
   ]
 }

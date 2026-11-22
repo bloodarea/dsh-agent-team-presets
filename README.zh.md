@@ -69,7 +69,7 @@ DeepSeek Harness 本身已提供多智能体协作的 Agent Teams；在本插件
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端**；默认后端名为 `spawn` 和 `fork`。
 - 自定义工具白名单有自己的执行模型，见[工具权限与安全](docs/reference/tools-and-permissions.zh.md)。
 
-插件版本（`0.3.3`）和 Harness 版本（如 `0.2.2-rc.3`）是不同的版本线。
+插件版本（`0.3.4`）和 Harness 版本（如 `0.2.2-rc.3`）是不同的版本线。
 
 ### 安装
 
@@ -126,7 +126,7 @@ README 是入口。下面每份文档都随包发布，只有图文走查是仓�
 <a id="release-notes"></a>
 ## 发布说明
 
-最新标签版本 **v0.3.2** 让同一个目标插件的多个版本同时可打补丁，并把宿主要求收紧到 **DeepSeek Harness 0.2.2-rc.3**。完整记录与产物见 [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) 页面。
+最新标签版本 **v0.3.4** 让自定义团队技能绑定与召唤地址在预设导入、扫描更新和可编辑副本之间保持一致，新增插件图标，并适配 `dsh-context` 0.87.0 补丁。完整记录与产物见 [Releases](https://github.com/bloodarea/dsh-agent-team-presets/releases) 页面。
 
 <a id="further-exploration"></a>
 ## 相关资源
