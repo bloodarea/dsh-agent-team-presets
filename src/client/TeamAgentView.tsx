@@ -5,6 +5,7 @@
 
 import { Button, Checkbox, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useState } from 'react'
+import { keywordTokens, matchKeyword } from '../keyword-search.ts'
 import type { TeamSkillsController } from './team-skills-controller.ts'
 import { AGENT_COLORS } from './team-presets-controller.ts'
 import type { ProviderChoice } from './team-presets-controller.ts'
@@ -94,10 +95,24 @@ function SkillAssignmentGrid(props: { controller: TeamSkillsController; teamId: 
   const assets = state.library?.assets ?? []
   const held = new Set(assets.filter(asset => asset.bindings.some(row => row.teamId === props.teamId && row.roleId === props.roleId)).map(asset => asset.id))
   const [category, setCategory] = useState<'all' | SkillCategoryId>('all')
-  // The filter narrows what can be assigned here; it never changes what this role
-  // already holds, so the heading counts every installed skill, not the visible one.
-  const visible = category === 'all' ? assets : assets.filter(asset => skillCategoryOf(asset) === category)
-  if (state.status === 'unavailable') return null
+  const [query, setQuery] = useState('')
+  // Which holdings the grid shows. It reads the same `held` set the checkboxes
+  // reflect, so "bound" and "a checked card" can never disagree.
+  const [binding, setBinding] = useState<'all' | 'bound' | 'unbound'>('all')
+  // The filters narrow what can be assigned here; they never change what this
+  // role already holds, so the heading counts every installed skill, not the
+  // visible one.
+  const tokens = keywordTokens(query)
+  const visible = assets.filter((asset) => {
+    if (category !== 'all' && skillCategoryOf(asset) !== category) return false
+    if (binding !== 'all' && held.has(asset.id) !== (binding === 'bound')) return false
+    // A skill is findable by the label the reader sees and by the raw id every
+    // other surface names it by, so either vocabulary reaches it.
+    return matchKeyword(tokens, [skillLabel(asset.skillId, props.t), asset.skillId, asset.description])
+  })
+  // Three independent filters stack, so the empty state has to name what is
+  // actually filtering rather than blaming the category every time.
+  const narrowing = category !== 'all' || binding !== 'all' || tokens.length > 0
   return (
     <>
       <div className={css.sepTitle}>
@@ -105,21 +120,62 @@ function SkillAssignmentGrid(props: { controller: TeamSkillsController; teamId: 
         <span className={css.hint}> · {String([...held].length)}/{String(assets.length)}</span>
       </div>
       <div className={css.panel}>
-        <p className={css.muted} style={{ marginTop: 0 }}>{props.t('skillsAssignHint')}</p>
-        {assets.length === 0 ? <p className={css.muted}>{props.t('skillsAssignEmpty')}</p> : (
+        {state.status === 'unavailable' ? (
+          // A hidden section explained nothing: a reader saw the grid disappear
+          // with no reason. Say why, and keep the heading above so the slot is
+          // still visibly part of this page.
+          <p className={css.muted} style={{ marginTop: 0 }} role="status">
+            {state.issue === undefined
+              ? props.t('skillsUnavailable')
+              : `${props.t('skillsUnavailable')}: ${state.issue}`}
+          </p>
+        ) : (
+          <p className={css.muted} style={{ marginTop: 0 }}>{props.t('skillsAssignHint')}</p>
+        )}
+        {state.status === 'unavailable' ? null : assets.length === 0 ? <p className={css.muted}>{props.t('skillsAssignEmpty')}</p> : (
           <>
-            <select
-              className={css.select}
-              aria-label={props.t('skillsCategoryAll')}
-              value={category}
-              onChange={(event) => { setCategory(event.target.value as 'all' | SkillCategoryId) }}
-            >
-              <option value="all">{props.t('skillsCategoryAll')}</option>
-              {SKILL_CATEGORIES.map(id => (
-                <option key={id} value={id}>{props.t(SKILL_CATEGORY_LABELS[id])}</option>
-              ))}
-            </select>
-            {visible.length === 0 ? <p className={css.muted}>{props.t('skillsFilterEmpty')}</p> : (
+            {/* Above the menus, because the keyword is the reader's first and
+                cheapest narrowing: the two menus only split what is left. */}
+            <div className={css.skillFilters}>
+              <input
+                className={css.search}
+                type="search"
+                value={query}
+                placeholder={props.t('skillsAssignSearch')}
+                aria-label={props.t('skillsAssignSearch')}
+                onChange={(event) => { setQuery(event.target.value) }}
+              />
+              <div className={css.skillFilterMenus}>
+                <select
+                  className={css.select}
+                  aria-label={props.t('skillsCategoryAll')}
+                  value={category}
+                  onChange={(event) => { setCategory(event.target.value as 'all' | SkillCategoryId) }}
+                >
+                  <option value="all">{props.t('skillsCategoryAll')}</option>
+                  {SKILL_CATEGORIES.map(id => (
+                    <option key={id} value={id}>{props.t(SKILL_CATEGORY_LABELS[id])}</option>
+                  ))}
+                </select>
+                <select
+                  className={css.select}
+                  aria-label={props.t('skillsFilterBinding')}
+                  value={binding}
+                  onChange={(event) => { setBinding(event.target.value as 'all' | 'bound' | 'unbound') }}
+                >
+                  <option value="all">{props.t('skillsFilterBindingAll')}</option>
+                  <option value="bound">{props.t('skillsFilterBindingBound')}</option>
+                  <option value="unbound">{props.t('skillsFilterBindingUnbound')}</option>
+                </select>
+              </div>
+            </div>
+            {/* Three filters stack, so an empty grid names the one condition that
+                can actually explain it instead of blaming the category every time. */}
+            {visible.length === 0 ? (
+              <p className={css.muted}>
+                {narrowing ? props.t('skillsFilterNoMatch') : props.t('skillsFilterEmpty')}
+              </p>
+            ) : (
               <div className={css.skillGrid}>
                 {visible.map(asset => (
                   <label key={asset.id} className={css.skillCard}>
@@ -194,6 +250,30 @@ export function TeamAgentView(props: TeamAgentViewProps) {
   // Groups start collapsed: a deployment with many tools is unreadable as one
   // flat grid, and each header already reports how many of its tools are chosen.
   const [expandedGroups, setExpandedGroups] = useState<readonly string[]>([])
+  const [toolQuery, setToolQuery] = useState('')
+  const toolTokens = keywordTokens(toolQuery)
+  // A keyword finds a tool by its name, by its description, and by the group it
+  // is listed under, so "mcp" or a server name reaches the tools it owns. While a
+  // keyword is active every group that survived it opens: a match hidden inside a
+  // collapsed group would be a search that returned nothing visible.
+  //
+  // What the keyword narrows is what the group SHOWS. A group's select-all,
+  // invert, and clear rewrite exactly those shown tools and leave every tool the
+  // keyword hid at the state it already had, so narrowing a list can never
+  // silently uncheck a selection the reader merely scrolled past.
+  const filteredToolGroups = toolGroups
+    .map(group => ({
+      group,
+      shown: toolTokens.length === 0
+        ? group.tools
+        : group.tools.filter(tool => matchKeyword(toolTokens, [tool.name, tool.description, group.label])),
+    }))
+    .filter(entry => entry.shown.length > 0)
+  const searchingTools = toolTokens.length > 0
+  // The card's own select-all and clear follow the same rule as a group's: they
+  // act on the tools the keyword leaves on screen, so one keyword never turns a
+  // click into a whole-catalogue write the reader did not ask for.
+  const shownToolChoices = filteredToolGroups.flatMap(entry => entry.shown)
   /** Whether this page may grant the tool at all; a member cannot grant captain-only. */
   const grantable = (tool: ToolChoice): boolean => !(props.role === 'member' && tool.captainOnly === true)
   const modeOptions: PickerChoice[] = [
@@ -333,14 +413,16 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={disabled || !toolsReady || props.tools.length === 0}
+                  disabled={disabled || !toolsReady || shownToolChoices.length === 0}
                   onClick={() => {
                     // A member can never exercise a captain-only capability, so
                     // select-all must not persist one into its allow-list.
+                    const inside = new Set(shownToolChoices.map(tool => tool.name))
                     props.onChange({
-                      tools: props.tools
-                        .filter(tool => !(props.role === 'member' && tool.captainOnly === true))
-                        .map(tool => tool.name),
+                      tools: [
+                        ...agent.tools.filter(name => !inside.has(name)),
+                        ...shownToolChoices.filter(grantable).map(tool => tool.name),
+                      ],
                     })
                   }}
                 >
@@ -349,25 +431,62 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={disabled || agent.tools.length === 0}
-                  onClick={() => { props.onChange({ tools: [] }) }}
+                  disabled={disabled || !toolsReady || !shownToolChoices.some(tool => agent.tools.includes(tool.name) && grantable(tool))}
+                  onClick={() => {
+                    const inside = new Set(shownToolChoices.map(tool => tool.name))
+                    // Every tool the keyword hides keeps the state it had, and so
+                    // does a captain-only name a member already holds: clearing
+                    // it would put it out of reach for good.
+                    props.onChange({
+                      tools: agent.tools.filter(name => !inside.has(name)
+                        || shownToolChoices.some(tool => tool.name === name && !grantable(tool))),
+                    })
+                  }}
                 >
                   {t('toolsClear')}
                 </Button>
               </span>
             </div>
-            {toolGroups.map(group => {
-              const expanded = expandedGroups.includes(group.key)
-              const grantableTools = group.tools.filter(grantable)
-              const chosen = group.tools.filter(tool => agent.tools.includes(tool.name)).length
+            <div className={css.field}>
+              <input
+                className={css.search}
+                type="search"
+                value={toolQuery}
+                placeholder={t('toolsSearch')}
+                aria-label={t('toolsSearch')}
+                disabled={disabled || !toolsReady}
+                onChange={(event) => { setToolQuery(event.target.value) }}
+              />
+            </div>
+            {filteredToolGroups.map(entry => {
+              const { group, shown } = entry
+              // A keyword keeps every surviving group open, so the matches it
+              // just found are on screen rather than folded away.
+              const expanded = searchingTools || expandedGroups.includes(group.key)
+              const shownNames = new Set(shown.map(tool => tool.name))
+              const chosenInGroup = group.tools.filter(tool => agent.tools.includes(tool.name)).length
+              const chosenInShown = shown.filter(tool => agent.tools.includes(tool.name)).length
               // Rewrite only this group's slice of the allow-list, so another
               // group's selection and a stored name this catalogue cannot
               // describe both survive untouched.
               const inside = new Set(group.tools.map(tool => tool.name))
               const outside = agent.tools.filter(name => !inside.has(name))
-              const retained = group.tools
+              // A group action acts on what the group SHOWS: with a keyword on,
+              // the reader asked to change the tools in front of them, and a
+              // hidden match is not one of them. Every tool the keyword hid or
+              // the reader cannot grant keeps exactly the state it already had.
+              const hiddenSelected = group.tools
+                .filter(tool => !shownNames.has(tool.name) && agent.tools.includes(tool.name))
+                .map(tool => tool.name)
+              const shownGrantable = shown.filter(grantable)
+              // A captain-only tool a member already holds cannot be re-selected
+              // once cleared, so every action below carries it through untouched.
+              const shownRetained = shown
                 .filter(tool => agent.tools.includes(tool.name) && !grantable(tool))
                 .map(tool => tool.name)
+              const clearableInShown = shown
+                .filter(tool => agent.tools.includes(tool.name) && grantable(tool)).length
+              const keepOutside = (names: readonly string[]): string[] => [...outside, ...hiddenSelected, ...names, ...shownRetained]
               return (
                 <div key={group.key} className={css.toolGroup}>
                   <div className={css.toolGroupHead}>
@@ -383,7 +502,11 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                     >
                       <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
                       <span className={css.fieldLabel}>{group.label}</span>
-                      <span className={css.toolGroupCount}>{`${String(chosen)}/${String(group.tools.length)}`}</span>
+                      <span className={css.toolGroupCount}>
+                        {searchingTools
+                          ? `${String(chosenInShown)}/${String(shown.length)}`
+                          : `${String(chosenInGroup)}/${String(group.tools.length)}`}
+                      </span>
                     </button>
                     <span className={css.rowActions}>
                       <Button
@@ -391,7 +514,7 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                         variant="ghost"
                         disabled={disabled || !toolsReady}
                         onClick={() => {
-                          props.onChange({ tools: [...outside, ...grantableTools.map(tool => tool.name), ...retained] })
+                          props.onChange({ tools: keepOutside(shownGrantable.map(tool => tool.name)) })
                         }}
                       >
                         {t('toolsSelectAll')}
@@ -401,19 +524,22 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                         variant="ghost"
                         disabled={disabled || !toolsReady}
                         onClick={() => {
-                          const flipped = grantableTools
+                          const flipped = shownGrantable
                             .filter(tool => !agent.tools.includes(tool.name))
                             .map(tool => tool.name)
-                          props.onChange({ tools: [...outside, ...flipped, ...retained] })
+                          props.onChange({ tools: keepOutside(flipped) })
                         }}
                       >
                         {t('toolsInvert')}
                       </Button>
+                      {/* Clear drops every clearable tool the group shows and keeps the
+                          captain-only selections a member already holds: those are not
+                          grantable, so a cleared name could never be chosen again. */}
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={disabled || chosen === 0}
-                        onClick={() => { props.onChange({ tools: [...outside] }) }}
+                        disabled={disabled || clearableInShown === 0}
+                        onClick={() => { props.onChange({ tools: keepOutside([]) }) }}
                       >
                         {t('toolsClear')}
                       </Button>
@@ -421,7 +547,7 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                   </div>
                   {expanded ? (
                     <div className={css.toolGrid} role="group" aria-label={group.label}>
-                      {group.tools.map(tool => {
+                      {shown.map(tool => {
                         // The Team service enforces captain-only for these, and
                         // the preset tools exist on the Session root scope alone,
                         // so a member cannot use them however the list is edited.
@@ -449,6 +575,12 @@ export function TeamAgentView(props: TeamAgentViewProps) {
                 </div>
               )
             })}
+            {searchingTools && filteredToolGroups.length === 0 ? (
+              // Only the keyword can empty this: an empty tool catalogue is stated
+              // by its own hint below, not by a "no match" the reader cannot act on.
+              <span className={css.hint} role="status">{t('toolsSearchEmpty')}</span>
+            ) : null}
+            {searchingTools && filteredToolGroups.length > 0 ? <span className={css.hint}>{t('toolsSearchHint')}</span> : null}
             {props.toolCatalogue === 'loading' || props.toolCatalogue === 'idle' ? (
               <span className={css.hint} role="status">{t('toolsLoading')}</span>
             ) : props.toolCatalogue === 'error' ? (

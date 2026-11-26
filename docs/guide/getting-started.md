@@ -2,7 +2,7 @@
 
 This walkthrough assumes you have **never used this plugin**. Follow it once and you will know where every control is and what happens when you use it.
 
-> All screenshots come from an isolated instance with only this plugin installed (default workspace, nine built-in Teams), so no personal Sessions or custom content appear. Your own menus will list more entries — those come from other plugins.
+> All screenshots come from an isolated instance with only this plugin installed (default workspace, eleven built-in Teams), so no personal Sessions or custom content appear. Your own menus will list more entries — those come from other plugins.
 
 ---
 
@@ -75,7 +75,7 @@ Each row has **Export / Duplicate / Delete**. Above the list:
 - **New Team** — start from blank;
 - **Import preset** — read a JSON document someone shared;
 - **Manage categories** — create, rename, reorder, delete your own groups;
-- **Restore defaults** — put the nine built-in Teams back to their shipped content (your own model routes and tool policies are preserved). It stages a draft, so **click Save afterwards** or a restart discards it.
+- **Restore defaults** — put the eleven built-in Teams back to their shipped content (your own model routes and tool policies are preserved). It stages a draft, so **click Save afterwards** or a restart discards it.
 
 Click **Save** when you are done, or **Discard changes** to leave the page untouched.
 
@@ -103,9 +103,9 @@ Click a member:
 
 - **Identity**: name, colour mark (used by the roster), description;
 - **Model**: provider, model, reasoning effort. All default to `Follow session`; picking a concrete model pins that member to it, without touching the captain;
-- **Tools**: inherit everything the deployment offers, or switch to a custom allow-list so this role only reaches what it needs;
+- **Tools**: inherit everything the deployment offers, or switch to a custom allow-list so this role only reaches what it needs. The allow-list has a keyword box: it filters by tool name, description, or the group a tool belongs to, in real time, and a group that survives the keyword opens itself. A group's "select all / invert / clear" acts only on what is shown, so a tool the keyword hid keeps the state it already had;
 - **System prompt**: the role's own instructions;
-- **Assigned skills**: bind Team Skills to this role only (next section).
+- **Assigned skills**: bind Team Skills to this role only (next section). The grid's keyword box sits above the category menu and matches a skill's label, its id, or its description, in real time.
 
 ---
 
@@ -118,7 +118,7 @@ Switch to the **Team skills** tab:
 This is a **plugin-private skill library**, separate from the deployment's global skills:
 
 - **Import folder / Scan import directory / New skill** brings a `SKILL.md` together with its `scripts`, `references` and other assets;
-- **Built-in / Custom** — ten shipped skills (the captain, advisor, and executor workflows plus `git-release-hygiene`, `github-repository-presentation`, `grilling`, `research`) are marked as built-in and can be duplicated into editable local copies;
+- **Built-in / Custom** — fourteen shipped skills (the captain, advisor, and executor workflows plus `git-release-hygiene`, `github-repository-presentation`, `grilling`, `research`) are marked as built-in and can be duplicated into editable local copies;
 - click a row to read it, check its declared dependencies and see **where it is bound**.
 
 The rule that matters: a skill is visible to **only the role it was assigned to**. Assignment happens on the member page's "Assigned skills" section, not here — this page only owns the library.

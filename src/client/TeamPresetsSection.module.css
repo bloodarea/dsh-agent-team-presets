@@ -667,7 +667,54 @@ select.select:disabled {
 }
 @media (max-width: 820px) { .skillGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+/* The Team Skill assignment grid's filters: keyword above, two menus below.
+ * The panel stacks its children as plain blocks, so without this the search box
+ * and the category menu touch each other. One column with a real gap is what
+ * separates them, and the menus share a row so neither claims the full width. */
+.skillFilters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+
+.skillFilterMenus {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A narrow panel drops to one column rather than squeezing two menus. */
+@media (max-width: 520px) {
+  .skillFilterMenus {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Team list discovery row: search, source/series chips, match count. */
+/* A keyword box sitting above a long grid of choices (the tool groups, the Team
+ * Skill assignment grid). It is the same control the Team list uses, so it keeps
+ * the same box instead of a lookalike. */
+.search {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.search:focus-visible {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
 .listToolbar { display: flex; gap: 8px; margin: 0; }
 .listSearch { flex: 1; min-width: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; padding: 8px 11px; font-size: 13px; background: var(--dsw-specific-input-major); color: var(--dsw-alias-label-primary); outline: none; }
 .chipRow { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }

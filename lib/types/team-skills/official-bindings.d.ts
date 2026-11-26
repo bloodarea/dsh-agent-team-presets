@@ -1,7 +1,7 @@
 import type { OfficialSkillBinding } from '../team-catalog.ts';
 import type { TeamPreset } from '../types.ts';
 /** Skills shipped under `assets/skills`, including assets missing from this installation. */
-export declare const OFFICIAL_SKILL_IDS: readonly ["agent-leader-communication", "leader-medium-task-workflow", "leader-long-task-orchestration", "agent-subagent-orchestration", "fullstack-advisor", "executor-short-task-workflow", "github-repository-presentation", "git-release-hygiene", "frontend-engineering-workflow", "backend-architecture-workflow", "independent-code-review-workflow", "grilling", "research"];
+export declare const OFFICIAL_SKILL_IDS: readonly ["agent-leader-communication", "leader-medium-task-workflow", "leader-long-task-orchestration", "leader-worker-continuity", "agent-subagent-orchestration", "fullstack-advisor", "executor-short-task-workflow", "github-repository-presentation", "git-release-hygiene", "frontend-engineering-workflow", "backend-architecture-workflow", "independent-code-review-workflow", "grilling", "research"];
 /** The binding slot reserved for a captain. */
 export declare const CAPTAIN_ROLE = "captain";
 /** Shipped identities always use the catalog, including records from earlier releases. */

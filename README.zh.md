@@ -7,7 +7,7 @@
 <p align="center"><a href="README.md">English</a></p>
 
 <p align="center">
-  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.2--rc.3-2563eb?style=flat-square" alt="DeepSeek Harness 0.2.2-rc.3"></a>
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.2--rc.5-2563eb?style=flat-square" alt="DeepSeek Harness 0.2.2-rc.5"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-source-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
   <a href="https://www.npmjs.com/package/dsh-agent-team-presets"><img src="https://img.shields.io/npm/v/dsh-agent-team-presets?style=flat-square&label=npm" alt="npm 版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bloodarea/dsh-agent-team-presets?style=flat-square" alt="许可证：MIT"></a>
@@ -49,11 +49,11 @@ DeepSeek Harness 本身已提供多智能体协作的 Agent Teams；在本插件
 - **按成员配置模型路由：** 为单个角色指定模型与推理强度，不改变队长的模型。
 - **与单个成员对话：** 在输入区选中某个成员，即把该成员的角色卡、工具策略、团队技能与模型路由注入当前会话。
 - **独立工具策略：** 队长与每个成员各自可选「所有工具」或自定义白名单。
-- **九个内置预设、两大系列：** 三个研发规模团队与六个工作模式团队，见[内置团队](docs/builtin-teams.zh.md)。
+- **十一个内置预设、两大系列：** 四个研发规模团队与七个工作模式团队，见[内置团队](docs/builtin-teams.zh.md)。
 - **展示元数据、本地分类与搜索：** 每个团队可配置简介、标签、适用场景、推荐任务与备注——仅用于界面展示，绝不注入运行时上下文。
 - **私有团队技能库：** 支持导入技能文件夹或 ZIP 包，存放在插件专属目录（`~/.dsh/agent-team-presets/team-skills`），与宿主全局技能隔离。
 - **按角色隔离技能：** 成员页的三列分配网格把技能绑定到具体角色；被分配的技能**只在该 Agent 作用域内**注册。
-- **十个随包团队技能：** 工作流型、交付型、方法型三类，默认绑定到内置团队各角色，支持本地副本与一键恢复；见[内置团队技能](docs/builtin-team-skills.zh.md)。
+- **十四个随包团队技能：** 工作流型、交付型、方法型三类，默认绑定到内置团队各角色，支持本地副本与一键恢复；见[内置团队技能](docs/builtin-team-skills.zh.md)。
 - **删除守护与依赖检查：** 仍被角色绑定、正被运行中成员使用、或被其它技能依赖时不允许删除；声明的 CLI 可执行文件会对宿主 `PATH` 校验。
 - **面向智能体的工具：** `get_team_preset`、`update_team_preset`、`list_team_skills`、`assign_team_skill`、`unassign_team_skill`、`remove_team_skill`。
 - **子代理卡片标签：** 在支持的目标插件里，为团队创建的子代理卡片打上「预设」标签。
@@ -64,12 +64,12 @@ DeepSeek Harness 本身已提供多智能体协作的 Agent Teams；在本插件
 
 ### 环境要求
 
-- **DeepSeek Harness `>=0.2.2-rc.3 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.3`**；0.2.2-rc.2 及更旧版本会被拒绝。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
+- **DeepSeek Harness `>=0.2.2-rc.5 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.5`**；0.2.2-rc.4 及更旧版本会被拒绝。插件管理器按 [package.json](<package.json>) 的 `engines.dsh` 判定兼容性。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile**：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端**；默认后端名为 `spawn` 和 `fork`。
 - 自定义工具白名单有自己的执行模型，见[工具权限与安全](docs/reference/tools-and-permissions.zh.md)。
 
-插件版本（`0.3.4`）和 Harness 版本（如 `0.2.2-rc.3`）是不同的版本线。
+插件版本（`0.3.4`）和 Harness 版本（如 `0.2.2-rc.5`）是不同的版本线。
 
 ### 安装
 
@@ -110,8 +110,8 @@ README 是入口。下面每份文档都随包发布，只有图文走查是仓�
 | 面向智能体的工具、工具策略与安全边界 | [工具权限与安全](docs/reference/tools-and-permissions.zh.md) |
 | 排查团队、成员或安装问题 | [排障](docs/reference/troubleshooting.zh.md) |
 | 参与插件本身的开发 | [架构与开发](docs/developer/architecture.zh.md) |
-| 九个内置团队与角色 | [内置团队](docs/builtin-teams.zh.md) |
-| 十个随包团队技能与绑定关系 | [内置团队技能](docs/builtin-team-skills.zh.md) |
+| 十一个内置团队与角色 | [内置团队](docs/builtin-teams.zh.md) |
+| 十四个随包团队技能与绑定关系 | [内置团队技能](docs/builtin-team-skills.zh.md) |
 | 浏览全部文档 | [文档索引](docs/index.zh.md) |
 
 <a id="development"></a>

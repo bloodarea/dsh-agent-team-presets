@@ -18,6 +18,7 @@ export type TeamPresetsLocaleKey =
   | 'toolsAllHint' | 'toolsEmpty' | 'toolsScoped' | 'toolsSelectAll' | 'toolsClear' | 'toolsRemove'
   | 'toolsUnavailable' | 'toolsLoading' | 'toolsFailed' | 'toolsNoCatalog' | 'toolsCaptainOnly'
   | 'toolsGroupPresets' | 'toolsGroupMcp' | 'toolsGroupOther' | 'toolsInvert'
+  | 'toolsSearch' | 'toolsSearchEmpty' | 'toolsSearchHint'
   | 'composerMissing' | 'composerMissingHint'
   | 'systemPrompt' | 'systemPromptPlaceholder' | 'systemPromptHint'
   | 'promptWarnBraces'
@@ -91,7 +92,10 @@ export type TeamPresetsLocaleKey =
   | 'skillsOverride'
   | 'skillsReset'
   | 'skillsBody' | 'tabTeams' | 'tabSkills' | 'skillsHint'
-  | 'skillsAssignTitle' | 'skillsAssignHint' | 'skillsAssignEmpty'
+  | 'skillsAssignTitle' | 'skillsAssignHint' | 'skillsAssignEmpty' | 'skillsUnavailable'
+  | 'skillsAssignSearch' | 'skillsAssignSearchEmpty'
+  | 'skillsFilterBinding' | 'skillsFilterBindingAll' | 'skillsFilterBindingBound' | 'skillsFilterBindingUnbound'
+  | 'skillsFilterNoMatch'
   | 'skillsNameClash'
   | 'skillsNameClashBody'
   | 'skillsBlockedAssign'
@@ -180,6 +184,7 @@ export type TeamPresetsLocaleKey =
   | 'skillAgentLeaderCommunication'
   | 'skillLeaderMediumTaskWorkflow'
   | 'skillLeaderLongTaskOrchestration'
+  | 'skillLeaderWorkerContinuity'
   | 'skillAgentSubagentOrchestration'
   | 'skillFullstackAdvisor'
   | 'skillExecutorShortTaskWorkflow'
@@ -248,6 +253,9 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   toolsGroupMcp: 'MCP server',
   toolsGroupOther: 'Other (native Harness and third-party plugin tools)',
   toolsInvert: 'Invert',
+  toolsSearch: 'Search tools by name, description, or group',
+  toolsSearchHint: 'A keyword narrows what the groups below show; it never changes what is already checked.',
+  toolsSearchEmpty: 'No tool matches this keyword',
   toolsSelectAll: 'Select all',
   toolsClear: 'Clear',
   toolsRemove: 'Remove',
@@ -566,10 +574,19 @@ export const en: Record<TeamPresetsLocaleKey, string> = {
   composerMissingMember: 'Missing member: {member} (team {team})',
   skillsAssignHint: 'Checked skills belong to this member only. They are discovered through this Agent scope, never globally.',
   skillsAssignEmpty: 'No team skill is installed yet. Add one on the Team skills page.',
+  skillsAssignSearch: 'Search skills by name or description',
+  skillsAssignSearchEmpty: 'No skill matches this keyword',
+  skillsFilterBinding: 'Binding',
+  skillsFilterBindingAll: 'All skills',
+  skillsFilterBindingBound: 'Bound to this role',
+  skillsFilterBindingUnbound: 'Not bound to this role',
+  skillsFilterNoMatch: 'No skill matches the current filters.',
+  skillsUnavailable: 'the Team Skill library is currently unavailable',
   skillsOverrideOn: 'a local override is active',
   skillAgentLeaderCommunication: 'agent-leader-communication',
   skillLeaderMediumTaskWorkflow: 'leader-medium-task-workflow',
   skillLeaderLongTaskOrchestration: 'leader-long-task-orchestration',
+  skillLeaderWorkerContinuity: 'leader-worker-continuity',
   skillAgentSubagentOrchestration: 'agent-subagent-orchestration',
   skillFullstackAdvisor: 'fullstack-advisor',
   skillExecutorShortTaskWorkflow: 'executor-short-task-workflow',
@@ -636,6 +653,9 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   toolsGroupMcp: 'MCP 服务器',
   toolsGroupOther: '其他（原生 Harness 与第三方插件工具）',
   toolsInvert: '反选',
+  toolsSearch: '搜索工具名称、描述或所属分组',
+  toolsSearchHint: '关键字只缩小下方分组的显示范围，不会改变已经勾选的工具。',
+  toolsSearchEmpty: '没有匹配该关键字的工具',
   toolsSelectAll: '全选',
   toolsClear: '清空',
   toolsRemove: '移除',
@@ -954,10 +974,19 @@ export const zh: Record<TeamPresetsLocaleKey, string> = {
   composerMissingMember: '成员已失效：{member}（团队 {team}）',
   skillsAssignHint: '勾选的技能只属于这名成员，通过该 Agent 的作用域发现，不会全局注册。',
   skillsAssignEmpty: '还没有安装任何团队技能，请先到「团队技能」页添加。',
+  skillsAssignSearch: '搜索技能名称或简介',
+  skillsAssignSearchEmpty: '没有匹配该关键字的技能',
+  skillsFilterBinding: '绑定状态',
+  skillsFilterBindingAll: '全部',
+  skillsFilterBindingBound: '已绑定',
+  skillsFilterBindingUnbound: '未绑定',
+  skillsFilterNoMatch: '当前筛选条件下没有技能。',
+  skillsUnavailable: '团队技能库当前不可用',
   skillsOverrideOn: '已启用本地覆盖',
   skillAgentLeaderCommunication: '队长派发与通信',
   skillLeaderMediumTaskWorkflow: '中程任务工作流',
   skillLeaderLongTaskOrchestration: '长程任务编排',
+  skillLeaderWorkerContinuity: '队长执行者接续',
   skillAgentSubagentOrchestration: '孙代理并行编排',
   skillFullstackAdvisor: '全栈技术咨询',
   skillExecutorShortTaskWorkflow: '执行者短程工作流',
@@ -989,6 +1018,7 @@ export const SKILL_LABEL_KEYS: Readonly<Record<string, TeamPresetsLocaleKey>> = 
   'agent-leader-communication': 'skillAgentLeaderCommunication',
   'leader-medium-task-workflow': 'skillLeaderMediumTaskWorkflow',
   'leader-long-task-orchestration': 'skillLeaderLongTaskOrchestration',
+  'leader-worker-continuity': 'skillLeaderWorkerContinuity',
   'agent-subagent-orchestration': 'skillAgentSubagentOrchestration',
   'fullstack-advisor': 'skillFullstackAdvisor',
   'executor-short-task-workflow': 'skillExecutorShortTaskWorkflow',
@@ -1044,6 +1074,7 @@ const SHIPPED_SKILL_CATEGORIES: Readonly<Record<string, SkillCategoryId>> = {
   'agent-leader-communication': 'workflow',
   'leader-medium-task-workflow': 'workflow',
   'leader-long-task-orchestration': 'workflow',
+  'leader-worker-continuity': 'workflow',
   'agent-subagent-orchestration': 'workflow',
   'fullstack-advisor': 'workflow',
   'executor-short-task-workflow': 'workflow',

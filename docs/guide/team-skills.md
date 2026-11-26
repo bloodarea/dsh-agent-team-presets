@@ -1,6 +1,6 @@
 # Private Team Skills
 
-This plugin keeps its own Team Skill library: folders or `.zip` archives imported into a plugin-owned store and registered **only** inside the Agent scope of the member they are assigned to. A fresh install also ships ten built-in skills, already bound to the roles of the built-in Teams; the inventory is in [Built-in Team Skills](../builtin-team-skills.md).
+This plugin keeps its own Team Skill library: folders or `.zip` archives imported into a plugin-owned store and registered **only** inside the Agent scope of the member they are assigned to. A fresh install also ships fourteen built-in skills, already bound to the roles of the built-in Teams; the inventory is in [Built-in Team Skills](../builtin-team-skills.md).
 
 [中文](<team-skills.zh.md>) · [Documentation index](../index.md) · [README](../../README.md)
 
@@ -10,7 +10,7 @@ Skills in Harness are typically registered into the global environment, which ex
 
 1. **Private library:** skills live in a plugin-managed directory (`~/.dsh/agent-team-presets/team-skills` or a storage domain), isolated from host and profile skills.
 2. **Per-Agent registration:** when a member is summoned, its assigned skills are registered **exclusively inside that member's Agent scope**. Other members and the captain cannot see or invoke them unless those skills are explicitly assigned to them too.
-3. **Official built-in skills:** ten shipped skills in three kinds — six workflow, two delivery, two method — pre-bound to the roles of the built-in Teams. The inventory, the per-role default bindings, and the category filter are documented in [Built-in Team Skills](../builtin-team-skills.md); `agent-subagent-orchestration` is bound only to the captain and the executor, so advisors stay single-threaded.
+3. **Official built-in skills:** fourteen shipped skills in three kinds — ten workflow, two delivery, two method — pre-bound to the roles of the built-in Teams. The inventory, the per-role default bindings, and the category filter are documented in [Built-in Team Skills](../builtin-team-skills.md); `agent-subagent-orchestration` is bound only to the captain and the executor, so advisors stay single-threaded.
 4. **Local copies and restore:** built-in skills are read-only. Each editable copy gets a unique numbered name, and its creation dialog can optionally move roles already bound to the built-in skill. Restoring resets the copy’s content and returns those roles to the built-in skill.
 5. **Category filter:** the skill library and the member assignment grid each open with a category dropdown (All categories / Workflow / Delivery / Method / Custom). A single skill is drawn exactly as before; the filter only decides which skills are listed, never what a role holds, and the member heading keeps counting every installed skill.
 6. **Localized skill names:** the page labels a shipped skill in the reader's language — a Chinese page shows 「Git 提交与发布规范」 where an English page shows `git-release-hygiene`. The mapping is presentation only: the catalogue the model reads, the stored binding, the preset document, and the asset directory all keep the English `skillId`, so switching language or editing a label never touches the storage format and never breaks a cross-deployment import. A skill this build does not ship keeps showing its English id.
@@ -63,6 +63,6 @@ This example sets dependencies for a skill named `report-writer`.
 
 ## Related
 
-- [Built-in Team Skills](../builtin-team-skills.md) — the ten shipped skills and their default bindings
-- [Built-in Teams](../builtin-teams.md) — the nine presets these roles belong to
+- [Built-in Team Skills](../builtin-team-skills.md) — the fourteen shipped skills and their default bindings
+- [Built-in Teams](../builtin-teams.md) — the eleven presets these roles belong to
 - [Getting started](./getting-started.md) — the skill library and member page, screen by screen

@@ -114,6 +114,22 @@ function memberDotState(status: MemberStatus): StateDotState {
   return status === 'running' ? 'ongoing' : 'idle'
 }
 
+/**
+ * The role colour as this card's own border colour.
+ *
+ * The stylesheet reads `--dsh-roster-role-color` on the card border with a
+ * transparent fallback, so returning an empty declaration for a role that
+ * configured none leaves the outer box, the text position and the grid track
+ * exactly as they were. Only the border colour changes: the fill, the radius,
+ * the hover ring and the current ring are untouched.
+ * @param color - the accent the role configured, or an empty string for none.
+ * @returns the inline custom property, or `undefined` when the role has no colour.
+ */
+function roleBorder(color: string | undefined): CSSProperties | undefined {
+  const accent = (color ?? '').trim()
+  return accent === '' ? undefined : { '--dsh-roster-role-color': accent } as CSSProperties
+}
+
 type RowProps = {
   member: TeamRosterMemberView
   /** The route this row shows next to its status; the Lead's comes from the Session. */
@@ -153,7 +169,7 @@ function TeamMemberRow({ member, model, sessionId, openTeammate, onError, t }: R
   if (isCurrent) {
     return (
       <Tooltip label={member.description} side="bottom" gap={4}>
-        <div className={`${css.member} ${css.memberCurrent} ${css.memberStatic}`}>{content}</div>
+        <div className={`${css.member} ${css.memberCurrent} ${css.memberStatic}`} style={roleBorder(member.color)}>{content}</div>
       </Tooltip>
     )
   }
@@ -163,6 +179,7 @@ function TeamMemberRow({ member, model, sessionId, openTeammate, onError, t }: R
       <button
         type="button"
         className={css.member}
+        style={roleBorder(member.color)}
         onClick={() => {
           try {
             openTeammate(sessionId, member.childSessionId as typeof sessionId)

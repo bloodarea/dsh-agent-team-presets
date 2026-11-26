@@ -50,12 +50,12 @@ Hover a Team row in the composer picker to open its member panel. The captain is
 
 ### Built-in presets
 
-A fresh installation seeds nine editable Teams across two series — three development-scale Teams and six work-mode Teams:
+A fresh installation seeds eleven editable Teams across two series — four development-scale Teams and seven work-mode Teams:
 
 | Series | Teams |
 |---|---|
-| **研发规模系列 (Classic Development Scale)** | 轻量研发团队 `builtin-lightweight` · 标准研发团队 `builtin-standard` · 全栈软件研发团队 `builtin-fullstack` |
-| **工作模式系列 (Work Modes)** | 需求探索 `builtin-discovery` · 架构规划 `builtin-planning` · 既定工作流执行 `builtin-workflow` · 工程研发协作 `builtin-engineering` · 独立代码与安全审计 `builtin-audit` · 科研协作 `builtin-research` |
+| **研发规模系列 (Classic Development Scale)** | 轻量研发团队 `builtin-lightweight` · 标准研发团队 `builtin-standard` · 全栈软件研发团队 `builtin-fullstack` · 高质量长程研发团队 `builtin-long-running` |
+| **工作模式系列 (Work Modes)** | 需求探索 `builtin-discovery` · 架构规划 `builtin-planning` · 既定工作流执行 `builtin-workflow` · 工程研发协作 `builtin-engineering` · 独立代码与安全审计 `builtin-audit` · 科研协作 `builtin-research` · 工程治理团队 `builtin-engineering-governance` |
 
 Each preset's roles, its intended use, and the Team Skills those roles receive are documented in [Built-in Teams](../builtin-teams.md) and [Built-in Team Skills](../builtin-team-skills.md).
 
@@ -75,6 +75,16 @@ Each Team preset supports rich metadata:
 
 **Token economy:** Display metadata is stored in the preset document and used by the UI for search, grouping, and cards, but is **never injected into the runtime LLM prompt context**.
 
+**Where the line falls:** a field belongs to one side or the other depending only on whether it reaches model context.
+
+| Reaches context (the model sees it) | Stays out (a human sees it) |
+|---|---|
+| Team name and purpose description | Display metadata: summary, tags, use cases, quick prompts, notes |
+| Captain prompt, member descriptions and member prompts | Category assignment |
+| Each role's model route and tool policy | Accent colors and list ordering |
+
+The left column decides how the Team works, so changing it really changes model behavior. The right column only affects cards, the picker, and search results; it costs no tokens no matter how much you write.
+
 ### Local categories and hierarchical filtering
 
 - **Category manager:** Click **管理团队预设分类** in the Settings list to open a dedicated management page. Create, rename, reorder, and delete categories, and inspect team counts per category.
@@ -89,4 +99,4 @@ Each Team preset supports rich metadata:
 
 - [Install and upgrade](install.md)
 - [Getting started](getting-started.md) — the illustrated walkthrough, screen by screen.
-- [Built-in Teams](../builtin-teams.md) — roles and intended use of all nine presets.
+- [Built-in Teams](../builtin-teams.md) — roles and intended use of all eleven presets.

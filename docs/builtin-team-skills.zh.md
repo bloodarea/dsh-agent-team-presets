@@ -1,16 +1,17 @@
 # 内置团队技能
 
-插件随包提供 **13 个团队技能（Team Skill）**，并为其内置团队的角色绑定一套默认组合。本文是清单：每个技能做什么、属于哪一类、默认给哪个角色。
+插件随包提供 **14 个团队技能（Team Skill）**，并为其内置团队的角色绑定一套默认组合。本文是清单：每个技能做什么、属于哪一类、默认给哪个角色。
 
 [English](<builtin-team-skills.md>) · [文档入口](<index.zh.md>) · [内置团队](<builtin-teams.zh.md>) · [README](<../README.zh.md>)
 
-## 13 个随包技能
+## 14 个随包技能
 
 | 技能（模型看到的 id） | 界面显示名 | 分类 | 用途 | 默认角色 |
 |---|---|---|---|---|
 | `agent-leader-communication` | 队长派发与通信 | 工作流型 | 队长的派发、咨询、结果回收与汇报协议。 | `team-lead` |
 | `leader-medium-task-workflow` | 中程任务工作流 | 工作流型 | 有界中程任务：轻量拆分、Team Task Board、队长 Todo、统一验收。 | `team-lead` |
 | `leader-long-task-orchestration` | 长程任务编排 | 工作流型 | 多轮交付：需求对齐、滚动规划、持久化计划、阶段验收。 | `team-lead` |
+| `leader-worker-continuity` | 队长执行者接续 | 工作流型 | 长程切片交接：队长如何切片、维护持久状态，并在当前执行者无法继续时把同一 `TASK_ID` 的剩余工作交给新的执行者实例。 | `team-lead` |
 | `agent-subagent-orchestration` | 孙代理并行编排 | 工作流型 | 队长或执行者在什么条件下必须派孙代理，以及结果如何回收与集成。 | `team-lead`、`executor` |
 | `fullstack-advisor` | 全栈技术咨询 | 工作流型 | 顾问的咨询工作流与决策摘要契约。 | `fullstack-advisor` |
 | `executor-short-task-workflow` | 执行者短程工作流 | 工作流型 | 有界实现：最小变更、与风险匹配的验证、结构化汇报。 | `executor` |
@@ -30,7 +31,7 @@
 
 | 分类 | 数量 | 内容 |
 |---|---|---|
-| **工作流型** | 9 | 上面的队长、顾问与执行者工作流，以及三个专业角色工作流 |
+| **工作流型** | 10 | 上面的队长、顾问与执行者工作流，以及三个专业角色工作流 |
 | **交付型** | 2 | 仓库展示与 Git 发布这一对 |
 | **方法型** | 2 | `grilling` 与 `research` |
 | **自定义** | — | 本版本未随包发布的全部技能：你自己导入或创建的 |
@@ -39,19 +40,21 @@
 
 ## 默认绑定
 
-8 个工程技能绑定在研发团队上，2 个方法技能属于需求探索与科研协作团队。
+12 个工程技能（工作流型 + 交付型）绑定在研发团队上，2 个方法技能属于需求探索与科研协作团队。
 
 | 团队 | `team-lead` | 顾问角色 | `executor` | 其它 |
 |---|---|---|---|---|
 | 轻量研发团队 `builtin-lightweight` | 4 个工作流型 | 1 个（`fullstack-advisor`） | 4 个（含编排与交付） | — |
 | 标准研发团队 `builtin-standard` | 4 个工作流型 | 1 个（`fullstack-advisor`） | 4 个 | `reviewer` 2 个（审查工作流 + 编排） |
 | 全栈软件研发团队 `builtin-fullstack` | 4 个工作流型 | 不设该角色 | 4 个 | `ui-designer` 1 个、`backend-architect` 1 个、`reviewer` 2 个 |
+| 高质量长程研发团队 `builtin-long-running` | 4 个工作流型（含 `leader-worker-continuity`） | 不设该角色 | 2 个（实现 + 编排） | — |
 | 需求探索 `builtin-discovery` | `grilling` | — | — | `research` 给 `technical-scout` 与 `product-scout` |
 | 架构规划 `builtin-planning` | — | — | — | 无默认技能 |
 | 既定工作流执行 `builtin-workflow` | — | — | — | 两个交付技能给 `repository-specialist` |
 | 工程研发协作 `builtin-engineering` | — | — | — | 两个交付技能给 `repository-specialist` |
 | 独立代码与安全审计 `builtin-audit` | — | — | — | 无默认技能 |
 | 科研协作 `builtin-research` | — | — | — | `research` 给 `evidence-scout` |
+| 工程治理团队 `builtin-engineering-governance` | — | — | — | 无默认技能 |
 
 有三个数字要读仔细。第一，**绑定条数不等于技能个数**：轻量研发团队有 9 条绑定，但只对应 8 个不同技能——`agent-subagent-orchestration` 被刻意同时绑给队长和执行者。第二，标准研发团队保留单一顾问角色（`fullstack-advisor`），全栈软件研发团队把顾问拆成 `ui-designer` 与 `backend-architect`，两个团队都不再声明对方没有的专业角色。第三，`agent-subagent-orchestration` **只**绑给队长、执行者与 `reviewer`：顾问保持单线程。
 
@@ -78,5 +81,5 @@
 
 ## 相关
 
-- [内置团队](<builtin-teams.zh.md>)——九个预设，以及这些技能挂到哪些角色上
+- [内置团队](<builtin-teams.zh.md>)——十一个预设，以及这些技能挂到哪些角色上
 - [新手必读（图文）](<guide/getting-started.zh.md>)——技能库与成员页的使用

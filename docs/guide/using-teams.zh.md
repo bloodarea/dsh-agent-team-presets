@@ -50,12 +50,12 @@
 
 ### 内置预设
 
-全新安装会初始化九个可编辑的团队，划分为两大系列——三个研发规模团队与六个工作模式团队：
+全新安装会初始化十一个可编辑的团队，划分为两大系列——四个研发规模团队与七个工作模式团队：
 
 | 系列 | 团队 |
 |---|---|
-| **研发规模系列** | 轻量研发团队 `builtin-lightweight` · 标准研发团队 `builtin-standard` · 全栈软件研发团队 `builtin-fullstack` |
-| **工作模式系列** | 需求探索 `builtin-discovery` · 架构规划 `builtin-planning` · 既定工作流执行 `builtin-workflow` · 工程研发协作 `builtin-engineering` · 独立代码与安全审计 `builtin-audit` · 科研协作 `builtin-research` |
+| **研发规模系列** | 轻量研发团队 `builtin-lightweight` · 标准研发团队 `builtin-standard` · 全栈软件研发团队 `builtin-fullstack` · 高质量长程研发团队 `builtin-long-running` |
+| **工作模式系列** | 需求探索 `builtin-discovery` · 架构规划 `builtin-planning` · 既定工作流执行 `builtin-workflow` · 工程研发协作 `builtin-engineering` · 独立代码与安全审计 `builtin-audit` · 科研协作 `builtin-research` · 工程治理团队 `builtin-engineering-governance` |
 
 每个预设的角色、适用场景，以及这些角色拿到哪些团队技能，见[内置团队](../builtin-teams.md)与[内置团队技能](../builtin-team-skills.md)。
 
@@ -75,6 +75,16 @@
 
 **Token 保护：** 展示元数据保存在预设文档中，仅在界面与检索中展示，**绝不注入 LLM 运行时提示词中**，不占用任何模型上下文。
 
+**字段的界线：** 判断一个字段属于哪一侧，只看它会不会进入模型上下文。
+
+| 进上下文（模型看得到） | 不进上下文（人看得到） |
+|---|---|
+| 团队名称、用途描述 | 展示元数据：简介、标签、适用场景、推荐任务、备注 |
+| 队长提示词、成员描述与成员提示词 | 所属分类 |
+| 各角色的模型路由与工具策略 | 颜色、列表排序 |
+
+前一组决定团队怎么干活，改动它会真实改变模型行为；后一组只影响卡片、选择器与检索结果，改多少都不消耗 Token。
+
 ### 本地分类与层级筛选
 
 - **分类管理页：** 点击设置列表中的 **管理团队预设分类** 即可进入独立管理页。支持新建分类、重命名、上下移动排序以及删除分类，清晰显示每个分类下的团队数量。
@@ -89,4 +99,4 @@
 
 - [安装与升级](install.zh.md)
 - [新手必读（图文）](getting-started.zh.md) —— 逐屏走查。
-- [内置团队](../builtin-teams.md) —— 九个预设的角色与适用场景。
+- [内置团队](../builtin-teams.md) —— 十一个预设的角色与适用场景。

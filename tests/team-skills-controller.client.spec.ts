@@ -28,10 +28,13 @@ describe('TeamSkillsController', () => {
     const scanImportFolder = vi.fn().mockResolvedValue({ ok: true, value: scan })
     const controller = await controllerWithRemote({ library, scanImportFolder })
 
-    expect(library.mock.calls).toEqual([[]])
+    // Every call names the parameter explicitly: the Remote gateway rejects a
+    // short argument list before it encodes anything, so `api.library()` would
+    // fail the whole panel instead of reading the library.
+    expect(library.mock.calls).toEqual([[false]])
     await controller.refresh(true)
     await controller.refresh()
-    expect(library.mock.calls).toEqual([[], [true], []])
+    expect(library.mock.calls).toEqual([[false], [true], [false]])
     expect(controller.getSnapshot().inboxChanges).toEqual(changes)
 
     library.mockResolvedValueOnce({ ok: true, value: { ...emptyLibrary, inboxChanges: [] } })
@@ -40,6 +43,23 @@ describe('TeamSkillsController', () => {
     expect(library).toHaveBeenLastCalledWith(true)
     expect(controller.getSnapshot().inboxChanges).toEqual([])
     expect(controller.getSnapshot().scan).toEqual(scan)
+  })
+
+  it('names every argument of unassignRole, including the optional assetId', async () => {
+    // The gateway counts a Remote call's arguments before encoding them, and
+    // `unassignRole` declares three. A two-argument call is refused client-side
+    // with "expected 3 argument(s), got 2" — the unassign button would fail
+    // without ever reaching the Host.
+    const library = vi.fn().mockResolvedValue({ ok: true, value: emptyLibrary })
+    const unassignRole = vi.fn().mockResolvedValue({ ok: true, value: emptyLibrary })
+    const controller = await controllerWithRemote({ library, unassignRole })
+
+    await controller.unassign('builtin-long-running', 'captain')
+    expect(unassignRole).toHaveBeenCalledExactlyOnceWith('builtin-long-running', 'captain', undefined)
+    // A successful write clears the message rather than publishing its key:
+    // the refreshed panel is the confirmation.
+    expect(controller.getSnapshot().failed).toBe(false)
+    expect(controller.getSnapshot().library).toEqual(emptyLibrary)
   })
 
   it.each([false, true])('creates an editable copy with switchBindings=%s and loads it for the editor', async (switchBindings) => {
@@ -79,7 +99,7 @@ describe('TeamSkillsController', () => {
     await controller.select(assetId)
 
     expect(await controller.createOverride('release-notes', true)).toBeUndefined()
-    expect(library.mock.calls).toEqual([[]])
+    expect(library.mock.calls).toEqual([[false]])
     expect(controller.getSnapshot()).toMatchObject({ selectedId: assetId, detail, failed: true, message: refusal.detail })
   })
 

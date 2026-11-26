@@ -508,6 +508,7 @@ export function apply(ctx: Context, config: Config): void {
           displayName: captainName === '' ? 'team-lead' : captainName,
           description: applied.captain.description,
           role: 'captain' as const,
+          color: applied.captain.color,
           status: root?.status === 'running' ? 'running' as const : 'idle' as const,
           ...sessionModel === undefined ? {} : { model: sessionModel },
         }]
@@ -518,11 +519,18 @@ export function apply(ctx: Context, config: Config): void {
         const live = record.childSessionId === undefined
           ? undefined
           : ctx.agents.get(record.childSessionId as Parameters<typeof ctx.agents.get>[0])
+        // The accent is read from the stored Team when the header renders, not
+        // frozen with the member: recoloring a role is presentation only, so it
+        // must show up on the cards already summoned instead of waiting for the
+        // next one. A role the preset no longer holds falls back to the snapshot's
+        // recorded identity, which simply resolves to no color.
+        const roleMember = findMemberById(applied, recordedMemberRole(applied, record))
         return {
           name: record.memberName,
           displayName: record.displayName.trim() === '' ? record.memberName : record.displayName,
           description: record.roleDescription,
           ...record.roleId === undefined ? {} : { roleId: record.roleId },
+          ...roleMember === undefined ? {} : { color: roleMember.color },
           ...record.childSessionId === undefined ? {} : { childSessionId: record.childSessionId },
           role: 'member' as const,
           status: live?.status === 'running' ? 'running' as const : 'idle' as const,

@@ -48,7 +48,7 @@ npm run bundle
 ## 相关
 
 - [文档索引](../index.zh.md) —— 完整的文档地图。
-- [内置团队](../builtin-teams.md) —— 九个内置预设与各自的角色。
-- [内置团队技能](../builtin-team-skills.md) —— 十个随包技能与各角色默认绑定。
+- [内置团队](../builtin-teams.md) —— 十一个内置预设与各自的角色。
+- [内置团队技能](../builtin-team-skills.md) —— 十四个随包技能与各角色默认绑定。
 - [新手必读（图文）](../guide/getting-started.md) —— 逐屏走查。
 - [README](../../README.zh.md) —— 总览、快速开始与文档导航。

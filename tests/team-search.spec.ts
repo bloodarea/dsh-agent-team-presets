@@ -25,7 +25,7 @@ import {
 } from '../src/team-search.ts'
 import type { TeamCategory, TeamCategoryAssignment, TeamPreset } from '../src/types.ts'
 
-/** The nine shipped Teams as a deployment stores them. */
+/** The eleven shipped Teams as a deployment stores them. */
 const SHIPPED: TeamPreset[] = BUILTIN_TEAMS.map(builtinTeamDefinition)
 
 /** One user-created Team carrying no metadata at all. */
@@ -44,6 +44,8 @@ describe('origin and series facts', () => {
   it('derives the source from the stable catalog, never from stored content', () => {
     expect(teamOrigin('builtin-lightweight')).toEqual({ source: 'builtin', series: 'classic-development' })
     expect(teamOrigin('builtin-research')).toEqual({ source: 'builtin', series: 'work-modes' })
+    expect(teamOrigin('builtin-engineering-governance')).toEqual({ source: 'builtin', series: 'work-modes' })
+    expect(teamOrigin('builtin-long-running')).toEqual({ source: 'builtin', series: 'classic-development' })
     expect(teamOrigin('team-own')).toEqual({ source: 'custom' })
     // A user Team that happens to be named like a shipped one is still custom,
     // because identity is the evidence.
@@ -53,8 +55,8 @@ describe('origin and series facts', () => {
   it('groups the two fixed series in catalog order', () => {
     const groups = teamsBySeries(ALL)
     expect(groups.map(group => group.series)).toEqual(['classic-development', 'work-modes'])
-    expect(groups[0]!.teams.map(team => team.id)).toEqual(['builtin-lightweight', 'builtin-standard', 'builtin-fullstack'])
-    expect(groups[1]!.teams).toHaveLength(6)
+    expect(groups[0]!.teams.map(team => team.id)).toEqual(['builtin-lightweight', 'builtin-standard', 'builtin-fullstack', 'builtin-long-running'])
+    expect(groups[1]!.teams).toHaveLength(7)
     // A custom Team belongs to no series group and is never dropped from the
     // unfiltered list either.
     expect(groups.flatMap(group => group.teams)).not.toContainEqual(expect.objectContaining({ id: 'team-own' }))
@@ -137,7 +139,7 @@ describe('deterministic search', () => {
   })
 
   it('composes the series filter with the query', () => {
-    expect(searchTeams(ALL, { series: 'classic-development' })).toHaveLength(3)
+    expect(searchTeams(ALL, { series: 'classic-development' })).toHaveLength(4)
     expect(searchTeams(ALL, { series: 'work-modes', query: '审计' }).map(row => row.teamId)).toEqual(['builtin-audit'])
   })
 })

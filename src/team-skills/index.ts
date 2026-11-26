@@ -57,7 +57,7 @@ export interface AgentSkillSync {
 export { OFFICIAL_SKILL_IDS } from './official-bindings.ts'
 
 /** Version stamped on the shipped assets; bumped when the packaged copies change. */
-export const OFFICIAL_SKILL_VERSION = '5'
+export const OFFICIAL_SKILL_VERSION = '7'
 
 /**
  * Resolve the private Team Skill root.

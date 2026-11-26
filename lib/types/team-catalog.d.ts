@@ -1,13 +1,15 @@
 /**
  * The single official catalog of Teams this plugin ships.
  *
- * v0.1.6 ships nine presets in two fixed series: the three original
+ * v0.1.6 shipped nine presets in two fixed series: the three original
  * research-and-development Teams and the six work-mode Teams contributed in
- * PR #1. The catalog is the authority for a fresh install, for migration, for
- * "restore defaults", and for the read-only source/series facts the Settings
- * page filters on. It is deliberately separate from the stored Team records:
- * a stored Team is the user's copy and may drift, while this catalog never
- * changes except when a plugin release changes it.
+ * PR #1, then the engineering-governance Team in the work-mode series. The
+ * long-running development Team joined the classic-development series last, so
+ * the catalog now holds eleven. The catalog is the authority for a fresh install,
+ * for migration, for "restore defaults", and for the read-only source/series
+ * facts the Settings page filters on. It is deliberately separate from the
+ * stored Team records: a stored Team is the user's copy and may drift, while
+ * this catalog never changes except when a plugin release changes it.
  *
  * Each entry carries its display metadata. Metadata is presentation-only and
  * is never read by the runtime composition path (see `src/types.ts`).
@@ -103,6 +105,17 @@ export declare const OFFICIAL_SPECIALIST_SKILLS: readonly OfficialSkillBinding[]
  * captain, and research to the two scouting roles that gather evidence for it.
  */
 export declare const OFFICIAL_DISCOVERY_SKILLS: readonly OfficialSkillBinding[];
+/**
+ * The default assignments of the 高质量长程研发团队: the leader's dispatch,
+ * long-task, and continuity skills, the subagent rules both slots may need, and
+ * the executor's bounded implementation workflow.
+ *
+ * The Team has no advisor and no reviewer slot, so it declares only the two
+ * roles it actually carries. `leader-worker-continuity` is this Team's own
+ * addition to the shipped set: it manages slice handover and executor
+ * replacement, so it belongs to the captain alone.
+ */
+export declare const OFFICIAL_LONG_RUNNING_SKILLS: readonly OfficialSkillBinding[];
 /** The method skill assigned by default to the 科研协作 team's evidence scout. */
 export declare const OFFICIAL_RESEARCH_SKILLS: readonly OfficialSkillBinding[];
 /** Series display order and stable identity. */
@@ -110,7 +123,7 @@ export declare const TEAM_SERIES: readonly {
     readonly id: TeamSeries;
     readonly order: number;
 }[];
-/** Every official Team, in install order: the three development Teams, then the six work modes. */
+/** Every official Team, in install order: the four development Teams, then the seven work modes. */
 export declare const BUILTIN_TEAM_CATALOG: readonly BuiltinTeamCatalogEntry[];
 /** Every official Team identity, in install order. */
 export declare const BUILTIN_TEAM_IDS: readonly string[];

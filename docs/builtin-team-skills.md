@@ -1,16 +1,17 @@
 # Built-in Team Skills
 
-This plugin ships **thirteen Team Skills** and binds a default set to the roles of its built-in Teams. This document is the inventory: what each skill is for, which category it belongs to, and which role receives it by default.
+This plugin ships **fourteen Team Skills** and binds a default set to the roles of its built-in Teams. This document is the inventory: what each skill is for, which category it belongs to, and which role receives it by default.
 
 [中文](<builtin-team-skills.zh.md>) · [Documentation index](index.md) · [Built-in Teams](builtin-teams.md) · [README](../README.md)
 
-## The thirteen shipped skills
+## The fourteen shipped skills
 
 | Skill (id shown to the model) | Shown as (Chinese UI) | Category | Purpose | Default roles |
 |---|---|---|---|---|
 | `agent-leader-communication` | 队长派发与通信 | Workflow | Dispatch, consultation, result intake, and reporting protocols for a captain. | `team-lead` |
 | `leader-medium-task-workflow` | 中程任务工作流 | Workflow | Bounded multi-part work: lightweight splitting, the Team Task Board, leader Todo, unified acceptance. | `team-lead` |
 | `leader-long-task-orchestration` | 长程任务编排 | Workflow | Multi-round delivery: requirement alignment, rolling-wave planning, a persistent plan, stage acceptance. | `team-lead` |
+| `leader-worker-continuity` | 队长执行者接续 | Workflow | Long-running slice handover: how a captain slices work, keeps persistent state, and hands the remainder of a `TASK_ID` to a new executor instance when the current one cannot continue. | `team-lead` |
 | `agent-subagent-orchestration` | 孙代理并行编排 | Workflow | When a captain or an executor must fan work out to subagents, and how results are recovered and integrated. | `team-lead`, `executor` |
 | `fullstack-advisor` | 全栈技术咨询 | Workflow | The advisor's consultation workflow and decision-summary contract. | `fullstack-advisor` |
 | `executor-short-task-workflow` | 执行者短程工作流 | Workflow | Bounded implementation: minimum change, risk-matched verification, structured reporting. | `executor` |
@@ -30,7 +31,7 @@ Both Team Skill lists — the library page and the per-role assignment grid — 
 
 | Category | Count | Contents |
 |---|---|---|
-| **Workflow** | 9 | The captain, advisor, and executor workflows above |
+| **Workflow** | 10 | The captain, advisor, and executor workflows above |
 | **Delivery** | 2 | The repository-presentation and Git-release pair |
 | **Method** | 2 | `grilling` and `research` |
 | **Custom** | — | Everything the build does not ship: skills you import or author yourself |
@@ -39,19 +40,21 @@ A **local override** stays in the category of the skill it was copied from — i
 
 ## Default bindings
 
-The eight engineering skills are bound to the development Teams; the two method skills belong to the Discovery and Research Teams.
+The twelve engineering skills (workflow and delivery) are bound to the development Teams; the two method skills belong to the Discovery and Research Teams.
 
 | Team | `team-lead` | advisor role | `executor` | other |
 |---|---|---|---|---|
 | 轻量研发团队 `builtin-lightweight` | 4 workflow | 1 (`fullstack-advisor`) | 4 (incl. orchestration + delivery) | — |
 | 标准研发团队 `builtin-standard` | 4 workflow | 1 (`fullstack-advisor`) | 4 | `reviewer` 2 (review workflow + orchestration) |
 | 全栈软件研发团队 `builtin-fullstack` | 4 workflow | — | 4 | `ui-designer` 1, `backend-architect` 1, `reviewer` 2 |
+| 高质量长程研发团队 `builtin-long-running` | 4 workflow (incl. `leader-worker-continuity`) | — | 2 (implementation + orchestration) | — |
 | 需求探索 `builtin-discovery` | `grilling` | — | — | `research` to `technical-scout` and `product-scout` |
 | 架构规划 `builtin-planning` | — | — | — | no default skills |
 | 既定工作流执行 `builtin-workflow` | — | — | — | both delivery skills to `repository-specialist` |
 | 工程研发协作 `builtin-engineering` | — | — | — | both delivery skills to `repository-specialist` |
 | 独立代码与安全审计 `builtin-audit` | — | — | — | no default skills |
 | 科研协作 `builtin-research` | — | — | — | `research` to `evidence-scout` |
+| 工程治理团队 `builtin-engineering-governance` | — | — | — | no default skills |
 
 Two numbers are worth reading carefully. First, a Team's **binding count is not its distinct skill count**: the lightweight Team holds nine bindings but only eight distinct skills, because `agent-subagent-orchestration` is deliberately bound to both the captain and the executor. Second, the standard Team keeps one advisor role (`fullstack-advisor`) while the full-stack Team splits it into `ui-designer` and `backend-architect`; neither declares a role it does not carry, and `agent-subagent-orchestration` never reaches an advisor.
 
@@ -78,5 +81,5 @@ Each Team Skill is registered **only inside the Agent scope of the member it is 
 
 ## Related
 
-- [Built-in Teams](builtin-teams.md) — the nine presets and the roles these skills attach to
+- [Built-in Teams](builtin-teams.md) — the eleven presets and the roles these skills attach to
 - [Getting started](guide/getting-started.md) — using the skill library and the member page

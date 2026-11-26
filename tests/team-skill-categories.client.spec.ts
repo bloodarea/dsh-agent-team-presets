@@ -55,7 +55,10 @@ describe('the Team Skill category taxonomy', () => {
     // three professional-role workflows (UI frontend, backend architecture,
     // independent review) belong to the same kind of work: they ship together
     // and a Team re-binds them together.
-    expect(byCategory.get('workflow')).toHaveLength(9)
+    expect(byCategory.get('workflow')).toHaveLength(10)
+    // leader-worker-continuity belongs to that family: a captain workflow
+    // skill bound to a captain role, not a delivery or method skill.
+    expect(byCategory.get('workflow')).toContain('leader-worker-continuity')
   })
 
   it('keeps a local override with the skill it was copied from', () => {
@@ -106,6 +109,17 @@ describe('the filtered Team Skill lists', () => {
     expect(libraryView).toContain("className={css.row}")
     expect(memberView).toContain('className={css.skillCard}')
     expect(memberView).toContain('checked={held.has(asset.id)}')
+  })
+
+  it('stacks the category menu with a binding menu on the member grid', () => {
+    // Three conditions stack: keyword AND category AND binding. The binding menu
+    // reads the same held set the checkboxes reflect, so the two cannot disagree.
+    expect(memberView).toContain("const [binding, setBinding] = useState<'all' | 'bound' | 'unbound'>('all')")
+    expect(memberView).toContain("if (binding !== 'all' && held.has(asset.id) !== (binding === 'bound')) return false")
+    for (const key of ['skillsFilterBindingAll', 'skillsFilterBindingBound', 'skillsFilterBindingUnbound', 'skillsFilterBinding']) {
+      expect(zh[key as 'skillsFilterBindingAll'].trim(), key).not.toBe('')
+      expect(en[key as 'skillsFilterBindingAll'].trim(), key).not.toBe('')
+    }
   })
 
   it('counts every installed skill, not the filtered subset, on the member grid', () => {

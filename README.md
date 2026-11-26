@@ -7,7 +7,7 @@
 <p align="center"><a href="README.zh.md">中文</a></p>
 
 <p align="center">
-  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.2--rc.3-2563eb?style=flat-square" alt="DeepSeek Harness 0.2.2-rc.3"></a>
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.2--rc.5-2563eb?style=flat-square" alt="DeepSeek Harness 0.2.2-rc.5"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-source-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
   <a href="https://www.npmjs.com/package/dsh-agent-team-presets"><img src="https://img.shields.io/npm/v/dsh-agent-team-presets?style=flat-square&label=npm" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bloodarea/dsh-agent-team-presets?style=flat-square" alt="License: MIT"></a>
@@ -49,7 +49,7 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 - **Per-member model routes:** assign models and reasoning effort to individual roles without changing the captain's model.
 - **Individual member chat:** select one member in the composer to inject that member's role card, tool policy, Team Skills, and model route into the current Session.
 - **Independent tool policies:** all tools or a custom allow-list for the captain and each member.
-- **Nine built-in presets across two series:** three development-scale Teams and six work-mode Teams; see [Built-in Teams](docs/builtin-teams.md).
+- **Eleven built-in presets across two series:** four development-scale Teams and seven work-mode Teams; see [Built-in Teams](docs/builtin-teams.md).
 - **Display metadata, local categories, and search:** summary, tags, use cases, quick prompts, and notes per Team — presentation only, never injected into the runtime context.
 - **Private Team Skill library:** import skill folders or ZIP archives into a plugin-owned store (`~/.dsh/agent-team-presets/team-skills`), isolated from global host skills.
 - **Per-agent skill isolation:** a 3-column assignment grid binds skills to specific roles; assigned skills are registered **strictly in that Agent's scope**.
@@ -64,12 +64,12 @@ DeepSeek Harness already ships Agent Teams with multi-agent collaboration. In th
 
 ### Requirements
 
-- **DeepSeek Harness `>=0.2.2-rc.3 <0.3.0`.** Verified against **`0.2.2-rc.3`**; 0.2.2-rc.2 and older are refused. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
+- **DeepSeek Harness `>=0.2.2-rc.5 <0.3.0`.** Verified against **`0.2.2-rc.5`**; 0.2.2-rc.4 and older are refused. The plugin manager enforces `engines.dsh` from [package.json](<package.json>).
 - **A Web or Desktop profile with Settings and the required client services** — typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend** for member execution; the default backend names are `spawn` and `fork`.
 - Custom tool allow-lists have their own execution model; see [Tools and permissions](docs/reference/tools-and-permissions.md).
 
-The plugin version (`0.3.4`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
+The plugin version (`0.3.4`) and the Harness version (`0.2.2-rc.5`, for example) are separate version lines.
 
 ### Install
 
@@ -110,8 +110,8 @@ The README is the entry point. Every document below ships with the package excep
 | Review agent-facing tools, tool policies, and security boundaries | [Tools and permissions](docs/reference/tools-and-permissions.md) |
 | Diagnose a Team, member, or install problem | [Troubleshooting](docs/reference/troubleshooting.md) |
 | Work on the plugin itself | [Architecture and development](docs/developer/architecture.md) |
-| See the nine built-in Teams and their roles | [Built-in Teams](docs/builtin-teams.md) |
-| See the ten shipped Team Skills and their bindings | [Built-in Team Skills](docs/builtin-team-skills.md) |
+| See the eleven built-in Teams and their roles | [Built-in Teams](docs/builtin-teams.md) |
+| See the fourteen shipped Team Skills and their bindings | [Built-in Team Skills](docs/builtin-team-skills.md) |
 | Browse every document | [Documentation index](docs/index.md) |
 
 <a id="development"></a>

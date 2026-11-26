@@ -201,6 +201,15 @@ export interface TeamRosterMemberView {
   readonly role: 'captain' | 'member'
   /** Whether the member is running right now. */
   readonly status: 'running' | 'idle'
+  /**
+   * Accent color this role configured, or an empty string for none.
+   *
+   * The roster draws each card's border with it, which is what makes the header
+   * list read as the same Team the member page configured. It is read from the
+   * stored preset at display time, so recoloring a role shows up without
+   * re-summoning it.
+   */
+  readonly color?: string
   /** The route this member was frozen with, when it configured one. */
   readonly route?: { readonly provider: string; readonly model: string; readonly reasoningEffort: string }
   /** Model the row runs on when it has no frozen route (the Lead uses the Session's). */
@@ -216,7 +225,7 @@ export interface TeamRosterValue {
 export type TeamSeries =
   /** The original research-and-development scale series (three Teams). */
   | 'classic-development'
-  /** The work-mode series contributed by PR #1 (six Teams). */
+  /** The work-mode series contributed by PR #1, later joined by engineering governance. */
   | 'work-modes'
 
 /**

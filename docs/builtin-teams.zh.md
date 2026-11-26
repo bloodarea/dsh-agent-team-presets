@@ -1,6 +1,6 @@
 # 内置团队
 
-插件在全新安装时初始化 **九个可编辑团队**：三个研发规模团队，六个工作模式团队。本文说明每个团队包含什么；它们各自拿到哪些技能，见[内置团队技能](<builtin-team-skills.zh.md>)。
+插件在全新安装时初始化 **十一个可编辑团队**：四个研发规模团队，七个工作模式团队。本文说明每个团队包含什么；它们各自拿到哪些技能，见[内置团队技能](<builtin-team-skills.zh.md>)。
 
 [English](<builtin-teams.md>) · [文档入口](<index.zh.md>) · [README](<../README.zh.md>)
 
@@ -13,28 +13,29 @@
 
 ## 研发规模系列
 
-三个用于开发软件的团队，区别在于协作开销。
+四个用于开发软件的团队，区别在于协作开销。
 
 | 预设 | 角色 | 适用场景 |
 |---|---|---|
 | **轻量研发团队**<br>`builtin-lightweight` | 队长 `team-lead`、`fullstack-advisor`、`executor` | 中小型功能迭代与多阶段开发。队长负责需求对齐、任务分级、并行探查与验收；顾问单线程回答技术决策；执行者实现、集成与验证。 |
 | **标准研发团队**<br>`builtin-standard` | 队长 `team-lead`、`fullstack-advisor`、`executor`、`reviewer` | 中型功能、重要重构与持续项目迭代。全栈顾问按需提供技术决策与验收契约；执行者持续研发；独立审查员检查有代码变更的交付。 |
 | **全栈软件研发团队**<br>`builtin-fullstack` | 队长 `team-lead`、`ui-designer`、`backend-architect`、`executor`、`reviewer` | 面向 Web、桌面与 Android 的跨端复杂工程。顾问职责拆成 UI 前端工程师与后端架构师；执行者承担常规开发测试；独立审查员验收。 |
+| **高质量长程研发团队**<br>`builtin-long-running` | 队长 `team-lead`、`executor` | 交付周期长于单个会话或单个执行者实例的长程研发。切片可跨执行者实例接续，独立工作可并行处理。 |
 
 ### 各角色职责
 
 | 角色 | 出现于 | 职责 |
 |---|---|---|
-| `team-lead` | 三个团队 | 对齐需求、任务分级、派发、集成与验收，保留最终风险裁决权。 |
+| `team-lead` | 四个团队 | 对齐需求、任务分级、派发、集成与验收，保留最终风险裁决权。 |
 | `fullstack-advisor` | 轻量、标准 | 跨层技术决策、方案权衡、风险分析与可执行验收契约；不承担编码。 |
 | `reviewer` | 标准、全栈 | 独立审查实际变更、关键风险，以及测试是否真能捕获该缺陷。 |
-| `executor` | 三个团队 | 在获派范围内实现、调试、测试并交接验证证据。 |
+| `executor` | 四个团队 | 在获派范围内实现、调试、测试并交接验证证据。 |
 | `backend-architect` | 全栈 | 系统架构、API 与数据契约、错误语义、鉴权隔离、迁移兼容，并直接承担复杂后端修复。 |
 | `ui-designer` | 全栈 | 视觉方向、设计系统、前端组件与交互实现、真实截图视觉验收，并直接承担前端修复。 |
 
 ## 工作模式系列
 
-六个用于"不是开发下一个功能"的场景。
+七个用于"不是开发下一个功能"的场景。
 
 | 预设 | 角色 | 适用场景 |
 |---|---|---|
@@ -44,6 +45,7 @@
 | **工程研发协作**<br>`builtin-engineering` | 队长 `engineering-lead`、`architect`、`executor`、`ui-designer`、`reviewer`、`repository-specialist` | 自适应工程：队长自己能做就直接做，有实际收益时才召唤成员。 |
 | **独立代码与安全审计**<br>`builtin-audit` | 队长 `audit-lead`、`code-auditor`、`security-auditor`、`finding-verifier` | 对指定代码、配置或变更做独立只读审查；只报告与复核，不负责修复。 |
 | **科研协作**<br>`builtin-research` | 队长 `research-lead`、`methodologist`、`evidence-scout`、`research-engineer`、`skeptic` | 文献、方法设计、实验代码与证据强度；在已授权目标内运行实验。 |
+| **工程治理团队**<br>`builtin-engineering-governance` | 队长 `governance-lead`、`governance-auditor`、`remediation-engineer`、`acceptance-reviewer` | 面向持续演进的软件项目，基于证据开展工程诊断、受控整改与独立验收；诊断与验收角色保持独立于整改。 |
 
 ## 角色按名字寻址
 
@@ -58,5 +60,5 @@
 
 ## 相关
 
-- [内置团队技能](<builtin-team-skills.zh.md>)——10 个随包技能，以及哪个角色拿到哪一个
+- [内置团队技能](<builtin-team-skills.zh.md>)——14 个随包技能，以及哪个角色拿到哪一个
 - [新手必读（图文）](<guide/getting-started.zh.md>)——创建与使用团队的逐步图解

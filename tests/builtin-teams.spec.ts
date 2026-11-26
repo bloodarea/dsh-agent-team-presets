@@ -1,5 +1,5 @@
 /**
- * The nine Team presets this plugin ships: their documents, the one-time
+ * The eleven Team presets this plugin ships: their documents, the one-time
  * install, the restore Settings offers, and the display data that belongs to
  * the template rather than to any runtime field.
  *
@@ -16,9 +16,11 @@ import {
   BUILTIN_TEAMS,
   BUILTIN_TEAM_IDS,
   DISCOVERY_TEAM_ID,
+  ENGINEERING_GOVERNANCE_TEAM_ID,
   ENGINEERING_TEAM_ID,
   FULLSTACK_TEAM_ID,
   LIGHTWEIGHT_TEAM_ID,
+  LONG_RUNNING_TEAM_ID,
   PLANNING_TEAM_ID,
   RESEARCH_TEAM_ID,
   STANDARD_TEAM_ID,
@@ -36,6 +38,7 @@ import {
   OFFICIAL_STANDARD_SKILLS,
   OFFICIAL_REPOSITORY_SKILLS,
   OFFICIAL_RESEARCH_SKILLS,
+  OFFICIAL_LONG_RUNNING_SKILLS,
   builtinEntry,
   teamSeriesOf,
 } from '../src/team-catalog.ts'
@@ -44,14 +47,15 @@ import type { TeamPreset } from '../src/types.ts'
 
 /** Every shipped identity, in shipped order: development scale, then work modes. */
 const IDS = [
-  LIGHTWEIGHT_TEAM_ID, STANDARD_TEAM_ID, FULLSTACK_TEAM_ID,
+  LIGHTWEIGHT_TEAM_ID, STANDARD_TEAM_ID, FULLSTACK_TEAM_ID, LONG_RUNNING_TEAM_ID,
   DISCOVERY_TEAM_ID, PLANNING_TEAM_ID, WORKFLOW_TEAM_ID, ENGINEERING_TEAM_ID, AUDIT_TEAM_ID, RESEARCH_TEAM_ID,
+  ENGINEERING_GOVERNANCE_TEAM_ID,
 ]
 
 /** The two fixed official series and their membership. */
 const SERIES = {
-  'classic-development': [LIGHTWEIGHT_TEAM_ID, STANDARD_TEAM_ID, FULLSTACK_TEAM_ID],
-  'work-modes': [DISCOVERY_TEAM_ID, PLANNING_TEAM_ID, WORKFLOW_TEAM_ID, ENGINEERING_TEAM_ID, AUDIT_TEAM_ID, RESEARCH_TEAM_ID],
+  'classic-development': [LIGHTWEIGHT_TEAM_ID, STANDARD_TEAM_ID, FULLSTACK_TEAM_ID, LONG_RUNNING_TEAM_ID],
+  'work-modes': [DISCOVERY_TEAM_ID, PLANNING_TEAM_ID, WORKFLOW_TEAM_ID, ENGINEERING_TEAM_ID, AUDIT_TEAM_ID, RESEARCH_TEAM_ID, ENGINEERING_GOVERNANCE_TEAM_ID],
 } as const
 
 /** One user-created Team the shipped presets must never touch. */
@@ -104,11 +108,11 @@ function contribFile(id: string): string {
 }
 
 describe('the official Team catalog', () => {
-  it('ships exactly nine official Teams, in two fixed series', () => {
-    expect(BUILTIN_TEAMS).toHaveLength(9)
+  it('ships exactly eleven official Teams, in two fixed series', () => {
+    expect(BUILTIN_TEAMS).toHaveLength(11)
     expect(BUILTIN_TEAM_IDS).toEqual(IDS)
-    expect(new Set(BUILTIN_TEAM_IDS).size).toBe(9)
-    expect(BUILTIN_TEAM_CATALOG).toHaveLength(9)
+    expect(new Set(BUILTIN_TEAM_IDS).size).toBe(11)
+    expect(BUILTIN_TEAM_CATALOG).toHaveLength(11)
     for (const [series, ids] of Object.entries(SERIES)) {
       expect(BUILTIN_TEAM_CATALOG.filter(entry => entry.series === series).map(entry => entry.id), series).toEqual(ids)
     }
@@ -117,7 +121,7 @@ describe('the official Team catalog', () => {
     expect(builtinEntry('team-1')).toBeUndefined()
   })
 
-  it('ships the nine documents exactly as contrib publishes them', () => {
+  it('ships the eleven documents exactly as contrib publishes them', () => {
     expect(readdirSync(new URL('../contrib/default-presets', import.meta.url)).filter(name => name.endsWith('.json')).sort())
       .toEqual(IDS.map(contribFile).sort())
     for (const entry of BUILTIN_TEAMS) {
@@ -158,6 +162,7 @@ describe('the official Team catalog', () => {
       [LIGHTWEIGHT_TEAM_ID]: OFFICIAL_DEVELOPMENT_SKILLS,
       [STANDARD_TEAM_ID]: OFFICIAL_STANDARD_SKILLS,
       [FULLSTACK_TEAM_ID]: OFFICIAL_SPECIALIST_SKILLS,
+      [LONG_RUNNING_TEAM_ID]: OFFICIAL_LONG_RUNNING_SKILLS,
       [DISCOVERY_TEAM_ID]: OFFICIAL_DISCOVERY_SKILLS,
       [WORKFLOW_TEAM_ID]: OFFICIAL_REPOSITORY_SKILLS,
       [ENGINEERING_TEAM_ID]: OFFICIAL_REPOSITORY_SKILLS,
@@ -244,9 +249,10 @@ describe('installing the shipped presets once', () => {
     expect(seeded.teams.map(team => team.id)).toEqual(IDS.filter(id => id !== PLANNING_TEAM_ID))
   })
 
-  it('upgrades a 0.1.5 deployment by appending only the six it never had', () => {
-    // A 0.1.5 deployment holds the three development Teams and was offered
-    // exactly those; the six work modes have never been offered there.
+  it('upgrades a 0.1.5 deployment by appending the presets it never had', () => {
+    // A 0.1.5 deployment holds the three oldest development Teams and was
+    // offered exactly those; the work modes and the newer development Teams
+    // have never been offered there.
     const legacy = [LIGHTWEIGHT_TEAM_ID, STANDARD_TEAM_ID, FULLSTACK_TEAM_ID].map(id => builtinTeamDefinition(builtinEntry(id)!))
     const seeded = seedBuiltinTeams(legacy, [LIGHTWEIGHT_TEAM_ID, STANDARD_TEAM_ID, FULLSTACK_TEAM_ID])
     expect(seeded.changed).toBe(true)
@@ -355,12 +361,12 @@ describe('restoring the shipped presets', () => {
     expect(restored.teams[1]).toEqual(builtinTeamDefinition(BUILTIN_TEAMS[0]!))
   })
 
-  it('restores exactly nine official Teams even when the user deleted several', () => {
+  it('restores exactly eleven official Teams even when the user deleted several', () => {
     // "Restore all defaults" is the only path that resurrects a deleted shipped
     // preset, and it must resurrect precisely the official set.
     const survivors = [LIGHTWEIGHT_TEAM_ID, RESEARCH_TEAM_ID].map(id => builtinTeamDefinition(builtinEntry(id)!))
     const restored = restoreBuiltinTeams(survivors)
-    expect(restored.teams.filter(team => BUILTIN_TEAM_IDS.includes(team.id))).toHaveLength(9)
+    expect(restored.teams.filter(team => BUILTIN_TEAM_IDS.includes(team.id))).toHaveLength(11)
     expect(restored.changed.sort()).toEqual(IDS.filter(id => id !== LIGHTWEIGHT_TEAM_ID && id !== RESEARCH_TEAM_ID).sort())
   })
 

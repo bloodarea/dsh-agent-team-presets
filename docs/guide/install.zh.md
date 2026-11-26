@@ -6,13 +6,13 @@
 
 ## 环境要求
 
-- **DeepSeek Harness `>=0.2.2-rc.3 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.3`**；0.2.2-rc.2 及更旧版本会被拒绝。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](../../package.json) 的 `engines.dsh` 判定兼容性。
+- **DeepSeek Harness `>=0.2.2-rc.5 <0.3.0`。** 本次实测版本为 **`0.2.2-rc.5`**；0.2.2-rc.4 及更旧版本会被拒绝。成员路由通过 `agent.model.select()` 写入各自会话，fresh、fork 与冷恢复均使用成员自己的配置；队长使用当前会话选择。插件管理器按 [package.json](../../package.json) 的 `engines.dsh` 判定兼容性。
 - **自定义工具白名单有自己的规则边界。** 策略允许什么、限制什么，见[工具与权限](../reference/tools-and-permissions.md)。
 - **无需 Agent Teams bundle。** 成员通过部署自带的可继续执行 subagent 后端创建；原生消息、任务工具与 Web 名册不受本插件影响。
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.3.4`）和 Harness 版本（如 `0.2.2-rc.3`）是不同的版本线。
+插件版本（`0.3.4`）和 Harness 版本（如 `0.2.2-rc.5`）是不同的版本线。
 
 ## 安装
 

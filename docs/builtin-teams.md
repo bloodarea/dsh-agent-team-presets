@@ -1,6 +1,6 @@
 # Built-in Teams
 
-This plugin seeds **nine editable Teams** on a fresh installation: three development-scale Teams and six work-mode Teams. This document is the reference for what each one contains; [Built-in Team Skills](builtin-team-skills.md) documents the skills those roles receive.
+This plugin seeds **eleven editable Teams** on a fresh installation: four development-scale Teams and seven work-mode Teams. This document is the reference for what each one contains; [Built-in Team Skills](builtin-team-skills.md) documents the skills those roles receive.
 
 [中文](<builtin-teams.zh.md>) · [Documentation index](index.md) · [README](../README.md)
 
@@ -13,28 +13,29 @@ This plugin seeds **nine editable Teams** on a fresh installation: three develop
 
 ## 研发规模系列 (Classic Development Scale)
 
-Three Teams for building software, differing in how much coordination the work needs.
+Four Teams for building software, differing in how much coordination the work needs.
 
 | Preset | Roles | Intended use |
 |---|---|---|
 | **轻量研发团队**<br>`builtin-lightweight` | Captain `team-lead`, `fullstack-advisor`, `executor` | Small-to-medium iterations and multi-stage delivery. The captain aligns requirements, grades the task, explores in parallel, and accepts; the advisor answers technical decisions single-threaded; the executor implements, integrates, and verifies. |
 | **标准研发团队**<br>`builtin-standard` | Captain `team-lead`, `fullstack-advisor`, `executor`, `reviewer` | Medium features, significant refactors, and sustained iteration. The advisor answers technical decisions on demand; the executor implements continuously; the independent reviewer checks every code change. |
 | **全栈软件研发团队**<br>`builtin-fullstack` | Captain `team-lead`, `ui-designer`, `backend-architect`, `executor`, `reviewer` | Complex full-stack engineering across Web, desktop, and Android. The advisor role is split into the UI frontend engineer and the backend architect; the executor handles routine development and testing; the independent reviewer accepts. |
+| **高质量长程研发团队**<br>`builtin-long-running` | Captain `team-lead`, `executor` | Long-running delivery that outlives one Session or one executor instance. Slices can hand over between executor instances, and independent work can run in parallel. |
 
 ### What each role is for
 
 | Role | Appears in | Responsibility |
 |---|---|---|
-| `team-lead` | all three | Aligns the requirement, grades the task, dispatches, integrates, and accepts. Holds the final risk call. |
+| `team-lead` | all four | Aligns the requirement, grades the task, dispatches, integrates, and accepts. Holds the final risk call. |
 | `fullstack-advisor` | lightweight, standard | Cross-layer technical decisions, trade-offs, risks, and executable acceptance contracts. Does not implement. |
 | `reviewer` | standard, fullstack | Independent inspection of the actual change, the critical risks, and whether the tests can catch the defect. |
-| `executor` | all three | Implements, debugs, tests, and hands over verification evidence within the assigned scope. |
+| `executor` | all four | Implements, debugs, tests, and hands over verification evidence within the assigned scope. |
 | `backend-architect` | fullstack | System architecture, API and data contracts, error semantics, auth isolation, migration compatibility, plus the complex backend fixes. |
 | `ui-designer` | fullstack | Visual direction, design systems, frontend components and interaction, real-screenshot visual acceptance, plus the frontend fixes. |
 
 ## 工作模式系列 (Work Modes)
 
-Six Teams for work that is not "build the next feature".
+Seven Teams for work that is not "build the next feature".
 
 | Preset | Roles | Intended use |
 |---|---|---|
@@ -44,6 +45,7 @@ Six Teams for work that is not "build the next feature".
 | **工程研发协作**<br>`builtin-engineering` | Captain `engineering-lead`, `architect`, `executor`, `ui-designer`, `reviewer`, `repository-specialist` | Adaptive engineering: the captain does the work it can do directly and summons members when there is real gain. |
 | **独立代码与安全审计**<br>`builtin-audit` | Captain `audit-lead`, `code-auditor`, `security-auditor`, `finding-verifier` | Independent, read-only review of specified code, configuration, or changes. Reports and verifies; does not fix. |
 | **科研协作**<br>`builtin-research` | Captain `research-lead`, `methodologist`, `evidence-scout`, `research-engineer`, `skeptic` | Literature, method design, experiment code, and evidence strength. Runs experiments inside the authorized goal. |
+| **工程治理团队**<br>`builtin-engineering-governance` | Captain `governance-lead`, `governance-auditor`, `remediation-engineer`, `acceptance-reviewer` | Evidence-based engineering governance for a project that keeps evolving: read-only diagnosis, controlled remediation, and independent acceptance, with the auditor and reviewer kept independent of the remediation. |
 
 ## Roles are addressed by name
 
@@ -58,5 +60,5 @@ Your Team records are stored in the active profile's configuration (`cordis.patc
 
 ## Related
 
-- [Built-in Team Skills](builtin-team-skills.md) — the ten shipped skills and which role receives each
+- [Built-in Team Skills](builtin-team-skills.md) — the fourteen shipped skills and which role receives each
 - [Getting started](guide/getting-started.md) — the illustrated walkthrough for creating and using a Team

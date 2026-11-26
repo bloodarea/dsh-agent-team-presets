@@ -12,6 +12,16 @@
       "patchedSha256": "faa8afbae9b7fe15b5e31ace6de8c06ba71404e3a8220406dc82f0cc3dcb09fa"
     },
     {
+      "id": "dsh-better-sidebar",
+      "packageName": "dsh-better-sidebar",
+      "version": "0.33.0",
+      "source": "omdsh-dev/DSH-better-sidebar@0f4b87c49dc6ae4aef7371be0a78f9d277a7b4e0",
+      "asset": "dsh-better-sidebar-0.33.0.client.js.gz",
+      "service": "betterSidebarAgentCardBadges",
+      "pristineSha256": "ec71e4668fecdf8aead458c855aee092737e9f2e4387c1cc495cf6a41233f923",
+      "patchedSha256": "66f1dce53f8afabf2fd56625b048908268813a8d611e445098355d7eae3c5258"
+    },
+    {
       "id": "dsh-context",
       "packageName": "dsh-context",
       "version": "0.84.1",
@@ -50,6 +60,26 @@
       "service": "contextAgentCardBadges",
       "pristineSha256": "69aea607409542050690e8cb22b818400c675448b119b418436feeaee0287141",
       "patchedSha256": "a4539b690fd908df1429acf649620b6f7d9627033c61ac6cbca9e8f76addccad"
+    },
+    {
+      "id": "dsh-context",
+      "packageName": "dsh-context",
+      "version": "0.87.1",
+      "source": "bowenliang123/dsh-context@fa98a621e7aabdebdb04fc935221a4ba5bf72883",
+      "asset": "dsh-context-0.87.1.client.js.gz",
+      "service": "contextAgentCardBadges",
+      "pristineSha256": "105435ded5069a5d28d0a0fff80fc40c633b6e0aad5dedb1c3a3b43e28b30e8e",
+      "patchedSha256": "a59247741693fc32754ace345d0d31db683d600bb49c483688541e8a9d66546f"
+    },
+    {
+      "id": "dsh-context",
+      "packageName": "dsh-context",
+      "version": "0.87.2",
+      "source": "bowenliang123/dsh-context@cfec4e4f9a13fc506cbf7a455a69b1d7cf52b03e",
+      "asset": "dsh-context-0.87.2.client.js.gz",
+      "service": "contextAgentCardBadges",
+      "pristineSha256": "190de8540154f8063795565ff171d7f08170f94de60d379727f09fd26c50c125",
+      "patchedSha256": "a993fcaee9ede37f866a7edfda96a0f8dd7afdfdf944e7c2562ba686e6a3f5c4"
     }
   ]
 }

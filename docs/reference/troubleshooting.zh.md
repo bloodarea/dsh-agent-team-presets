@@ -37,7 +37,7 @@ Configuration for "agent-team-presets" is overridden by a home patch or command-
 
 能否渲染出该页面取决于三项环境事实，它们在安装之前就能确认：
 
-- **宿主版本。** 支持范围是 `>=0.2.2-rc.3 <0.3.0`；本次实测版本为 `0.2.2-rc.3`，0.2.2-rc.2 及更旧版本会被拒绝。插件管理器按 `package.json` 中的 `engines.dsh` 判定。
+- **宿主版本。** 支持范围是 `>=0.2.2-rc.5 <0.3.0`；本次实测版本为 `0.2.2-rc.5`，0.2.2-rc.4 及更旧版本会被拒绝。插件管理器按 `package.json` 中的 `engines.dsh` 判定。
 - **profile 类型。** 安装到具备 Settings 与所需客户端服务的 Web 或 Desktop profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员；默认后端名为 `spawn` 和 `fork`。
 

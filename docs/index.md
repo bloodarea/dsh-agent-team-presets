@@ -15,7 +15,7 @@ Entry point for the `dsh-agent-team-presets` documentation. The [README](../READ
 | Add the subagent card badges | [Integrations](guide/integrations.md) |
 | Review agent-facing tools, tool policies, and security boundaries | [Tools and permissions](reference/tools-and-permissions.md) |
 | Diagnose a Team, member, or install problem | [Troubleshooting](reference/troubleshooting.md) |
-| Know what the nine built-in Teams contain and what each role is for | [Built-in Teams](builtin-teams.md) |
+| Know what the eleven built-in Teams contain and what each role is for | [Built-in Teams](builtin-teams.md) |
 | Know which Team Skill a role receives, and what those skills do | [Built-in Team Skills](builtin-team-skills.md) |
 | Work on the plugin itself | [Architecture and development](developer/architecture.md) |
 
@@ -32,8 +32,8 @@ Entry point for the `dsh-agent-team-presets` documentation. The [README](../READ
 | [docs/reference/tools-and-permissions.md](reference/tools-and-permissions.md) · [中文](reference/tools-and-permissions.zh.md) | Agent-facing tools, policy modes, first-turn registration, security boundaries | yes |
 | [docs/reference/troubleshooting.md](reference/troubleshooting.md) · [中文](reference/troubleshooting.zh.md) | Configuration overrides, the built-in troubleshooting skill, common issues, known limitations | yes |
 | [docs/developer/architecture.md](developer/architecture.md) · [中文](developer/architecture.zh.md) | How the plugin integrates, source map, development commands | yes |
-| [docs/builtin-teams.md](builtin-teams.md) · [中文](builtin-teams.zh.md) | The nine built-in presets: series, roles, intended use, restore semantics, where the record lives | yes |
-| [docs/builtin-team-skills.md](builtin-team-skills.md) · [中文](builtin-team-skills.zh.md) | The ten shipped Team Skills: categories, default bindings per role, local overrides, scope | yes |
+| [docs/builtin-teams.md](builtin-teams.md) · [中文](builtin-teams.zh.md) | The eleven built-in presets: series, roles, intended use, restore semantics, where the record lives | yes |
+| [docs/builtin-team-skills.md](builtin-team-skills.md) · [中文](builtin-team-skills.zh.md) | The fourteen shipped Team Skills: categories, default bindings per role, local overrides, scope | yes |
 | `docs/internal/` | Development notes, audits, acceptance and release evidence | no — local working material, excluded from the repository |
 
 Every public document above ships with the package except the illustrated walkthrough, which references screenshots the tarball does not carry. `docs/internal/` is excluded from the repository itself and is never linked from a public page.

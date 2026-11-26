@@ -139,13 +139,20 @@
   gap: 8px;
 }
 
+/* The role's own colour mark IS this card's border. `--dsh-roster-role-color`
+ * comes from the preset inline; a role that configured no colour leaves it
+ * unset, and the transparent fallback plus the border-box sizing keeps such a
+ * card pixel-identical to what it was before this existed. The 1px border is
+ * paid for out of the padding, so the outer box, the text position and the
+ * grid track all stay exactly where they were. */
 .member {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
-  padding: 10px 12px;
-  border: 0;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--dsh-roster-role-color, transparent);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   box-shadow: var(--dsw-elevation-stroke-color);
   border-radius: 8px;
@@ -165,6 +172,9 @@
   /* A row that carries the Session itself: hoverable for its tooltip, not clickable. */
   cursor: default;
 }
+/* The inset ring is the "this is your session" signal and keeps its business
+ * tint; the card's own border carries the role colour, so a coloured current
+ * card still reads as current and an uncoloured one is unchanged. */
 .memberCurrent {
   --dsw-elevation-stroke-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);
   box-shadow: var(--dsw-elevation-stroke-color), inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 40%, transparent);

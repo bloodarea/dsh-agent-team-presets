@@ -241,7 +241,11 @@ export class TeamSkillsController {
     this.publish({ status: this.state.library === undefined ? 'loading' : 'ready' })
     try {
       const api = this.api()
-      const library = unwrap(await (checkInbox ? api.library(true) : api.library()))
+      // The gateway validates the argument COUNT before it encodes anything:
+      // `library` declares one optional parameter, so a zero-argument call is
+      // rejected with "expected 1 argument(s), got 0" and the whole panel drops
+      // to `unavailable`. Pass it explicitly instead of relying on arity.
+      const library = unwrap(await api.library(checkInbox))
       if (checkInbox && request === this.inboxRequest && library.issue === undefined) {
         this.publish({ inboxChanges: library.inboxChanges ?? [] })
       }
@@ -484,7 +488,11 @@ export class TeamSkillsController {
    */
   async unassign(teamId: string, roleId: string): Promise<void> {
     await this.run(async () => {
-      const library = unwrap(await this.api().unassignRole(teamId, roleId))
+      // Same arity rule as `library`: `unassignRole` declares three parameters
+      // (`assetId` optional on the type), and the gateway counts arguments
+      // before encoding. Two arguments is a client-side refusal, not a Host
+      // one, so the intent has to be spelled out.
+      const library = unwrap(await this.api().unassignRole(teamId, roleId, undefined))
       this.publish({ library })
       if (this.state.selectedId !== undefined) await this.select(this.state.selectedId)
       return 'unassigned'

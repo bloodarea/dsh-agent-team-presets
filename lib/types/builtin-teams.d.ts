@@ -16,7 +16,7 @@
  *   roster, and the display metadata — and keeps the fields it does not: a
  *   member's model route and every slot's tool policy.
  *
- * `contrib/default-presets` holds the same nine documents as JSON for readers of
+ * `contrib/default-presets` holds the same eleven documents as JSON for readers of
  * this repository, and `tests/builtin-teams.spec.ts` proves the two cannot
  * drift.
  * @module dsh-agent-team-presets/builtin-teams
@@ -43,6 +43,10 @@ export declare const ENGINEERING_TEAM_ID = "builtin-engineering";
 export declare const AUDIT_TEAM_ID = "builtin-audit";
 /** Identity the research Team is stored under. */
 export declare const RESEARCH_TEAM_ID = "builtin-research";
+/** Identity the engineering-governance Team is stored under. */
+export declare const ENGINEERING_GOVERNANCE_TEAM_ID = "builtin-engineering-governance";
+/** Identity the long-running development Team is stored under. */
+export declare const LONG_RUNNING_TEAM_ID = "builtin-long-running";
 /** One shipped Team: the identity it is stored under and the document it restores from. */
 export interface BuiltinTeam {
     /** Stable identity every stored copy of this preset keeps. */
@@ -56,7 +60,7 @@ export interface BuiltinTeam {
     /** Official default Team Skill assignments for this template. */
     readonly officialSkillBindings: readonly OfficialSkillBinding[];
 }
-/** Every shipped preset, in install order: the three development Teams, then the six work modes. */
+/** Every shipped preset, in install order: the four development Teams, then the seven work modes. */
 export declare const BUILTIN_TEAMS: readonly BuiltinTeam[];
 /**
  * Stable role identity of one shipped member.

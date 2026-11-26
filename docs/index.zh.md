@@ -15,7 +15,7 @@
 | 打开子代理卡片标签 | [集成](<guide/integrations.zh.md>) |
 | 了解面向智能体的工具、工具策略与安全边界 | [工具权限与安全](<reference/tools-and-permissions.zh.md>) |
 | 排查团队、成员或安装问题 | [排障](<reference/troubleshooting.zh.md>) |
-| 知道九个内置团队各包含什么、每个角色负责什么 | [内置团队](<builtin-teams.zh.md>) |
+| 知道十一个内置团队各包含什么、每个角色负责什么 | [内置团队](<builtin-teams.zh.md>) |
 | 知道某个角色拿到哪些团队技能、这些技能做什么 | [内置团队技能](<builtin-team-skills.zh.md>) |
 | 参与插件本身的开发 | [架构与开发](<developer/architecture.zh.md>) |
 
@@ -32,8 +32,8 @@
 | [docs/reference/tools-and-permissions.md](reference/tools-and-permissions.md) · [中文](<reference/tools-and-permissions.zh.md>) | 面向智能体的工具、策略模式、首轮注册、安全边界 | 是 |
 | [docs/reference/troubleshooting.md](reference/troubleshooting.md) · [中文](<reference/troubleshooting.zh.md>) | 配置被覆盖、内置排障技能、常见问题、已知限制 | 是 |
 | [docs/developer/architecture.md](developer/architecture.md) · [中文](<developer/architecture.zh.md>) | 集成方式、源码导航、开发命令 | 是 |
-| [docs/builtin-teams.md](builtin-teams.md) · [中文](<builtin-teams.zh.md>) | 九个内置预设：系列、角色、适用场景、恢复语义、记录存放位置 | 是 |
-| [docs/builtin-team-skills.md](builtin-team-skills.md) · [中文](<builtin-team-skills.zh.md>) | 10 个随包团队技能：分类、各角色默认绑定、本地副本、作用域 | 是 |
+| [docs/builtin-teams.md](builtin-teams.md) · [中文](<builtin-teams.zh.md>) | 十一个内置预设：系列、角色、适用场景、恢复语义、记录存放位置 | 是 |
+| [docs/builtin-team-skills.md](builtin-team-skills.md) · [中文](<builtin-team-skills.zh.md>) | 14 个随包团队技能：分类、各角色默认绑定、本地副本、作用域 | 是 |
 | `docs/internal/` | 开发笔记、审计、验收与发布证据 | 否——本地材料，不入库 |
 
 除图文走查外，上面每份公开文档都随包发布；图文走查引用的截图不在发布包里。`docs/internal/` 本身不入库，也不会被任何公开页面链接。

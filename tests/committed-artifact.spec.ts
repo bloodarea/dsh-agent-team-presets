@@ -59,6 +59,7 @@ const EXPECTED_SKILL_IDS = [
   'agent-leader-communication',
   'leader-medium-task-workflow',
   'leader-long-task-orchestration',
+  'leader-worker-continuity',
   'agent-subagent-orchestration',
   'fullstack-advisor',
   'executor-short-task-workflow',
@@ -191,7 +192,7 @@ describe('committed lib artifact carries the 0.1.7 security contract', () => {
     expect(() => assertRefuseTeamGuard(libSource)).not.toThrow()
   })
 
-  it('ships OFFICIAL_SKILL_IDS as exactly the thirteen official skills', () => {
+  it('ships OFFICIAL_SKILL_IDS as exactly the fourteen official skills', () => {
     const declared = extractStringList(libSource, 'OFFICIAL_SKILL_IDS')
     expectExactSet(declared, EXPECTED_SKILL_IDS, 'OFFICIAL_SKILL_IDS')
     expect(normalize(libSource)).toMatch(/for\s*\(\s*const\s+[A-Za-z_$][\w$]*\s+of\s+OFFICIAL_SKILL_IDS\s*\)/)

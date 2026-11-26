@@ -806,8 +806,8 @@ describe('restoring the shipped default presets', () => {
     // then the missing ones.
     expect(teams.map(entry => entry.id)).toEqual([
       'team-9', 'builtin-standard', 'builtin-lightweight', 'builtin-fullstack',
-      'builtin-discovery', 'builtin-planning', 'builtin-workflow', 'builtin-engineering',
-      'builtin-audit', 'builtin-research',
+      'builtin-long-running', 'builtin-discovery', 'builtin-planning', 'builtin-workflow',
+      'builtin-engineering', 'builtin-audit', 'builtin-research', 'builtin-engineering-governance',
     ])
     // A Team the user created keeps its identity, content, and position.
     expect(teams[0]).toEqual(own)

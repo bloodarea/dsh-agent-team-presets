@@ -6,13 +6,13 @@ What the plugin needs before it runs, the three supported install forms, and how
 
 ## Requirements
 
-- **DeepSeek Harness `>=0.2.2-rc.3 <0.3.0`.** Verified against **`0.2.2-rc.3`**; 0.2.2-rc.2 and older are refused. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](../../package.json).
+- **DeepSeek Harness `>=0.2.2-rc.5 <0.3.0`.** Verified against **`0.2.2-rc.5`**; 0.2.2-rc.4 and older are refused. Each member's route is recorded through `agent.model.select()` for fresh, forked, and cold-resumed execution; the captain keeps the conversation's model selection. The plugin manager enforces `engines.dsh` from [package.json](../../package.json).
 - **Custom tool allow-lists have their own contract.** What a policy admits, and what it cannot do, is described in [Tools and permissions](../reference/tools-and-permissions.md).
 - **No Agent Teams bundle is required.** Members are created through the deployment's continuable subagent providers, and native messaging, task tools, and the Web roster are unaffected by this plugin.
 - **A Web or Desktop profile with Settings and the required client services.** Install into the profile you actually use — typically `web` for the Web GUI or `desktop` for Desktop.
 - **Durable storage and a continuable subagent backend for member execution.** Member creation is refused if the storage domain or the selected execution backend is unavailable. The default backend names are `spawn` and `fork`.
 
-The plugin version (`0.3.4`) and the Harness version (`0.2.2-rc.3`, for example) are separate version lines.
+The plugin version (`0.3.4`) and the Harness version (`0.2.2-rc.5`, for example) are separate version lines.
 
 ## Install
 

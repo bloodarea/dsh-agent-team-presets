@@ -48,7 +48,7 @@ Thanks to **张灏焱** for contributing the `grilling` and `research` method Te
 ## Related
 
 - [Documentation index](../index.md) — the full document map.
-- [Built-in Teams](../builtin-teams.md) — the nine shipped presets and their roles.
-- [Built-in Team Skills](../builtin-team-skills.md) — the ten shipped skills and per-role bindings.
+- [Built-in Teams](../builtin-teams.md) — the eleven shipped presets and their roles.
+- [Built-in Team Skills](../builtin-team-skills.md) — the fourteen shipped skills and per-role bindings.
 - [Getting started](../guide/getting-started.md) — the illustrated walkthrough.
 - [README](../../README.md) — overview, quick start, and the documentation map.

@@ -37,7 +37,7 @@ The guide also states the evidence order: `configuredRoute`, `model/selection`, 
 
 Three environment facts decide whether the page can render at all, and each of them is visible before you install:
 
-- **Host version.** The supported range is `>=0.2.2-rc.3 <0.3.0`; the plugin was verified against `0.2.2-rc.3`, and 0.2.2-rc.2 and older are refused. The plugin manager enforces `engines.dsh` in `package.json`.
+- **Host version.** The supported range is `>=0.2.2-rc.5 <0.3.0`; the plugin was verified against `0.2.2-rc.5`, and 0.2.2-rc.4 and older are refused. The plugin manager enforces `engines.dsh` in `package.json`.
 - **Profile type.** Install into a Web or Desktop profile with Settings and the client services the page uses — typically `web` for the Web GUI or `desktop` for Desktop.
 - **Backends.** Member creation is refused if the storage domain or the selected execution backend is unavailable; the default backend names are `spawn` and `fork`.
 

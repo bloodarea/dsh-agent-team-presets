@@ -251,9 +251,10 @@ describe('the role slots each method skill reaches', () => {
     // Nothing else moved: the lightweight Team declares 9 bindings, the
     // standard Team 11 (leader 4, advisor 1, reviewer 2, executor 4), the
     // fullstack Team 12 (leader 4, frontend 1, backend 1, reviewer 2, executor
-    // 4), the Discovery Team 3, the Research Team 1, and the two work-mode
-    // Teams 2 each — 40 in total.
-    expect(bindingRows(live.manager)).toHaveLength(40)
+    // 4), the long-running Team 6 (leader 4 including its continuity skill,
+    // executor 2), the Discovery Team 3, the Research Team 1, and the two
+    // work-mode Teams 2 each — 46 in total.
+    expect(bindingRows(live.manager)).toHaveLength(46)
     // Only the roles that own repository delivery carry the delivery pair: all
     // three development Teams' executors, and a repository-specialist in each of
     // the two work-mode Teams that has one.
