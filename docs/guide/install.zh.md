@@ -12,7 +12,7 @@
 - **具备 Settings 与所需客户端服务的 Web 或 Desktop profile。** 安装到实际使用的 profile：Web GUI 通常为 `web`，Desktop 通常为 `desktop`。
 - **成员执行所需的持久存储与支持恢复执行的子智能体后端。** 缺少 storage domain 或所选执行后端时，插件会拒绝创建成员。默认后端名为 `spawn` 和 `fork`。
 
-插件版本（`0.3.4`）和 Harness 版本（如 `0.2.2-rc.5`）是不同的版本线。
+插件版本（`0.3.5`）和 Harness 版本（如 `0.2.2-rc.5`）是不同的版本线。
 
 ## 安装
 
