@@ -83,7 +83,7 @@ PTC 预设 + 自定义白名单现在可以应用，但会改变该会话的工�
 - **没有 member runtime**：Session 不是在插件激活范围内组合的，无法给成员安装冻结配置。检查 profile 是否加载了本插件与 Agent Teams。
 - **没有持久存储 / member store 打不开**：成员快照无法落盘，创建会被拒绝。检查 storage domain 与 $DSH_HOME 可写性。
 - **没有执行后端**：spawn/fork provider 未注册、不可用或不能创建 continuable child。检查 subagents provider 注册与配置的 freshProvider/forkProvider。
-- **深度/并发/生命周期配额**：检查 delegation depth、并发 subagent 上限、Team lifetime member quota。成员名不会被复用；已完成的成员仍占 roster 槽位，下一次会得到 executor-2 之类的新名字；lifetime quota 用完后不能再召唤。
+- **深度/并发配额**：检查 delegation depth 与并发 subagent 上限。从 0.2.2 起团队成员就是普通 subagent，宿主移除了 \`maxMembers\`，因此**没有终身成员名额**：成员结束即释放并发名额，可以反复召唤。成员名不要复用，下一次仍会得到 executor-2 之类的新 target。若旧宿主报错提到 member limit，才是 roster 槽位耗尽。
 - **标记为 preset-managed 但 roster 找不到 / 快照丢失或损坏**：插件会拒绝而不是用默认配置恢复。检查成员快照与 Team roster，不要手工伪造标记。
 - **技能目录无法发布**：该角色已有 Team Skill 分配，但目录没有成功发布；插件拒绝创建，避免成员首轮看到空目录。先修 Team Skill 存储/绑定。
 

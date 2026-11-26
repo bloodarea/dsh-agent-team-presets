@@ -23,6 +23,7 @@ import type { TeamRosterMemberView } from '../types.ts'
 import type { TeamRosterInjected } from './team-presets-controller.ts'
 import type { TeamPresetsLocaleKey } from './locales.ts'
 import css from './TeamRosterAction.module.css'
+import { visibleRosterMembers } from './roster-visibility.ts'
 
 /** Durable lifecycle overlaid with the member Session's live turn activity. */
 type MemberStatus = 'running' | 'inactive'
@@ -302,10 +303,13 @@ export function TeamRosterAction({
   // Progressive disclosure: a Session whose Team was never selected shows no
   // control at all.
   if (members.length === 0) return null
+  // Only what is happening now, plus the captain: finished instances would
+  // otherwise pile up rows in a Team that replaces its executor often.
+  const visible = visibleRosterMembers(members)
   // rc.1 listed the Team's shared tasks under its members; the official board shows
   // only when tasks exist, so this section is what a quiet board still reads as.
   const tasks = (team?.tasks ?? []).filter(task => task.status !== 'deleted')
-  const compact = members.length === 1 && tasks.length === 0
+  const compact = visible.length === 1 && tasks.length === 0
 
   return (
     <div ref={rootRef} className={css.root} style={anchorStyle} data-team-action onMouseLeave={scheduleHoverClose}>
@@ -346,10 +350,10 @@ export function TeamRosterAction({
             <section>
               <h3>
                 {t('roster')}
-                {members.length > 1 && <span className={css.count}>{members.length}</span>}
+                {visible.length > 1 && <span className={css.count}>{visible.length}</span>}
               </h3>
               <div className={css.roster}>
-                {members.map(member => (
+                {visible.map(member => (
                   <TeamMemberRow
                     key={member.name}
                     member={member}

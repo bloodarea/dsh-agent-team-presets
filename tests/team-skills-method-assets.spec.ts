@@ -27,7 +27,7 @@ describe('the shipped method skills', () => {
   })
 
   it('registers both method skills and ships their third-party notice', () => {
-    expect(OFFICIAL_SKILL_VERSION).toBe('7')
+    expect(OFFICIAL_SKILL_VERSION).toBe('8')
     expect([...OFFICIAL_SKILL_IDS]).toEqual([
       'agent-leader-communication',
       'leader-medium-task-workflow',

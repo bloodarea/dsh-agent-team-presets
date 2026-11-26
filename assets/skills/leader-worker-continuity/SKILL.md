@@ -146,7 +146,7 @@ REPORT: <required result, changed paths and verification evidence>
 
 - 团队配置中的 `executor` 是角色定义；实际召唤出来的队友是具有独立名称和会话身份的实例。
 - 遵守宿主的成员名册规则。若 roster 为 append-only，每个新实例使用宿主分配的全新唯一 target；不得假设已结束成员名称可以复用。
-- 创建替代实例前检查现有 roster、并发限制、生命周期名额和模型路由。失败创建也可能消耗宿主名额时，不得循环重试。
+- 创建替代实例前检查并发限制（`subagents.maxActiveSubagents`）、委派深度上限和模型路由。现代 DSH 的成员是普通 subagent，没有终身名额，结束即释放；旧宿主若报成员名额耗尽，保留交接记录并请求人类处理，不得循环重试。
 - 不声称本 Skill 能自动延长服务端会话、重置供应商额度或绕过宿主限制；它只规定任务状态恢复和重新委派策略。
 
 ## 质量与成本纪律
